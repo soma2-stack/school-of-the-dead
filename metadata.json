@@ -1,0 +1,6 @@
+{
+  "name": "Dead Halls Outbreak Layout Sandbox",
+  "description": "An interactive CoD Zombies-inspired classroom layout walkthrough engine allowing real-time room resizing and noclip bounds testing for Westbrook High.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
