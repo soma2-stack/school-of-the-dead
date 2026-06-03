@@ -6,6 +6,7 @@ import { createDoorRenderer } from './utils/DoorRenderer';
 import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
 import { DevDebugPanel } from './utils/DevDebugPanel';
 import { PointsDisplay } from './utils/PointsDisplay';
+import { RuntimeDoor } from './types';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
