@@ -1030,14 +1030,17 @@ export default function App() {
     // Keyboard handler for door interaction (uses DoorManager state)
     const handleInteractionKey = (e: KeyboardEvent) => {
       if (e.code === 'KeyE' && isPointerLocked) {
+        console.log("[E] key pressed");
         const doorManager = getDoorManager();
         const pointsManager = getPointsManager();
         const playerId = 'player1';
         
         const currentDoor = doorManager.getCurrentInteractedDoor();
         if (currentDoor) {
-          console.log('[App] E pressed - Attempting to purchase door:', currentDoor.name);
+          console.log("Hovered/interacted door exists");
+          console.log("purchaseDoor() called");
           const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+          console.log("purchaseDoor() returned");
           
           if (result.success) {
             console.log('[App] Door purchased successfully:', currentDoor.name);
