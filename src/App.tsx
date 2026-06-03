@@ -780,11 +780,14 @@ export default function App() {
       
       // Door interaction - Press E to purchase door
       if (e.code === 'KeyE') {
+        console.log('[DEBUG OLD] KeyE detected in old handleKeyDown');
+        console.log('[DEBUG OLD] isPointerLocked:', document.pointerLockElement !== null);
         const doorManager = getDoorManager();
         const pointsManager = getPointsManager();
         const playerId = 'player1'; // TODO: Replace with actual player ID from game state
         
         const currentDoor = doorManager.getCurrentInteractedDoor();
+        console.log('[DEBUG OLD] getCurrentInteractedDoor returned:', currentDoor);
         if (currentDoor) {
           console.log('[App] Attempting to purchase door:', currentDoor.name);
           const result = doorManager.purchaseDoor(currentDoor.id, playerId);
@@ -1034,6 +1037,7 @@ export default function App() {
 
     // Keyboard handler for door interaction (uses hoveredDoorRef from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
+      console.log('[DEBUG] Key event received:', e.key);
       if (e.code === 'KeyE' && isPointerLocked) {
         console.log("[E] key pressed");
         
