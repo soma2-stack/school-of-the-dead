@@ -6,113 +6,57 @@ __pycache__/
 *.obj
 dist/
 build/
-*.o
-*.obj
-*.out
+target/
 
 # Dependencies
 node_modules/
-.venv/
-venv/
-node_modules/
-
-# Build outputs
-dist/
-build/
-target/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
 venv/
 .venv/
-.ENV
-.python-version
-
-# Logs
-*.log
-
-# Environment variables
 .env
 .env.local
-*.env.*
+.env.*
 
-# IDE
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Distribution / packaging
-*.tar.gz
-*.whl
-*.egg
-*.egg-info/
 
 # OS generated files
 .DS_Store
 Thumbs.db
 
-# Testing
-.nyc_output/
-coverage.xml
-*.gcda
-*.gcno
+# Testing and coverage
+.coverage
+coverage/
+htmlcov/
+.mypy_cache/
+.pytest_cache/
 
-# TypeScript/JavaScript specific
-.next/
-.nuxt/
-public/dist/
-*.min.js
-*.bundle.js
-
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# Debug
-debug.log
-*.log
-
-# Local configuration
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Next.js
-.next
-out/
-
-# Vercel
-.vercel/
-
-# Sentry
-.sentryclirc
+# Compression archives
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```
-
-Wait, I need to reconsider. The modified files are only TypeScript source files (`src/App.tsx`, `src/types.ts`), which are source code files. Looking at the change list, there are no build artifacts, dependency directories, or temporary files mentioned in the "Modified" section. The added and deleted files are also empty.
-
-According to rule #6, if the change list contains only source or config files and no build artifacts, dependencies, or temp files, I should output an empty .gitignore.
-
-Since only source files were modified (`src/App.tsx`, `src/types.ts`), the output should be empty.
-
-```gitignore
-
-(Empty - output nothing)

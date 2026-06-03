@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { getDoorManager, initializeDoors } from './utils/doors';
+import { getDoorManager, initializeDoors, DoorEventType } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
+import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
+import { DevDebugPanel } from './utils/DevDebugPanel';
+import { PointsDisplay } from './utils/PointsDisplay';
+import { RuntimeDoor } from './types';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -169,7 +173,7 @@ const INITIAL_ROOMS: Room[] = [
   { id: 'gym_north_hallway', name: 'Gym North Connector', cx: 144, cz: 65, w: 18, d: 40, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
   { id: 'nurses_office', name: "Nurse's Office", cx: 164, cz: 112, w: 32, d: 26, floorY: 11, h: 10, color: '#1f3d3c', floorTexture: "wood_floor.png" },
   { id: 'nurses_office_backroom', name: "Nurse's Office Backroom", cx: 164, cz: 135, w: 24, d: 20, floorY: 11, h: 10, color: '#19302f', floorTexture: "wood_floor.png" },
-  { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'N_S' },
+  { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'S_N' },
   { id: 'lower_hallway_south', name: 'South Wing Hallway', cx: 90, cz: -76.5, w: 14, d: 85, floorY: 0, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
   { id: 'main_office', name: 'Main Office', cx: 90, cz: -139, w: 50, d: 40, floorY: 0, h: 10, color: '#1e293b', floorTexture: "wood_floor.png" },
 ];
@@ -323,6 +327,15 @@ export default function App() {
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
   const [promptText, setPromptText] = useState<string>('');
   const [canInteract, setCanInteract] = useState<boolean>(false);
+  
+  // Map Validation Mode state
+  const [validationModeEnabled, setValidationModeEnabled] = useState<boolean>(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
+  const [currentIssueIndex, setCurrentIssueIndex] = useState<number>(-1);
+  const mapValidatorRef = useRef(getRoomSealValidator());
+  
+  // Not Enough Points feedback state
+  const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -331,6 +344,25 @@ export default function App() {
 
     // Initialize doors system
     initializeDoors();
+    
+    // Set up door event listener for purchase attempts
+    const doorManager = getDoorManager();
+    const unsubscribePurchaseAttempt = doorManager.on('purchaseAttempt', (data) => {
+      console.log('[App] Door purchase attempt failed:', data.doorName);
+      setShowNotEnoughPoints(true);
+      setTimeout(() => setShowNotEnoughPoints(false), 2000);
+    });
+    
+    // Cleanup on unmount
+    return () => {
+      unsubscribePurchaseAttempt();
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const mount = mountRef.current;
+    if (!canvas || !mount) return;
 
     // ---- SCENE SETUP ----
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -408,17 +440,21 @@ export default function App() {
       const worldZ = room.cz + doorZ;
       
       const doorObj: RuntimeDoor = {
-        ...dc,
         id: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        type: 'gap',
+        axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
         x: worldX,
         z: worldZ,
         w: doorW,
         h: doorH,
         d: doorD,
-        axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
+        cost: dc.cost,
+        unlocked: false,
+        name: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        roomId: dc.roomId,
+        side: gap.side,
         isOpen: false,
         isPurchased: false,
-        side: gap.side,
       };
       doors.push(doorObj);
     });
@@ -468,12 +504,102 @@ export default function App() {
       const customFloorMat = new THREE.MeshLambertMaterial({ color: roomColor });
       const floorMat = r.floorTexture === 'wood_floor.png' ? floorMatWood : customFloorMat;
 
-      // Floor
+      // Floor - handle carved floors for stairwells and other rooms with floor holes
       if (!r.disabledFloor) {
-        const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
-        floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
-        floor.receiveShadow = true;
-        scene.add(floor);
+        if (r.carvedFloors && r.carvedFloors.length > 0) {
+          // Build floor with carved out sections (for stairwell openings, etc.)
+          const floorSegments: Array<{ x: number; z: number; w: number; d: number }> = [];
+          const floorZMin = r.cz - r.d / 2;
+          const floorZMax = r.cz + r.d / 2;
+          const floorXMin = r.cx - r.w / 2;
+          const floorXMax = r.cx + r.w / 2;
+          
+          // Parse carved floor definitions (format: "x:z:w:d" or use trapdoors/ceilingHoles from adjacent rooms)
+          // For now, create a simple floor that avoids the carved areas
+          // Check if this room has trapdoors defined (holes in floor)
+          const trapdoors = r.trapdoors || [];
+          
+          if (trapdoors.length > 0) {
+            // Build floor around trapdoors using segments
+            // Simple approach: create full floor then subtract holes by building segments
+            const holeFreeZones = trapdoors.map(t => ({
+              xMin: t.cx - t.w / 2,
+              xMax: t.cx + t.w / 2,
+              zMin: t.cz - t.d / 2,
+              zMax: t.cz + t.d / 2
+            }));
+            
+            // Create floor segments avoiding holes - split into strips
+            let currentZ = floorZMin;
+            while (currentZ < floorZMax) {
+              // Find next hole boundary in Z direction
+              let nextZ = floorZMax;
+              for (const hole of holeFreeZones) {
+                if (hole.zMin > currentZ && hole.zMin < nextZ) nextZ = hole.zMin;
+                if (hole.zMax > currentZ && hole.zMax < nextZ && hole.zMax > currentZ) {
+                  // Skip to after this hole if we're at its start
+                }
+              }
+              
+              const stripDepth = nextZ - currentZ;
+              if (stripDepth > 0.1) {
+                // Check for holes in this strip
+                const holesInStrip = holeFreeZones.filter(h => h.zMin <= nextZ && h.zMax >= currentZ);
+                
+                if (holesInStrip.length === 0) {
+                  // No holes, create full strip
+                  const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, stripDepth), floorMat);
+                  floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                  floor.receiveShadow = true;
+                  scene.add(floor);
+                } else {
+                  // Has holes, create segments around them
+                  let currentX = floorXMin;
+                  const sortedHoles = [...holesInStrip].sort((a, b) => a.xMin - b.xMin);
+                  
+                  for (const hole of sortedHoles) {
+                    if (hole.xMin > currentX + 0.1) {
+                      const segWidth = hole.xMin - currentX;
+                      const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
+                      floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                      floor.receiveShadow = true;
+                      scene.add(floor);
+                    }
+                    currentX = Math.max(currentX, hole.xMax);
+                  }
+                  
+                  // Final segment after last hole
+                  if (currentX < floorXMax - 0.1) {
+                    const segWidth = floorXMax - currentX;
+                    const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
+                    floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                    floor.receiveShadow = true;
+                    scene.add(floor);
+                  }
+                }
+              }
+              
+              // Move to next zone
+              let minHoleZ = floorZMax;
+              for (const hole of holeFreeZones) {
+                if (hole.zMax > currentZ && hole.zMax < minHoleZ) minHoleZ = hole.zMax;
+              }
+              currentZ = minHoleZ;
+            }
+          } else {
+            // No trapdoors, create simple full floor
+            const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
+            floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+            floor.receiveShadow = true;
+            scene.add(floor);
+          }
+        } else {
+          // Standard floor without carvings
+          const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
+          floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+          floor.receiveShadow = true;
+          scene.add(floor);
+        }
       }
 
       // Ceiling
@@ -540,8 +666,8 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'E_W' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
+        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
+        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
         scene.add(ramp);
       }
     };
@@ -587,6 +713,70 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
+      
+      // Map Validation Mode - F8 to scan current room
+      if (e.code === 'F8') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        
+        // Get current room name based on player position
+        const px = playerPos.current.x;
+        const pz = playerPos.current.z;
+        let currentRoomName: string | undefined;
+        
+        for (const room of INITIAL_ROOMS) {
+          const halfW = room.w / 2;
+          const halfD = room.d / 2;
+          if (px >= room.cx - halfW && px <= room.cx + halfW &&
+              pz >= room.cz - halfD && pz <= room.cz + halfD) {
+            currentRoomName = room.name;
+            break;
+          }
+        }
+        
+        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
+        validator.enable(currentRoomName);
+        const issues = validator.getIssues();
+        setValidationIssues(issues);
+        setValidationModeEnabled(true);
+        setCurrentIssueIndex(-1);
+        console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
+      }
+      
+      // Map Validation Mode - F9 to teleport to next issue
+      if (e.code === 'F9') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        const issues = validator.getIssues();
+        
+        if (issues.length > 0) {
+          const nextIndex = (currentIssueIndex + 1) % issues.length;
+          const issue = issues[nextIndex];
+          
+          // Teleport player to issue location
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI; // Face the issue
+          setCurrentIssueIndex(nextIndex);
+          console.log(`[RoomSealValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
+        }
+      }
+      
+      // Toggle validation mode with F10
+      if (e.code === 'F10') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
+        const enabled = validator.toggle();
+        setValidationModeEnabled(enabled);
+        if (enabled) {
+          const issues = validator.getIssues();
+          setValidationIssues(issues);
+        } else {
+          setValidationIssues([]);
+          setCurrentIssueIndex(-1);
+        }
+        console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
+      }
       
       // Door interaction - Press E to purchase door
       if (e.code === 'KeyE') {
@@ -797,6 +987,11 @@ export default function App() {
       camera.rotation.y = yaw.current;
       camera.rotation.x = pitch.current;
       
+      // Update validation mode highlights if enabled
+      if (validationModeEnabled) {
+        mapValidatorRef.current.updateHighlights(now / 1000);
+      }
+      
       // Door interaction raycast
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const doorColliders = Array.from(doorColliderMap.keys());
@@ -827,14 +1022,48 @@ export default function App() {
         setCanInteract(false);
       }
       
+      // Sync with DoorManager for event handling
+      const doorManager = getDoorManager();
+      const playerPosVec = { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z };
+      const playerDirVec = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
+      doorManager.updateInteraction(playerPosVec, playerDirVec);
+      
       renderer.render(scene, camera);
     };
     loop();
 
-    // Keyboard handler for door interaction
+    // Keyboard handler for door interaction (uses hoveredDoorRef from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
-      if (e.code === 'KeyE' && isPointerLocked && canInteract) {
-        handleDoorInteraction();
+      if (e.code === 'KeyE' && isPointerLocked) {
+        console.log("[E] key pressed");
+        
+        // Use the same door reference that drives the visible prompt
+        const currentDoor = hoveredDoorRef.current;
+        
+        if (!currentDoor) {
+          console.log("Hovered/interacted door exists: NO (null)");
+          return;
+        }
+        
+        console.log("Hovered/interacted door exists:", currentDoor.name || "unnamed door");
+        console.log("purchaseDoor() called");
+        
+        const doorManager = getDoorManager();
+        const playerId = 'player1';
+        const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+        
+        console.log("purchaseDoor() returned");
+        
+        if (result.success) {
+          console.log('[App] Door purchased successfully:', currentDoor.name);
+          doorRenderer.updateDoorState(currentDoor.id, true);
+        } else {
+          console.log('[App] Door purchase failed:', result.reason);
+          if (result.reason === "INSUFFICIENT_POINTS") {
+            setShowNotEnoughPoints(true);
+            setTimeout(() => setShowNotEnoughPoints(false), 2000);
+          }
+        }
       }
     };
     window.addEventListener('keydown', handleInteractionKey);
@@ -857,6 +1086,23 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden select-none">
+      {/* Points Display */}
+      <div className="absolute top-4 right-4 z-20">
+        <PointsDisplay playerId="player1" />
+      </div>
+
+      {/* Not Enough Points Feedback */}
+      {showNotEnoughPoints && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
+          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
+            NOT ENOUGH POINTS
+          </div>
+        </div>
+      )}
+
+      {/* Dev Debug Panel */}
+      <DevDebugPanel playerId="player1" />
+
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
@@ -884,6 +1130,80 @@ export default function App() {
             Click to Play · WASD Move · Mouse Look · V Noclip · ESC Free Cursor
           </div>
         </div>
+      )}
+
+      {/* Map Validation Mode UI */}
+      {validationModeEnabled && (
+        <>
+          {/* Validation mode indicator */}
+          <div className="absolute top-4 left-4 pointer-events-none z-10">
+            <div className="bg-red-900/80 border border-red-500 px-3 py-2 rounded-lg text-xs font-mono text-red-300">
+              <div className="font-bold text-red-200 mb-1">MAP VALIDATION MODE</div>
+              <div>Issues: {validationIssues.length}</div>
+              {currentIssueIndex >= 0 && (
+                <div className="text-yellow-300">Viewing: {currentIssueIndex + 1}/{validationIssues.length}</div>
+              )}
+              <div className="mt-2 text-gray-400 text-[10px]">
+                F8: Scan · F9: Next Issue · F10: Toggle
+              </div>
+            </div>
+          </div>
+
+          {/* Issues list */}
+          {validationIssues.length > 0 && (
+            <div className="absolute top-4 right-4 max-w-md max-h-96 overflow-y-auto pointer-events-auto z-10">
+              <div className="bg-black/80 border border-red-500/50 rounded-lg p-3">
+                <div className="text-xs font-mono text-red-300 font-bold mb-2">DETECTED ISSUES</div>
+                <div className="space-y-1">
+                  {validationIssues.map((issue, idx) => (
+                    <div
+                      key={issue.id}
+                      className={`text-[10px] font-mono p-1.5 rounded cursor-pointer transition-colors ${
+                        idx === currentIssueIndex
+                          ? 'bg-yellow-900/50 text-yellow-200 border border-yellow-500/50'
+                          : issue.severity === 'critical'
+                            ? 'bg-red-950/50 text-red-300 hover:bg-red-900/30'
+                            : issue.severity === 'high'
+                              ? 'bg-orange-950/50 text-orange-300 hover:bg-orange-900/30'
+                              : 'bg-gray-900/50 text-gray-300 hover:bg-gray-800/50'
+                      }`}
+                      onClick={() => {
+                        setCurrentIssueIndex(idx);
+                        const validator = mapValidatorRef.current;
+                        const issues = validator.getIssues();
+                        if (issues[idx]) {
+                          playerPos.current.set(issues[idx].location[0], issues[idx].location[1] + 2, issues[idx].location[2] + 5);
+                          yaw.current = Math.PI;
+                        }
+                      }}
+                    >
+                      <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                        issue.type === 'floor_gap' ? 'bg-red-500' :
+                        issue.type === 'wall_gap' ? 'bg-yellow-500' :
+                        issue.type === 'door_gap' ? 'bg-blue-500' :
+                        issue.type === 'stair_gap' ? 'bg-orange-500' :
+                        issue.type === 'corner_crack' ? 'bg-pink-500' :
+                        'bg-gray-500'
+                      }`} />
+                      [{issue.severity.toUpperCase()}] {issue.roomName} - {issue.type.replace('_', ' ')}
+                      <div className="text-gray-400 ml-4 truncate">{issue.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No issues message */}
+          {validationModeEnabled && validationIssues.length === 0 && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+              <div className="bg-green-900/80 border border-green-500 px-6 py-4 rounded-lg text-sm font-mono text-green-300">
+                <div className="font-bold text-green-200 mb-1">NO ISSUES DETECTED</div>
+                <div className="text-green-400">Map geometry is clean!</div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
