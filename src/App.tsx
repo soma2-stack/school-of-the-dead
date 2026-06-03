@@ -468,12 +468,102 @@ export default function App() {
       const customFloorMat = new THREE.MeshLambertMaterial({ color: roomColor });
       const floorMat = r.floorTexture === 'wood_floor.png' ? floorMatWood : customFloorMat;
 
-      // Floor
+      // Floor - handle carved floors for stairwells and other rooms with floor holes
       if (!r.disabledFloor) {
-        const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
-        floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
-        floor.receiveShadow = true;
-        scene.add(floor);
+        if (r.carvedFloors && r.carvedFloors.length > 0) {
+          // Build floor with carved out sections (for stairwell openings, etc.)
+          const floorSegments: Array<{ x: number; z: number; w: number; d: number }> = [];
+          const floorZMin = r.cz - r.d / 2;
+          const floorZMax = r.cz + r.d / 2;
+          const floorXMin = r.cx - r.w / 2;
+          const floorXMax = r.cx + r.w / 2;
+          
+          // Parse carved floor definitions (format: "x:z:w:d" or use trapdoors/ceilingHoles from adjacent rooms)
+          // For now, create a simple floor that avoids the carved areas
+          // Check if this room has trapdoors defined (holes in floor)
+          const trapdoors = r.trapdoors || [];
+          
+          if (trapdoors.length > 0) {
+            // Build floor around trapdoors using segments
+            // Simple approach: create full floor then subtract holes by building segments
+            const holeFreeZones = trapdoors.map(t => ({
+              xMin: t.cx - t.w / 2,
+              xMax: t.cx + t.w / 2,
+              zMin: t.cz - t.d / 2,
+              zMax: t.cz + t.d / 2
+            }));
+            
+            // Create floor segments avoiding holes - split into strips
+            let currentZ = floorZMin;
+            while (currentZ < floorZMax) {
+              // Find next hole boundary in Z direction
+              let nextZ = floorZMax;
+              for (const hole of holeFreeZones) {
+                if (hole.zMin > currentZ && hole.zMin < nextZ) nextZ = hole.zMin;
+                if (hole.zMax > currentZ && hole.zMax < nextZ && hole.zMax > currentZ) {
+                  // Skip to after this hole if we're at its start
+                }
+              }
+              
+              const stripDepth = nextZ - currentZ;
+              if (stripDepth > 0.1) {
+                // Check for holes in this strip
+                const holesInStrip = holeFreeZones.filter(h => h.zMin <= nextZ && h.zMax >= currentZ);
+                
+                if (holesInStrip.length === 0) {
+                  // No holes, create full strip
+                  const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, stripDepth), floorMat);
+                  floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                  floor.receiveShadow = true;
+                  scene.add(floor);
+                } else {
+                  // Has holes, create segments around them
+                  let currentX = floorXMin;
+                  const sortedHoles = [...holesInStrip].sort((a, b) => a.xMin - b.xMin);
+                  
+                  for (const hole of sortedHoles) {
+                    if (hole.xMin > currentX + 0.1) {
+                      const segWidth = hole.xMin - currentX;
+                      const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
+                      floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                      floor.receiveShadow = true;
+                      scene.add(floor);
+                    }
+                    currentX = Math.max(currentX, hole.xMax);
+                  }
+                  
+                  // Final segment after last hole
+                  if (currentX < floorXMax - 0.1) {
+                    const segWidth = floorXMax - currentX;
+                    const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
+                    floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                    floor.receiveShadow = true;
+                    scene.add(floor);
+                  }
+                }
+              }
+              
+              // Move to next zone
+              let minHoleZ = floorZMax;
+              for (const hole of holeFreeZones) {
+                if (hole.zMax > currentZ && hole.zMax < minHoleZ) minHoleZ = hole.zMax;
+              }
+              currentZ = minHoleZ;
+            }
+          } else {
+            // No trapdoors, create simple full floor
+            const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
+            floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+            floor.receiveShadow = true;
+            scene.add(floor);
+          }
+        } else {
+          // Standard floor without carvings
+          const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
+          floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+          floor.receiveShadow = true;
+          scene.add(floor);
+        }
       }
 
       // Ceiling
@@ -540,8 +630,8 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'E_W' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
+        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
+        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
         scene.add(ramp);
       }
     };
