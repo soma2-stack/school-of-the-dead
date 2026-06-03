@@ -60,6 +60,13 @@ export interface DoorEventData {
 // ============================================================================
 // Default Doors Configuration
 // Add new doors here to make them available in the game
+// 
+// Door positions calculated from room centers and gap locations in App.tsx:
+// - Starter Classroom: center (17.5, -40), N gap at z=-10 (room edge is z=-10)
+// - Hallway: center (20, -3), spans x=-20 to x=60, z=-10 to z=4
+// - Science Lab: center (5, 26.5), S gap at x=5 (room edge is z=4)
+// - Library: center (40, 26.5), S gap at x=40 (room edge is z=4)
+// - Cafeteria: center (-50, -3), E gap at z=-3 (room edge is x=-20)
 // ============================================================================
 
 export const DEFAULT_DOORS: BuyableDoorConfig[] = [
@@ -67,9 +74,12 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'starter_classroom_door',
     name: 'Starter Classroom Door',
     cost: 750,
-    position: { x: 17.5, y: 1.5, z: -10 }, // Between starter classroom (z=-40) and hallway (z=-3)
+    // Starter Classroom north wall is at z = -40 + 30 = -10
+    // Hallway south wall is at z = -3 - 7 = -10 (they meet!)
+    // Gap center in starter is at x = -17.5 relative to room center 17.5, so world x = 0
+    position: { x: 0, y: 1.5, z: -10 },
     width: 6,
-    height: 7.5,
+    height: 3,
     connectedRoomId: 'hallway',
     isOpen: false,
   },
@@ -77,9 +87,12 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_science_lab_door',
     name: 'Science Lab Door',
     cost: 1000,
-    position: { x: 12.5, y: 1.5, z: 4 }, // Between hallway and science lab
+    // Science Lab south wall is at z = 26.5 - 22.5 = 4
+    // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
+    // Gap center in science_lab is at x = 0 relative to room center 5, so world x = 5
+    position: { x: 5, y: 1.5, z: 4 },
     width: 6,
-    height: 7.5,
+    height: 3,
     connectedRoomId: 'science_lab',
     isOpen: false,
   },
@@ -87,9 +100,12 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_library_door',
     name: 'Library Door',
     cost: 1000,
-    position: { x: 38, y: 1.5, z: 4 }, // Between hallway and library
+    // Library south wall is at z = 26.5 - 22.5 = 4
+    // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
+    // Gap center in library is at x = 0 relative to room center 40, so world x = 40
+    position: { x: 40, y: 1.5, z: 4 },
     width: 6,
-    height: 7.5,
+    height: 3,
     connectedRoomId: 'library',
     isOpen: false,
   },
@@ -97,9 +113,12 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_cafeteria_door',
     name: 'Cafeteria Entrance',
     cost: 1250,
-    position: { x: -20, y: 1.5, z: -3 }, // Between hallway and cafeteria
+    // Cafeteria east wall is at x = -50 + 30 = -20
+    // Hallway west wall is at x = 20 - 40 = -20 (they meet!)
+    // Gap center in cafeteria is at z = 0 relative to room center -3, so world z = -3
+    position: { x: -20, y: 1.5, z: -3 },
     width: 14,
-    height: 7.5,
+    height: 3,
     connectedRoomId: 'cafeteria',
     isOpen: false,
   },
