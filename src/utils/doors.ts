@@ -92,7 +92,8 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'starter_classroom_door',
     name: 'Starter Classroom Door',
     cost: 750,
-    // Starter Classroom: N wall at z=-10, gap center at x=0
+    // Starter Classroom: cx=17.5, cz=-40, w=75, d=60
+    // N wall at z = -40 + 30 = -10, gap center at x=0 (world coords)
     position: { x: 0, y: 1.5, z: -10 },
     width: 6,
     height: 3,
@@ -103,7 +104,8 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_science_lab_door',
     name: 'Science Lab Door',
     cost: 1000,
-    // Science Lab: S wall at z=4, gap center at x=5
+    // Science Lab: cx=5, cz=26.5, w=30, d=45
+    // S wall at z = 26.5 - 22.5 = 4, gap center at x=5 (world coords)
     position: { x: 5, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -114,7 +116,8 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_library_door',
     name: 'Library Door',
     cost: 1000,
-    // Library: S wall at z=4, gap center at x=40
+    // Library: cx=40, cz=26.5, w=36, d=45
+    // S wall at z = 26.5 - 22.5 = 4, gap center at x=40 (world coords)
     position: { x: 40, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -125,7 +128,8 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_cafeteria_door',
     name: 'Cafeteria Entrance',
     cost: 1250,
-    // Cafeteria: E wall at x=-20, gap center at z=-3
+    // Cafeteria: cx=-50, cz=-3, w=60, d=50
+    // E wall at x = -50 + 30 = -20, gap center at z=-3 (world coords)
     position: { x: -20, y: 1.5, z: -3 },
     width: 14,
     height: 3,
