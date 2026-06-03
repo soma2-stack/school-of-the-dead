@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { RuntimeDoor } from './types';
+import { getDoorManager, initializeDoors } from './utils/doors';
+import { getPointsManager } from './utils/points';
+import { createDoorRenderer } from './utils/DoorRenderer';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -327,6 +329,9 @@ export default function App() {
     const mount = mountRef.current;
     if (!canvas || !mount) return;
 
+    // Initialize doors system
+    initializeDoors();
+
     // ---- SCENE SETUP ----
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -339,6 +344,9 @@ export default function App() {
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
     camera.position.copy(playerPos.current);
+
+    // Create door renderer to spawn visible meshes for all doors
+    const doorRenderer = createDoorRenderer('default', scene);
 
     // ---- LIGHTING ----
     scene.add(new THREE.AmbientLight(0x222222, 1.0));
@@ -579,6 +587,27 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
+      
+      // Door interaction - Press E to purchase door
+      if (e.code === 'KeyE') {
+        const doorManager = getDoorManager();
+        const pointsManager = getPointsManager();
+        const playerId = 'player1'; // TODO: Replace with actual player ID from game state
+        
+        const currentDoor = doorManager.getCurrentInteractedDoor();
+        if (currentDoor) {
+          console.log('[App] Attempting to purchase door:', currentDoor.name);
+          const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+          
+          if (result.success) {
+            console.log('[App] Door purchased successfully:', currentDoor.name);
+            // Hide the door mesh when purchased
+            doorRenderer.updateDoorState(currentDoor.id, true);
+          } else {
+            console.log('[App] Door purchase failed:', result.reason);
+          }
+        }
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => { keysPressed.current[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
@@ -818,7 +847,10 @@ export default function App() {
       document.removeEventListener('pointerlockchange', handleLockChange);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('keydown', handleInteractionKey);
+      
+      // Cleanup door renderer
+      doorRenderer.destroy();
+      
       renderer.dispose();
     };
   }, []);
