@@ -169,7 +169,7 @@ const INITIAL_ROOMS: Room[] = [
   { id: 'gym_north_hallway', name: 'Gym North Connector', cx: 144, cz: 65, w: 18, d: 40, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
   { id: 'nurses_office', name: "Nurse's Office", cx: 164, cz: 112, w: 32, d: 26, floorY: 11, h: 10, color: '#1f3d3c', floorTexture: "wood_floor.png" },
   { id: 'nurses_office_backroom', name: "Nurse's Office Backroom", cx: 164, cz: 135, w: 24, d: 20, floorY: 11, h: 10, color: '#19302f', floorTexture: "wood_floor.png" },
-  { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'N_S' },
+  { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'S_N' },
   { id: 'lower_hallway_south', name: 'South Wing Hallway', cx: 90, cz: -76.5, w: 14, d: 85, floorY: 0, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
   { id: 'main_office', name: 'Main Office', cx: 90, cz: -139, w: 50, d: 40, floorY: 0, h: 10, color: '#1e293b', floorTexture: "wood_floor.png" },
 ];
@@ -630,8 +630,8 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
+        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'E_W' ? 1 : -1) * Math.atan2(climb, r.w);
+        else ramp.rotation.x = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
         scene.add(ramp);
       }
     };
