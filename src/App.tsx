@@ -413,6 +413,7 @@ export default function App() {
         z: worldZ,
         w: doorW,
         h: doorH,
+        d: doorD,
         axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
         isOpen: false,
         isPurchased: false,
@@ -427,7 +428,8 @@ export default function App() {
     
     doors.forEach(door => {
       // Door mesh (visual)
-      const doorGeom = new THREE.BoxGeometry(door.w, door.h, doorD);
+      const doorThickness = door.d || 0.3;
+      const doorGeom = new THREE.BoxGeometry(door.w, door.h, doorThickness);
       const doorMesh = new THREE.Mesh(doorGeom, doorMat);
       
       // Position door centered in gap at floor level
@@ -439,7 +441,7 @@ export default function App() {
       door.mesh = doorMesh;
       
       // Door collider (invisible physics)
-      const colliderGeom = new THREE.BoxGeometry(door.w, door.h, doorD + 0.1);
+      const colliderGeom = new THREE.BoxGeometry(door.w, door.h, doorThickness + 0.1);
       const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
       const collider = new THREE.Mesh(colliderGeom, colliderMat);
       collider.position.copy(doorMesh.position);
