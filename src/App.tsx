@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { getDoorManager, initializeDoors } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
-import { getMapValidator, MapValidationIssue } from './utils/MapValidator';
+import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -327,9 +327,9 @@ export default function App() {
   
   // Map Validation Mode state
   const [validationModeEnabled, setValidationModeEnabled] = useState<boolean>(false);
-  const [validationIssues, setValidationIssues] = useState<MapValidationIssue[]>([]);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [currentIssueIndex, setCurrentIssueIndex] = useState<number>(-1);
-  const mapValidatorRef = useRef(getMapValidator());
+  const mapValidatorRef = useRef(getRoomSealValidator());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -685,16 +685,33 @@ export default function App() {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
       
-      // Map Validation Mode - F8 to run full scan
+      // Map Validation Mode - F8 to scan current room
       if (e.code === 'F8') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
+        
+        // Get current room name based on player position
+        const px = playerPos.current.x;
+        const pz = playerPos.current.z;
+        let currentRoomName: string | undefined;
+        
+        for (const room of INITIAL_ROOMS) {
+          const halfW = room.w / 2;
+          const halfD = room.d / 2;
+          if (px >= room.cx - halfW && px <= room.cx + halfW &&
+              pz >= room.cz - halfD && pz <= room.cz + halfD) {
+            currentRoomName = room.name;
+            break;
+          }
+        }
+        
         validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
-        const result = validator.runFullScan();
-        setValidationIssues(result.issues);
+        validator.enable(currentRoomName);
+        const issues = validator.getIssues();
+        setValidationIssues(issues);
         setValidationModeEnabled(true);
         setCurrentIssueIndex(-1);
-        console.log(`[MapValidator] Scan complete: ${result.issues.length} issues found in ${result.scanTime.toFixed(2)}ms`);
+        console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
       }
       
       // Map Validation Mode - F9 to teleport to next issue
@@ -708,10 +725,10 @@ export default function App() {
           const issue = issues[nextIndex];
           
           // Teleport player to issue location
-          playerPos.current.set(issue.position.x, issue.position.y + 2, issue.position.z + 5);
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
           yaw.current = Math.PI; // Face the issue
           setCurrentIssueIndex(nextIndex);
-          console.log(`[MapValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description}`);
+          console.log(`[RoomSealValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
         }
       }
       
@@ -720,11 +737,11 @@ export default function App() {
         e.preventDefault();
         const validator = mapValidatorRef.current;
         validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
-        const enabled = validator.toggle(scene);
+        const enabled = validator.toggle();
         setValidationModeEnabled(enabled);
         if (enabled) {
-          const result = validator.runFullScan();
-          setValidationIssues(result.issues);
+          const issues = validator.getIssues();
+          setValidationIssues(issues);
         } else {
           setValidationIssues([]);
           setCurrentIssueIndex(-1);
@@ -1075,20 +1092,20 @@ export default function App() {
                         const validator = mapValidatorRef.current;
                         const issues = validator.getIssues();
                         if (issues[idx]) {
-                          playerPos.current.set(issues[idx].position.x, issues[idx].position.y + 2, issues[idx].position.z + 5);
+                          playerPos.current.set(issues[idx].location[0], issues[idx].location[1] + 2, issues[idx].location[2] + 5);
                           yaw.current = Math.PI;
                         }
                       }}
                     >
                       <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
                         issue.type === 'floor_gap' ? 'bg-red-500' :
-                        issue.type === 'missing_wall' ? 'bg-yellow-500' :
+                        issue.type === 'wall_gap' ? 'bg-yellow-500' :
                         issue.type === 'door_gap' ? 'bg-blue-500' :
-                        issue.type === 'overlap' ? 'bg-purple-500' :
-                        issue.type === 'stair_misalign' ? 'bg-orange-500' :
-                        'bg-pink-500'
+                        issue.type === 'stair_gap' ? 'bg-orange-500' :
+                        issue.type === 'corner_crack' ? 'bg-pink-500' :
+                        'bg-gray-500'
                       }`} />
-                      [{issue.severity.toUpperCase()}] {issue.type.replace('_', ' ')}
+                      [{issue.severity.toUpperCase()}] {issue.roomName} - {issue.type.replace('_', ' ')}
                       <div className="text-gray-400 ml-4 truncate">{issue.description}</div>
                     </div>
                   ))}
