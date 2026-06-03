@@ -6,9 +6,12 @@ __pycache__/
 *.obj
 dist/
 build/
-target/
+*.o
+*.obj
+*.out
 
 # Dependencies
+node_modules/
 .venv/
 venv/
 node_modules/

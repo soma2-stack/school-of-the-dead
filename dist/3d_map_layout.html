@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dead Halls - 3D Map Blueprint Export</title>
+  <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #080d12;
+      color: #cbd5e1;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col md:flex-row overflow-hidden">
+
+  <!-- Left Panel: Directory, Coordinates, JSON schemas for Perplexity -->
+  <div class="w-full md:w-[450px] bg-[#0c131a] border-b md:border-b-0 md:border-r border-slate-900 flex flex-col h-[40%] md:h-full z-10">
+    <div class="p-6 border-b border-slate-900 flex items-center justify-between">
+      <div>
+        <h1 class="text-emerald-400 font-mono font-bold tracking-tight text-lg">MAP BLUEPRINT EXPORT</h1>
+        <p class="text-xs text-slate-500 font-mono">Dead Halls Map Sandbox v1.40</p>
+      </div>
+      <span class="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase">ACTIVE</span>
+    </div>
+
+    <!-- Scrollable info & code pane -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+      <div class="space-y-2">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Overview Description</h2>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          This self-contained file displays the complete <span class="text-slate-300 font-medium">Westbrook High Layout</span> blueprint coordinates and connections in interactive 3D. Share this layout data (JSON below) or upload this whole HTML file to models like <span class="text-emerald-400 font-medium">Perplexity</span>, Gemini, or Claude to analyze school layouts, build navigation networks, or reference design parameters intact.
+        </p>
+      </div>
+
+      <!-- Action items -->
+      <div class="grid grid-cols-3 gap-1.5">
+        <button onclick="copyLayoutJSON()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:text-white px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Copy JSON data to clipboard">
+          📋 Copy JSON
+        </button>
+        <button onclick="downloadThisHTML()" class="bg-emerald-500 text-slate-950 hover:bg-emerald-400 px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Download interactive 3D map as HTML">
+          💾 Download HTML
+        </button>
+        <button onclick="downloadLayoutJSON()" class="bg-amber-500 text-slate-950 hover:bg-amber-400 px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Export layout as raw JSON file">
+          📥 Export JSON File
+        </button>
+      </div>
+
+      <!-- Roof/Ceiling Mode Controls -->
+      <div class="space-y-2 border-t border-slate-900 pt-4">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Roof / Ceilings ViewMode</h2>
+        <div class="grid grid-cols-3 gap-1.5 text-xs">
+          <button onclick="setRoofMode('glass')" id="btn-roof-glass" class="px-2 py-1.5 bg-emerald-500 text-slate-950 font-mono font-bold rounded cursor-pointer transition text-center text-[10px]">
+            Glass Blue (On)
+          </button>
+          <button onclick="setRoofMode('solid')" id="btn-roof-solid" class="px-2 py-1.5 bg-slate-900 text-slate-400 border border-slate-800 font-mono font-bold rounded cursor-pointer hover:bg-slate-850 transition text-center text-[10px]">
+            Solid Gray
+          </button>
+          <button onclick="setRoofMode('hidden')" id="btn-roof-hidden" class="px-2 py-1.5 bg-slate-900 text-slate-400 border border-slate-800 font-mono font-bold rounded cursor-pointer hover:bg-slate-850 transition text-center text-[10px]">
+            Hidden
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Room Entities Coordinates (JSON)</h2>
+        <div class="relative">
+          <pre id="json-code" class="bg-slate-950 p-4 rounded border border-slate-900 text-[10px] text-emerald-500/90 overflow-x-auto max-h-[250px] font-mono"></pre>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Room Gaps / Connectors Config</h2>
+        <div class="relative">
+          <pre id="gaps-code" class="bg-slate-950 p-4 rounded border border-slate-900 text-[10px] text-amber-500/90 overflow-x-auto max-h-[200px] font-mono"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Left side Footer status -->
+    <div class="p-4 bg-slate-950 flex items-center justify-between border-t border-slate-900 text-[10px] font-mono text-slate-500">
+      <span>GRID OVERRIDE: SYNC ON</span>
+      <span>WALK MODE: 3D blue-lines</span>
+    </div>
+  </div>
+
+  <!-- Right Panel: Interactive 3D Canvas Viewport -->
+  <div class="flex-1 relative flex flex-col h-[60%] md:h-full">
+    <!-- Viewport Heading Info Overlay -->
+    <div class="absolute top-4 left-4 z-20 pointer-events-none space-y-1">
+      <div class="bg-slate-950/80 backdrop-blur-md px-3 py-2 rounded border border-slate-900/60 flex items-center gap-3">
+        <div class="size-2 rounded-full bg-emerald-500 animate-pulse"></div>
+        <span class="text-xs font-mono font-bold tracking-widest text-slate-200">INTERACTIVE BLUEPRINT VIEWPORT</span>
+      </div>
+      <p class="text-[10px] font-mono text-slate-400 bg-slate-950/40 px-2 py-0.5 rounded w-max">Drag: Rotate | Scroll: Zoom | Right-Click: Pan</p>
+    </div>
+
+    <canvas id="blueprint-canvas" class="w-full h-full block"></canvas>
+  </div>
+
+  <script id="data-source">
+    // Live configured school sandbox boundaries & layout blueprint
+    const MAP_ROOMS = [
+      { id: 'starter', name: 'Starter Classroom', cx: 17.5, cz: -40, w: 75, d: 60, floorY: 0, h: 10, color: '#3d5c3a', floorTexture: "wood_floor.png" },
+      { id: 'hallway', name: 'Main Hallway', cx: 20, cz: -3, w: 80, d: 14, floorY: 0, h: 10, color: '#323247' },
+      { id: 'science_lab', name: 'Science Lab', cx: 5, cz: 26.5, w: 30, d: 45, floorY: 0, h: 10, color: '#4a3720' },
+      { id: 'library', name: 'Library Shelf Area', cx: 40, cz: 26.5, w: 36, d: 45, floorY: 0, h: 10, color: '#453c1b', floorTexture: "wood_floor.png" },
+      { id: 'stairwell', name: 'Stairwell Access', cx: 68, cz: -3, w: 16, d: 10, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'W_E' },
+      {
+        id: 'gym',
+        name: 'Gymnasium (Floor 2)',
+        cx: 144,
+        cz: 15,
+        w: 80,
+        d: 60,
+        floorY: 11,
+        h: 18,
+        color: '#20434f',
+        carvedFloors: []
+      },
+      { id: 'cafeteria', name: 'Cafeteria Wing', cx: -50, cz: -3, w: 60, d: 50, floorY: 0, h: 10, color: '#2a261f' },
+      { id: 'courtyard', name: 'Overgrown Courtyard', cx: -63, cz: 57, w: 90, d: 70, floorY: 0, h: 15, color: '#162e1a', disabledCeiling: true, trapdoors: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] },
+      { id: 'underground_tunnel', name: 'Utility Tunnel', cx: -103, cz: 63.4, w: 12, d: 80, floorY: -12, h: 9, color: '#111412', ceilingHoles: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] },
+      { id: 'the_vault', name: 'Fallout Shelter Vault', cx: -103, cz: 123.4, w: 60, d: 40, floorY: -12, h: 9, color: '#282b29' },
+      { id: 'upper_hallway', name: '2nd Floor Hallway', cx: 90, cz: -3, w: 28, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+      { id: 'principal_office', name: "Principal's Office", cx: 90, cz: 127, w: 56, d: 56, floorY: 11, h: 10, color: '#362a2a' },
+      { id: 'upper_hallway_2', name: '2nd floor hallway 2', cx: 90, cz: 51.5, w: 18, d: 95, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+      { id: 'security_room', name: 'Master Security & Breaker Room', cx: 66, cz: 51.5, w: 30, d: 35, floorY: 11, h: 10, color: '#1a212b' },
+      { id: 'upper_hallway_north', name: '2nd Floor North Connector', cx: 150, cz: 92, w: 102, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+      { id: 'gym_north_hallway', name: 'Gym North Connector', cx: 144, cz: 65, w: 18, d: 40, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+      { id: 'nurses_office', name: "Nurse's Office", cx: 164, cz: 112, w: 32, d: 26, floorY: 11, h: 10, color: '#1f3d3c', floorTexture: "wood_floor.png" },
+      { id: 'nurses_office_backroom', name: "Nurse's Office Backroom", cx: 164, cz: 135, w: 24, d: 20, floorY: 11, h: 10, color: '#19302f', floorTexture: "wood_floor.png" },
+      { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'N_S' },
+      { id: 'lower_hallway_south', name: 'South Wing Hallway', cx: 90, cz: -76.5, w: 14, d: 85, floorY: 0, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+      { id: 'main_office', name: 'Main Office', cx: 90, cz: -139, w: 50, d: 40, floorY: 0, h: 10, color: '#1e293b', floorTexture: "wood_floor.png" }
+    ];
+
+    const MAP_GAPS = {
+      starter: [{ side: 'N', center: -17.5, width: 6.0 }],
+      hallway: [
+        { side: 'S', center: -20, width: 6.0 },   // connects to starter (global X = 17.5 - 20 = -2.5) Wait, aligns with center
+        { side: 'N', center: -15, width: 6.0 },   // connects to science lab
+        { side: 'N', center: 20, width: 6.0 },    // connects to library
+        { side: 'W', center: 0, width: 14.0 },    // connects to cafeteria
+        { side: 'E', center: 0, width: 10.0 }     // connects to stairwell
+      ],
+      science_lab: [{ side: 'S', center: 0, width: 6.0 }],
+      library: [{ side: 'S', center: 0, width: 6.0 }],
+      stairwell: [
+        { side: 'W', center: 0, width: 6.0 },
+        { side: 'E', center: 0, width: 10.0 }
+      ],
+      gym: [
+        { side: 'W', center: -18, width: 10.0 },
+        { "side": "S", "center": 0, "width": 10 },
+        { "side": "N", "center": 0, "width": 10 }
+      ],
+      cafeteria: [
+        { side: 'E', center: 0, width: 14.0 },
+        { side: 'N', center: 0, width: 12.0 }
+      ],
+      courtyard: [
+        { side: 'S', center: 13, width: 12.0 }
+      ],
+      boiler_room: [
+        { side: 'N', center: 0, width: 12.0 }
+      ],
+      underground_tunnel: [
+        { side: 'S', center: 0, width: 12.0 },
+        { side: 'N', center: 0, width: 12.0 }
+      ],
+      the_vault: [ { "side": "S", "center": 0, "width": 12 } ],
+      upper_hallway: [
+        { "side": "W", "center": 0, "width": 10 },
+        { "side": "E", "center": 0, "width": 10 },
+        { "side": "S", "center": 0, "width": 6 },
+        { "side": "N", "center": 0, "width": 10 }
+      ],
+      principal_office: [
+        { "side": "S", "center": 0, "width": 8.0 }
+      ],
+      upper_hallway_2: [
+        { "side": "S", "center": 0, "width": 10 },
+        { "side": "W", "center": 0, "width": 8.0 },
+        { "side": "E", "center": 40.5, "width": 10 },
+        { "side": "N", "center": 0, "width": 8.0 }
+      ],
+      security_room: [
+        { "side": "E", "center": 0, "width": 8.0 }
+      ],
+      upper_hallway_north: [
+        { "side": "W", "center": 0, "width": 10 },
+        { "side": "N", "center": 12, "width": 10 },
+        { "side": "N", "center": 14.0, "width": 6.0 },
+        { "side": "S", "center": -6, "width": 10 }
+      ],
+      gym_north_hallway: [
+        { "side": "N", "center": 0, "width": 10 },
+        { "side": "S", "center": 0, "width": 10 }
+      ],
+      nurses_office: [
+        { "side": "S", "center": 0, "width": 6.0 },
+        { "side": "N", "center": 0, "width": 6.0 }
+      ],
+      nurses_office_backroom: [
+        { "side": "S", "center": 0, "width": 6.0 }
+      ],
+      stairwell_2: [
+        { "side": "N", "center": 0, "width": 6.0 },
+        { "side": "S", "center": 0, "width": 6.0 }
+      ],
+      lower_hallway_south: [
+        { "side": "N", "center": 0, "width": 6.0 },
+        { "side": "S", "center": 0, "width": 6.0 }
+      ],
+      main_office: [
+        { "side": "N", "center": 0, "width": 6.0 }
+      ]
+    };
+
+    const MAP_PROPS = [
+      { "id": "mystery_box_spawn", "type": "interactable", "roomId": "starter", "cx": 15, "cz": -25, "w": 4, "d": 2, "h": 3, "color": "#8b5a2b" },
+      { "id": "main_power_switch", "type": "interactable", "roomId": "security_room", "cx": 54, "cz": 51.5, "w": 4, "d": 1, "h": 4, "color": "#8b0000" }
+    ];
+
+    // Fill left pane text displays
+    document.getElementById('json-code').innerText = JSON.stringify(MAP_ROOMS, null, 2);
+    document.getElementById('gaps-code').innerText = JSON.stringify(MAP_GAPS, null, 2);
+
+    function copyLayoutJSON() {
+      const data = { rooms: MAP_ROOMS, gaps: MAP_GAPS, props: MAP_PROPS };
+      navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      alert('School map blueprint layout JSON copied securely to clipboard!');
+    }
+
+    function downloadLayoutJSON() {
+      const data = { rooms: MAP_ROOMS, gaps: MAP_GAPS, props: MAP_PROPS };
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'school_of_the_dead_layout.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function downloadThisHTML() {
+      // Create a blob containing this entire file's elements outerHTML
+      const htmlText = document.documentElement.outerHTML;
+      const blob = new Blob([htmlText], { type: 'text/html' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'dead_halls_3d_blueprint_export.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // --- THREE.JS INTERACTIVE ENVIRONMENT WORKFLOW ---
+    const MAP_CONFIG = {
+      wallThickness: 0.4,
+      ceilingThickness: 0.15,
+      doorHeight: 7.5,
+      floorThickness: 0.2
+    };
+
+    const canvas = document.getElementById('blueprint-canvas');
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x060a0f);
+    scene.fog = new THREE.FogExp2(0x060a0f, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    // Position nice bird-eye visual isometric overview
+    camera.position.set(40, 160, 200);
+
+    const controls = new THREE.OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI; // allow full vertical rotation to view sublevel geometry
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x334155, 1.2);
+    scene.add(ambientLight);
+
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight1.position.set(100, 200, 50);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0x0284c7, 0.4);
+    dirLight2.position.set(-100, -50, -100);
+    scene.add(dirLight2);
+
+    // Grid Helpers
+    const grid1 = new THREE.GridHelper(300, 60, 0x1e293b, 0x0f172a);
+    grid1.position.y = -0.05;
+    scene.add(grid1);
+
+    // Build Rooms
+    const PROCEDURAL_TEXTURES_CACHE = {};
+    const getProceduralTexture = (type) => {
+      if (PROCEDURAL_TEXTURES_CACHE[type]) {
+        return PROCEDURAL_TEXTURES_CACHE[type];
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      if (type === 'wood_floor') {
+        ctx.fillStyle = '#452c1e';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const plankHeight = 512 / 8;
+        for (let i = 0; i < 8; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#4e3425' : '#3c2518';
+          if (i % 3 === 0) ctx.fillStyle = '#432a1d';
+          ctx.fillRect(0, i * plankHeight, 512, plankHeight);
+
+          ctx.strokeStyle = '#29170e';
+          ctx.lineWidth = 1;
+          for (let j = 0; j < 5; j++) {
+            ctx.beginPath();
+            ctx.moveTo(0, i * plankHeight + Math.random() * plankHeight);
+            ctx.quadraticCurveTo(
+              256, i * plankHeight + Math.random() * plankHeight * 2 - plankHeight / 2,
+              512, i * plankHeight + Math.random() * plankHeight
+            );
+            ctx.stroke();
+          }
+
+          const joints = i % 2 === 0 ? [150, 380] : [220, 440];
+          ctx.fillStyle = '#1e110a';
+          joints.forEach(x => {
+            ctx.fillRect(x, i * plankHeight, 2, plankHeight);
+          });
+
+          ctx.strokeStyle = '#1a0d06';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, i * plankHeight);
+          ctx.lineTo(512, i * plankHeight);
+          ctx.stroke();
+        }
+      } else if (type === 'ceiling_tiles') {
+        ctx.fillStyle = '#dcd5ca';
+        ctx.fillRect(0, 0, 512, 512);
+
+        for (let i = 0; i < 600; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)';
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+        }
+
+        const tileSize = 256;
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 2; c++) {
+            const x = c * tileSize;
+            const y = r * tileSize;
+
+            ctx.fillStyle = 'rgba(115, 87, 59, 0.15)';
+            ctx.strokeStyle = 'rgba(92, 70, 48, 0.35)';
+            ctx.lineWidth = 1.5;
+
+            for (let s = 0; s < 4; s++) {
+              const cx = x + 30 + Math.random() * (tileSize - 60);
+              const cy = y + 30 + Math.random() * (tileSize - 60);
+              const radius = 25 + Math.random() * 45;
+
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+              ctx.fill();
+
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+
+            ctx.fillStyle = 'rgba(40, 45, 35, 0.65)';
+            for (let m = 0; m < 35; m++) {
+              const mx = x + Math.random() * tileSize;
+              const my = y + Math.random() * tileSize;
+              ctx.fillRect(mx, my, 1.5, 1.5);
+            }
+
+            ctx.strokeStyle = 'rgba(50,50,50,0.25)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            let px = x + 20;
+            let py = y + 20;
+            ctx.moveTo(px, py);
+            for (let k = 0; k < 10; k++) {
+              px += (Math.random() - 0.5) * 15;
+              py += Math.random() * 20;
+              ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+        }
+
+        ctx.strokeStyle = '#2d2e33';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(512, 0);
+        ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+        ctx.moveTo(0, 512); ctx.lineTo(512, 512);
+        ctx.moveTo(0, 0); ctx.lineTo(0, 512);
+        ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+        ctx.moveTo(512, 0); ctx.lineTo(512, 512);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(92, 49, 14, 0.55)';
+        for (let gridIdx = 0; gridIdx < 20; gridIdx++) {
+          ctx.fillRect(Math.random() * 512, 253 + Math.random() * 6, Math.random() * 25, Math.random() * 3);
+          ctx.fillRect(253 + Math.random() * 6, Math.random() * 512, Math.random() * 3, Math.random() * 25);
+        }
+      } else if (type === 'wall_tiles') {
+        ctx.fillStyle = '#6d8a6b';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const numTiles = 8;
+        const tSize = 64;
+        for (let r = 0; r < numTiles; r++) {
+          for (let c = 0; c < numTiles; c++) {
+            const tx = c * tSize;
+            const ty = r * tSize;
+
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#728e6f' : '#688566';
+            if ((r * c) % 5 === 0) ctx.fillStyle = '#5c7859';
+            ctx.fillRect(tx + 1, ty + 1, tSize - 2, tSize - 2);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.strokeRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+            if (Math.random() < 0.15) {
+              ctx.strokeStyle = 'rgba(20, 25, 20, 0.55)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+              ctx.lineTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+              ctx.stroke();
+            }
+
+            if ((r === 2 && c === 4) || (r === 6 && c === 1) || (r === 4 && c === 6)) {
+              ctx.fillStyle = '#222520';
+              ctx.fillRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+              ctx.fillStyle = '#444c41';
+              for (let b = 0; b < 10; b++) {
+                ctx.fillRect(tx + Math.random() * tSize, ty + Math.random() * tSize, Math.random() * 6, Math.random() * 6);
+              }
+            }
+          }
+        }
+
+        ctx.strokeStyle = '#252924';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= numTiles; i++) {
+          ctx.moveTo(0, i * tSize); ctx.lineTo(512, i * tSize);
+          ctx.moveTo(i * tSize, 0); ctx.lineTo(i * tSize, 512);
+        }
+        ctx.stroke();
+
+        for (let dripIdx = 0; dripIdx < 12; dripIdx++) {
+          const dx = Math.random() * 512;
+          const dy = Math.random() * 80;
+          const dH = 150 + Math.random() * 250;
+
+          const grad = ctx.createLinearGradient(dx, dy, dx, dy + dH);
+          grad.addColorStop(0, 'rgba(21, 26, 19, 0.55)');
+          grad.addColorStop(0.3, 'rgba(15, 20, 14, 0.35)');
+          grad.addColorStop(1, 'rgba(15, 20, 14, 0.0)');
+
+          ctx.fillStyle = grad;
+          ctx.fillRect(dx - 3, dy, 6, dH);
+        }
+
+        ctx.strokeStyle = 'rgba(224, 215, 200, 0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.font = '22px Arial';
+        ctx.strokeText("WASH ME", 80, 200);
+        ctx.strokeText("CLASS OF '95", 280, 390);
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      PROCEDURAL_TEXTURES_CACHE[type] = texture;
+      return texture;
+    };
+
+    const materials = {
+      floor: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9, metalness: 0.1 }),
+      gymFloor: new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.7, metalness: 0.1 }),
+      wall: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 }),
+      stair: new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.8 }),
+      doorGauge: new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+    };
+
+    const ceilingMeshes = [];
+
+    // Helper functions for modular geometry construction to prevent spaghetti code
+    const buildFloor = (r) => {
+      const fGeo = new THREE.BoxGeometry(r.w, MAP_CONFIG.floorThickness, r.d);
+      const isGym = r.id === 'gym';
+      let fMat;
+      if (r.floorTexture) {
+        let tex;
+        if (r.floorTexture === "wood_floor.png") {
+          tex = getProceduralTexture("wood_floor").clone();
+          tex.repeat.set(r.w / 12, r.d / 12);
+        } else {
+          const loader = new THREE.TextureLoader();
+          tex = loader.load(r.floorTexture);
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(r.w / 10, r.d / 10);
+        }
+        fMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.1 });
+      } else {
+        fMat = isGym ? materials.gymFloor : new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.8 });
+      }
+      const fMesh = new THREE.Mesh(fGeo, fMat);
+      fMesh.position.set(r.cx, r.floorY - MAP_CONFIG.floorThickness / 2, r.cz);
+      scene.add(fMesh);
+
+      if (r.trapdoors && Array.isArray(r.trapdoors)) {
+        r.trapdoors.forEach((td) => {
+          let finalCx = td.cx;
+          let finalCz = td.cz;
+          if (td.cx === -42) {
+            finalCx = -103;
+            if (td.cz === -48.5) finalCz = 23.4;
+            else if (td.cz === -31) finalCz = 40.9;
+          }
+          const tdGeo = new THREE.BoxGeometry(td.w, 0.05, td.d);
+          const tdMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+          const tdMesh = new THREE.Mesh(tdGeo, tdMat);
+          tdMesh.position.set(finalCx, r.floorY + 0.15, finalCz);
+          scene.add(tdMesh);
+        });
+      }
+    };
+
+    const buildCeiling = (r) => {
+      if (!r.disabledCeiling) {
+        const createPart = (cx, cz, w, d) => {
+          if (w <= 0.1 || d <= 0.1) return;
+          const cGeo = new THREE.BoxGeometry(w, MAP_CONFIG.ceilingThickness, d);
+          const cMat = new THREE.MeshStandardMaterial({ 
+            color: 0x38bdf8, // vibrant cyan blueprint glass
+            transparent: true, 
+            opacity: 0.45, 
+            roughness: 0.2,
+            metalness: 0.8,
+            side: THREE.DoubleSide
+          });
+          const cMesh = new THREE.Mesh(cGeo, cMat);
+          cMesh.position.set(cx, r.floorY + r.h, cz);
+          scene.add(cMesh);
+          cMesh.userData = { isCeiling: true, baseColor: r.color, roomId: r.id, w: w, d: d };
+          ceilingMeshes.push(cMesh);
+        };
+
+        const rawHoles = r.ceilingHoles || [];
+        const holes = rawHoles.map((h) => {
+          if (h.cx === -42) {
+            let finalCz = h.cz;
+            if (h.cz === -48.5) finalCz = 23.4;
+            else if (h.cz === -31) finalCz = 40.9;
+            return { ...h, cx: -103, cz: finalCz };
+          }
+          return h;
+        });
+
+        if (holes && holes.length > 0) {
+          const rxMin = r.cx - (r.w - MAP_CONFIG.wallThickness) / 2;
+          const rxMax = r.cx + (r.w - MAP_CONFIG.wallThickness) / 2;
+          const rzMin = r.cz - (r.d - MAP_CONFIG.wallThickness) / 2;
+          const rzMax = r.cz + (r.d - MAP_CONFIG.wallThickness) / 2;
+
+          const xBoundaries = [rxMin, rxMax];
+          const zBoundaries = [rzMin, rzMax];
+
+          holes.forEach((h) => {
+            const hxMin = h.cx - h.w / 2;
+            const hxMax = h.cx + h.w / 2;
+            const hzMin = h.cz - h.d / 2;
+            const hzMax = h.cz + h.d / 2;
+
+            const cxMin = Math.max(rxMin, hxMin);
+            const cxMax = Math.min(rxMax, hxMax);
+            const czMin = Math.max(rzMin, hzMin);
+            const czMax = Math.min(rzMax, hzMax);
+
+            if (cxMax > cxMin + 0.05) {
+              xBoundaries.push(cxMin, cxMax);
+            }
+            if (czMax > czMin + 0.05) {
+              zBoundaries.push(czMin, czMax);
+            }
+          });
+
+          xBoundaries.sort((a, b) => a - b);
+          zBoundaries.sort((a, b) => a - b);
+
+          const xCoords = [];
+          xBoundaries.forEach((x) => {
+            if (xCoords.length === 0 || x - xCoords[xCoords.length - 1] > 0.05) {
+              xCoords.push(x);
+            }
+          });
+
+          const zCoords = [];
+          zBoundaries.forEach((z) => {
+            if (zCoords.length === 0 || z - zCoords[zCoords.length - 1] > 0.05) {
+              zCoords.push(z);
+            }
+          });
+
+          for (let i = 0; i < xCoords.length - 1; i++) {
+            for (let j = 0; j < zCoords.length - 1; j++) {
+              const x1 = xCoords[i];
+              const x2 = xCoords[i + 1];
+              const z1 = zCoords[j];
+              const z2 = zCoords[j + 1];
+              
+              const partW = x2 - x1;
+              const partD = z2 - z1;
+              if (partW <= 0.05 || partD <= 0.05) continue;
+
+              const centerX = (x1 + x2) / 2;
+              const centerZ = (z1 + z2) / 2;
+
+              let inHole = false;
+              for (const h of holes) {
+                const hxMin = h.cx - h.w / 2;
+                const hxMax = h.cx + h.w / 2;
+                const hzMin = h.cz - h.d / 2;
+                const hzMax = h.cz + h.d / 2;
+                if (centerX >= hxMin - 0.02 && centerX <= hxMax + 0.02 &&
+                    centerZ >= hzMin - 0.02 && centerZ <= hzMax + 0.02) {
+                  inHole = true;
+                  break;
+                }
+              }
+
+              if (!inHole) {
+                createPart(centerX, centerZ, partW, partD);
+              }
+            }
+          }
+        } else {
+          createPart(r.cx, r.cz, r.w - MAP_CONFIG.wallThickness, r.d - MAP_CONFIG.wallThickness);
+        }
+      }
+    };
+
+    const buildStairs = (r) => {
+      if (r.isStaircase) {
+        const stepsCount = 14;
+        const climb = r.climbHeight ?? r.h;
+        const stepH = climb / stepsCount;
+        const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
+
+        if (dir === 'W_E') {
+          const stepW = r.w / stepsCount;
+          for (let i = 0; i < stepsCount; i++) {
+            const stepGeo = new THREE.BoxGeometry(stepW, stepH * (i + 1), r.d);
+            const stepMesh = new THREE.Mesh(stepGeo, materials.stair);
+            stepMesh.position.set(
+              r.cx - r.w / 2 + stepW * i + stepW / 2,
+              r.floorY + (stepH * (i + 1)) / 2,
+              r.cz
+            );
+            scene.add(stepMesh);
+          }
+        }
+      }
+    };
+
+    const buildProps = () => {
+      MAP_PROPS.forEach(p => {
+        const room = MAP_ROOMS.find(r => r.id === p.roomId);
+        if (!room) return;
+        const geo = new THREE.BoxGeometry(p.w, p.h, p.d);
+        const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(p.cx, room.floorY + p.h / 2, p.cz);
+        scene.add(mesh);
+      });
+    };
+
+    const buildWallSide = (r, sideGaps, side) => {
+      const isNorthSouth = side === 'N' || side === 'S';
+      
+      let currentVal = isNorthSouth ? (r.cx - r.w / 2) : (r.cz - r.d / 2);
+      const endVal = isNorthSouth ? (r.cx + r.w / 2) : (r.cz + r.d / 2);
+      
+      const wallCoord = side === 'N' ? (r.cz + r.d / 2) :
+                        side === 'S' ? (r.cz - r.d / 2) :
+                        side === 'E' ? (r.cx + r.w / 2) :
+                        (r.cx - r.w / 2);
+
+      sideGaps.forEach(gap => {
+        const gapCenterGlobal = (isNorthSouth ? r.cx : r.cz) + gap.center;
+        const gapL = gapCenterGlobal - gap.width / 2;
+        const gapR = gapCenterGlobal + gap.width / 2;
+
+        if (currentVal < gapL) {
+          const wLength = gapL - currentVal;
+          if (isNorthSouth) {
+            addWallSegment(currentVal + wLength / 2, wallCoord, wLength, r.h, MAP_CONFIG.wallThickness, r.floorY, r.id);
+          } else {
+            addWallSegment(wallCoord, currentVal + wLength / 2, MAP_CONFIG.wallThickness, r.h, wLength, r.floorY, r.id);
+          }
+        }
+        
+        const doorHeight = MAP_CONFIG.doorHeight;
+        if (r.h > doorHeight) {
+          if (isNorthSouth) {
+            addWallSegment(gapCenterGlobal, wallCoord, gap.width, r.h - doorHeight, MAP_CONFIG.wallThickness, r.floorY + doorHeight, r.id);
+          } else {
+            addWallSegment(wallCoord, gapCenterGlobal, MAP_CONFIG.wallThickness, r.h - doorHeight, gap.width, r.floorY + doorHeight, r.id);
+          }
+        }
+        currentVal = gapR;
+      });
+
+      if (currentVal < endVal) {
+        const wLength = endVal - currentVal;
+        if (isNorthSouth) {
+          addWallSegment(currentVal + wLength / 2, wallCoord, wLength, r.h, MAP_CONFIG.wallThickness, r.floorY, r.id);
+        } else {
+          addWallSegment(wallCoord, currentVal + wLength / 2, MAP_CONFIG.wallThickness, r.h, wLength, r.floorY, r.id);
+        }
+      }
+    };
+
+    const buildWalls = (r, gaps) => {
+      buildWallSide(r, gaps.filter(g => g.side === 'N'), 'N');
+      buildWallSide(r, gaps.filter(g => g.side === 'S'), 'S');
+      buildWallSide(r, gaps.filter(g => g.side === 'E'), 'E');
+      buildWallSide(r, gaps.filter(g => g.side === 'W'), 'W');
+    };
+
+    // Calculate wall segments containing openings
+    MAP_ROOMS.forEach(r => {
+      buildFloor(r);
+      buildCeiling(r);
+      const gaps = MAP_GAPS[r.id] || [];
+      buildWalls(r, gaps);
+      buildStairs(r);
+    });
+
+    buildProps();
+
+    let roofMode = 'glass';
+    function setRoofMode(mode) {
+      roofMode = mode;
+      
+      // Update buttons visual styles
+      ['glass', 'solid', 'hidden'].forEach(m => {
+        const btn = document.getElementById('btn-roof-' + m);
+        if (btn) {
+          if (m === mode) {
+            btn.className = "px-2 py-1.5 bg-emerald-500 text-slate-950 font-mono font-bold rounded cursor-pointer transition text-center text-[10px]";
+          } else {
+            btn.className = "px-2 py-1.5 bg-slate-900 text-slate-400 border border-slate-800 font-mono font-bold rounded cursor-pointer hover:bg-slate-850 transition text-center text-[10px]";
+          }
+        }
+      });
+
+      ceilingMeshes.forEach(mesh => {
+        if (mode === 'hidden') {
+          mesh.visible = false;
+        } else {
+          mesh.visible = true;
+          if (mode === 'solid') {
+            mesh.material.transparent = false;
+            mesh.material.opacity = 1.0;
+            if (['starter', 'library', 'science_lab', 'hallway'].includes(mesh.userData.roomId)) {
+              const cTex = getProceduralTexture('ceiling_tiles').clone();
+              cTex.repeat.set(mesh.userData.w / 4, mesh.userData.d / 4);
+              mesh.material.map = cTex;
+              mesh.material.color.setHex(0xffffff);
+              mesh.material.roughness = 0.9;
+              mesh.material.metalness = 0.1;
+            } else {
+              mesh.material.map = null;
+              // Use solid slate metallic roof tile
+              mesh.material.color.setHex(0x475569); 
+              mesh.material.roughness = 0.6;
+              mesh.material.metalness = 0.5;
+            }
+          } else {
+            mesh.material.map = null;
+            // glass/blueprint look
+            mesh.material.transparent = true;
+            mesh.material.opacity = 0.45;
+            mesh.material.color.setHex(0x38bdf8);
+            mesh.material.roughness = 0.2;
+            mesh.material.metalness = 0.8;
+          }
+          mesh.material.needsUpdate = true;
+        }
+      });
+    }
+
+    function addWallSegment(x, z, w, h, d, floorY, roomId) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      let wallMat = materials.wall;
+      if (['starter', 'library', 'science_lab', 'hallway'].includes(roomId)) {
+        const wTex = getProceduralTexture('wall_tiles').clone();
+        const wallLength = w > d ? w : d;
+        wTex.repeat.set(wallLength / 8, h / 8);
+        wallMat = new THREE.MeshStandardMaterial({ map: wTex, roughness: 0.8 });
+      }
+      const mesh = new THREE.Mesh(geo, wallMat);
+      mesh.position.set(x, floorY + h/2, z);
+      scene.add(mesh);
+    }
+
+    // Handles window resizing inside standard flex-layout
+    window.addEventListener('resize', () => {
+      const w = canvas.parentElement.clientWidth;
+      const h = canvas.parentElement.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+
+    // Simple Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

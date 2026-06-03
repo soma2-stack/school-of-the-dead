@@ -84,3 +84,18 @@ export interface DecorConfig {
   steps?: number;
   color?: string;
 }
+
+/**
+ * Door configuration for the door-buying system
+ * Note: This is separate from the rendering DoorConfig interface above
+ */
+export interface BuyableDoorConfig {
+  id: string;
+  name: string;
+  cost: number;
+  position: { x: number; y: number; z: number };
+  width: number;
+  height: number;
+  connectedRoomId: string;
+  isOpen: boolean;
+}
