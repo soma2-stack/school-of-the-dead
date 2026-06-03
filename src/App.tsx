@@ -242,6 +242,53 @@ const ROOM_GAPS: Record<string, Array<{ side: 'N' | 'S' | 'E' | 'W'; center: num
   main_office: [{ side: 'N', center: 0, width: 6.0 }],
 };
 
+// Generate DOORS from ROOM_GAPS - each gap becomes a purchasable door
+const DOORS_CONFIG: Array<{ roomId: string; side: 'N' | 'S' | 'E' | 'W'; gapIndex: number; cost: number }> = [
+  { roomId: 'starter', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'hallway', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'hallway', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'hallway', side: 'N', gapIndex: 1, cost: 750 },
+  { roomId: 'hallway', side: 'E', gapIndex: 0, cost: 750 },
+  { roomId: 'hallway', side: 'W', gapIndex: 0, cost: 1000 },
+  { roomId: 'science_lab', side: 'S', gapIndex: 0, cost: 1000 },
+  { roomId: 'library', side: 'S', gapIndex: 0, cost: 1000 },
+  { roomId: 'stairwell', side: 'W', gapIndex: 0, cost: 750 },
+  { roomId: 'stairwell', side: 'E', gapIndex: 0, cost: 750 },
+  { roomId: 'gym', side: 'W', gapIndex: 0, cost: 1250 },
+  { roomId: 'gym', side: 'S', gapIndex: 0, cost: 1000 },
+  { roomId: 'gym', side: 'N', gapIndex: 0, cost: 1000 },
+  { roomId: 'cafeteria', side: 'E', gapIndex: 0, cost: 1250 },
+  { roomId: 'cafeteria', side: 'N', gapIndex: 0, cost: 1000 },
+  { roomId: 'courtyard', side: 'S', gapIndex: 0, cost: 1250 },
+  { roomId: 'underground_tunnel', side: 'S', gapIndex: 0, cost: 1000 },
+  { roomId: 'underground_tunnel', side: 'N', gapIndex: 0, cost: 1000 },
+  { roomId: 'the_vault', side: 'S', gapIndex: 0, cost: 1500 },
+  { roomId: 'upper_hallway', side: 'W', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway', side: 'E', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'principal_office', side: 'S', gapIndex: 0, cost: 1000 },
+  { roomId: 'upper_hallway_2', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway_2', side: 'W', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway_2', side: 'E', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway_2', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'security_room', side: 'E', gapIndex: 0, cost: 1000 },
+  { roomId: 'upper_hallway_north', side: 'W', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway_north', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'upper_hallway_north', side: 'N', gapIndex: 1, cost: 750 },
+  { roomId: 'upper_hallway_north', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'gym_north_hallway', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'gym_north_hallway', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'nurses_office', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'nurses_office', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'nurses_office_backroom', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'stairwell_2', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'stairwell_2', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'lower_hallway_south', side: 'N', gapIndex: 0, cost: 750 },
+  { roomId: 'lower_hallway_south', side: 'S', gapIndex: 0, cost: 750 },
+  { roomId: 'main_office', side: 'N', gapIndex: 0, cost: 1000 },
+];
+
 const MAP_PROPS = [
   { id: 'mystery_box_spawn', type: 'interactable', roomId: 'starter', cx: 15, cz: -25, w: 4, d: 2, h: 3, color: '#8b5a2b' },
   { id: 'main_power_switch', type: 'interactable', roomId: 'security_room', cx: 54, cz: 51.5, w: 4, d: 1, h: 4, color: '#8b0000' },
@@ -253,6 +300,8 @@ export const MAP_CONFIG = {
   doorHeight: 7.5,
   floorThickness: 0.2,
 };
+
+const doorHt = MAP_CONFIG.doorHeight;
 
 const PLAYER_EYE_HEIGHT = 4.5;
 const PLAYER_RADIUS = 1.0;
@@ -268,6 +317,8 @@ export default function App() {
   const isGrounded = useRef<boolean>(true);
   const noclipRef = useRef<boolean>(false);
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
+  const [promptText, setPromptText] = useState<string>('');
+  const [canInteract, setCanInteract] = useState<boolean>(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -303,6 +354,90 @@ export default function App() {
       const light = new THREE.PointLight(roomLightColors[r.id] ?? 0x222222, 2.5, Math.max(r.w, r.d) * 1.2);
       light.position.set(r.cx, r.floorY + r.h * 0.75, r.cz);
       scene.add(light);
+    });
+
+    // ---- DOOR SYSTEM ----
+    const doors: RuntimeDoor[] = [];
+    const doorColliderMap = new Map<THREE.Mesh, RuntimeDoor>();
+    
+    // Build runtime door objects from config
+    DOORS_CONFIG.forEach((dc, idx) => {
+      const gaps = ROOM_GAPS[dc.roomId] || [];
+      const gap = gaps[dc.gapIndex];
+      if (!gap) return;
+      
+      const room = INITIAL_ROOMS.find(r => r.id === dc.roomId);
+      if (!room) return;
+      
+      // Calculate door world position based on room and gap
+      let doorX = 0, doorZ = 0, doorRotY = 0;
+      const doorW = gap.width;
+      const doorH = doorHt;
+      const doorD = 0.3;
+      
+      if (gap.side === 'N') {
+        doorX = gap.center;
+        doorZ = room.d / 2;
+        doorRotY = 0;
+      } else if (gap.side === 'S') {
+        doorX = gap.center;
+        doorZ = -room.d / 2;
+        doorRotY = 0;
+      } else if (gap.side === 'E') {
+        doorX = room.w / 2;
+        doorZ = gap.center;
+        doorRotY = Math.PI / 2;
+      } else { // W
+        doorX = -room.w / 2;
+        doorZ = gap.center;
+        doorRotY = Math.PI / 2;
+      }
+      
+      // Convert to world coordinates
+      const worldX = room.cx + doorX;
+      const worldZ = room.cz + doorZ;
+      
+      const doorObj: RuntimeDoor = {
+        ...dc,
+        id: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        x: worldX,
+        z: worldZ,
+        w: doorW,
+        h: doorH,
+        axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
+        isOpen: false,
+        isPurchased: false,
+        side: gap.side,
+      };
+      doors.push(doorObj);
+    });
+
+    // Create door meshes and colliders
+    const doorMat = new THREE.MeshLambertMaterial({ color: 0x3d2817 });
+    const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x2a1a0f });
+    
+    doors.forEach(door => {
+      // Door mesh (visual)
+      const doorGeom = new THREE.BoxGeometry(door.w, door.h, doorD);
+      const doorMesh = new THREE.Mesh(doorGeom, doorMat);
+      
+      // Position door centered in gap at floor level
+      doorMesh.position.set(door.x, door.h / 2, door.z);
+      doorMesh.rotation.y = door.axis === 'x' ? Math.PI / 2 : 0;
+      doorMesh.castShadow = true;
+      doorMesh.receiveShadow = true;
+      scene.add(doorMesh);
+      door.mesh = doorMesh;
+      
+      // Door collider (invisible physics)
+      const colliderGeom = new THREE.BoxGeometry(door.w, door.h, doorD + 0.1);
+      const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
+      const collider = new THREE.Mesh(colliderGeom, colliderMat);
+      collider.position.copy(doorMesh.position);
+      collider.rotation.copy(doorMesh.rotation);
+      scene.add(collider);
+      door.collider = collider;
+      doorColliderMap.set(collider, door);
     });
 
     // ---- GEOMETRY BUILDER ----
@@ -456,6 +591,14 @@ export default function App() {
     const canPassWall = (roomId: string, side: 'N' | 'S' | 'E' | 'W', offset: number): boolean =>
       (ROOM_GAPS[roomId] || []).filter(g => g.side === side).some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
 
+    // Door collision check - returns true if player can pass through this gap
+    const canPassDoor = (roomId: string, side: 'N' | 'S' | 'E' | 'W', gapIndex: number): boolean => {
+      const door = doors.find(d => d.roomId === roomId && d.side === side && DOORS_CONFIG.findIndex(dc => dc.roomId === roomId && dc.side === side && dc.gapIndex === gapIndex) >= 0);
+      if (!door) return true; // No door here
+      if (door.isPurchased && door.isOpen) return true; // Open purchased door
+      return false; // Closed door blocks passage
+    };
+
     const tryMove = (pos: THREE.Vector3, delta: THREE.Vector3): THREE.Vector3 => {
       const next = pos.clone().add(delta);
       const currentRoom = getRoomAtPos(pos.x, pos.z, pos.y);
@@ -464,16 +607,116 @@ export default function App() {
       const zMin = currentRoom.cz - currentRoom.d / 2; const zMax = currentRoom.cz + currentRoom.d / 2;
       let nx = next.x; let nz = next.z;
       const pr = PLAYER_RADIUS;
-      if (nz - pr < zMin && !canPassWall(currentRoom.id, 'S', pos.x - currentRoom.cx)) nz = zMin + pr;
-      if (nz + pr > zMax && !canPassWall(currentRoom.id, 'N', pos.x - currentRoom.cx)) nz = zMax - pr;
-      if (nx - pr < xMin && !canPassWall(currentRoom.id, 'W', pos.z - currentRoom.cz)) nx = xMin + pr;
-      if (nx + pr > xMax && !canPassWall(currentRoom.id, 'E', pos.z - currentRoom.cz)) nx = xMax - pr;
+      
+      // Check wall gaps and door collisions
+      const gaps = ROOM_GAPS[currentRoom.id] || [];
+      
+      // South wall
+      if (nz - pr < zMin) {
+        const southGaps = gaps.filter(g => g.side === 'S');
+        const offset = pos.x - currentRoom.cx;
+        const inGap = southGaps.some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+        if (!inGap) {
+          nz = zMin + pr;
+        } else {
+          // Check if any door in this gap is closed
+          const gapIdx = gaps.findIndex(g => g.side === 'S' && offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+          if (gapIdx >= 0) {
+            const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'S');
+            if (door && door.isPurchased && !door.isOpen) {
+              nz = zMin + pr; // Blocked by closed door
+            }
+          }
+        }
+      }
+      
+      // North wall
+      if (nz + pr > zMax) {
+        const northGaps = gaps.filter(g => g.side === 'N');
+        const offset = pos.x - currentRoom.cx;
+        const inGap = northGaps.some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+        if (!inGap) {
+          nz = zMax - pr;
+        } else {
+          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'N');
+          if (door && door.isPurchased && !door.isOpen) {
+            nz = zMax - pr;
+          }
+        }
+      }
+      
+      // West wall
+      if (nx - pr < xMin) {
+        const westGaps = gaps.filter(g => g.side === 'W');
+        const offset = pos.z - currentRoom.cz;
+        const inGap = westGaps.some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+        if (!inGap) {
+          nx = xMin + pr;
+        } else {
+          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'W');
+          if (door && door.isPurchased && !door.isOpen) {
+            nx = xMin + pr;
+          }
+        }
+      }
+      
+      // East wall
+      if (nx + pr > xMax) {
+        const eastGaps = gaps.filter(g => g.side === 'E');
+        const offset = pos.z - currentRoom.cz;
+        const inGap = eastGaps.some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+        if (!inGap) {
+          nx = xMax - pr;
+        } else {
+          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'E');
+          if (door && door.isPurchased && !door.isOpen) {
+            nx = xMax - pr;
+          }
+        }
+      }
+      
       return new THREE.Vector3(nx, next.y, nz);
     };
 
     // ---- GAME LOOP ----
     let lastTime = performance.now();
     let animId: number;
+    
+    // Raycaster for door interaction
+    const raycaster = new THREE.Raycaster();
+    const doorInteractionRange = 8.0;
+    let hoveredDoor: RuntimeDoor | null = null;
+    
+    // Handle door interaction (purchase/open)
+    const handleDoorInteraction = () => {
+      if (!hoveredDoor || !isPointerLocked) return;
+      
+      if (!hoveredDoor.isPurchased) {
+        // Purchase the door
+        hoveredDoor.isPurchased = true;
+        hoveredDoor.isOpen = false;
+        // Keep collider active (door is closed after purchase)
+      } else if (!hoveredDoor.isOpen) {
+        // Open the door
+        hoveredDoor.isOpen = true;
+        if (hoveredDoor.mesh) {
+          // Slide door open based on axis
+          const openOffset = hoveredDoor.w * 0.6;
+          if (hoveredDoor.axis === 'x') {
+            hoveredDoor.mesh.position.z += openOffset;
+          } else {
+            hoveredDoor.mesh.position.x += openOffset;
+          }
+        }
+        // Remove collider when opened
+        if (hoveredDoor.collider) {
+          scene.remove(hoveredDoor.collider);
+          doorColliderMap.delete(hoveredDoor.collider);
+          hoveredDoor.collider = undefined;
+        }
+      }
+    };
+
     const loop = () => {
       animId = requestAnimationFrame(loop);
       const now = performance.now();
@@ -520,9 +763,48 @@ export default function App() {
       camera.rotation.order = 'YXZ';
       camera.rotation.y = yaw.current;
       camera.rotation.x = pitch.current;
+      
+      // Door interaction raycast
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+      const doorColliders = Array.from(doorColliderMap.keys());
+      const intersects = raycaster.intersectObjects(doorColliders);
+      
+      hoveredDoor = null;
+      if (intersects.length > 0 && intersects[0].distance <= doorInteractionRange) {
+        const hitCollider = intersects[0].object as THREE.Mesh;
+        const door = doorColliderMap.get(hitCollider);
+        if (door) {
+          hoveredDoor = door;
+          if (!door.isPurchased) {
+            setPromptText(`Press E to buy ${door.name} (${door.cost})`);
+            setCanInteract(true);
+          } else if (!door.isOpen) {
+            setPromptText('Press E to open');
+            setCanInteract(true);
+          } else {
+            setPromptText('');
+            setCanInteract(false);
+          }
+        } else {
+          setPromptText('');
+          setCanInteract(false);
+        }
+      } else {
+        setPromptText('');
+        setCanInteract(false);
+      }
+      
       renderer.render(scene, camera);
     };
     loop();
+
+    // Keyboard handler for door interaction
+    const handleInteractionKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyE' && isPointerLocked && canInteract) {
+        handleDoorInteraction();
+      }
+    };
+    window.addEventListener('keydown', handleInteractionKey);
 
     return () => {
       cancelAnimationFrame(animId);
@@ -532,6 +814,7 @@ export default function App() {
       document.removeEventListener('pointerlockchange', handleLockChange);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleInteractionKey);
       renderer.dispose();
     };
   }, []);
@@ -546,6 +829,15 @@ export default function App() {
       {isPointerLocked && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 border border-white/60" />
+        </div>
+      )}
+
+      {/* Door interaction prompt */}
+      {isPointerLocked && canInteract && promptText && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+          <div className="bg-black/70 border border-emerald-500/50 px-4 py-2 rounded-lg text-sm font-mono tracking-wide text-emerald-400 whitespace-nowrap">
+            {promptText}
+          </div>
         </div>
       )}
 
