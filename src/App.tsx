@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { getDoorManager } from './utils/doors';
+import { getDoorManager, initializeDoors } from './utils/doors';
 import { getPointsManager } from './utils/points';
+import { createDoorRenderer } from './utils/DoorRenderer';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -276,6 +277,9 @@ export default function App() {
     const mount = mountRef.current;
     if (!canvas || !mount) return;
 
+    // Initialize doors system
+    initializeDoors();
+
     // ---- SCENE SETUP ----
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -288,6 +292,9 @@ export default function App() {
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
     camera.position.copy(playerPos.current);
+
+    // Create door renderer to spawn visible meshes for all doors
+    const doorRenderer = createDoorRenderer('default', scene);
 
     // ---- LIGHTING ----
     scene.add(new THREE.AmbientLight(0x222222, 1.0));
@@ -456,6 +463,8 @@ export default function App() {
           
           if (result.success) {
             console.log('[App] Door purchased successfully:', currentDoor.name);
+            // Hide the door mesh when purchased
+            doorRenderer.updateDoorState(currentDoor.id, true);
           } else {
             console.log('[App] Door purchase failed:', result.reason);
           }
@@ -566,6 +575,10 @@ export default function App() {
       document.removeEventListener('pointerlockchange', handleLockChange);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      
+      // Cleanup door renderer
+      doorRenderer.destroy();
+      
       renderer.dispose();
     };
   }, []);

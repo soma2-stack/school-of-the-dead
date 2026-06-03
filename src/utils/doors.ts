@@ -67,23 +67,42 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'starter_classroom_door',
     name: 'Starter Classroom Door',
     cost: 750,
-    position: { x: 0, y: 0, z: 5 },
-    width: 2,
-    height: 3,
-    connectedRoomId: 'main_hallway',
+    position: { x: 17.5, y: 1.5, z: -10 }, // Between starter classroom (z=-40) and hallway (z=-3)
+    width: 6,
+    height: 7.5,
+    connectedRoomId: 'hallway',
     isOpen: false,
   },
-  // Add more doors here as needed:
-  // {
-  //   id: 'cafeteria_door',
-  //   name: 'Cafeteria Entrance',
-  //   cost: 1000,
-  //   position: { x: 10, y: 0, z: -5 },
-  //   width: 2.5,
-  //   height: 3.5,
-  //   connectedRoomId: 'cafeteria',
-  //   isOpen: false,
-  // },
+  {
+    id: 'hallway_science_lab_door',
+    name: 'Science Lab Door',
+    cost: 1000,
+    position: { x: 12.5, y: 1.5, z: 4 }, // Between hallway and science lab
+    width: 6,
+    height: 7.5,
+    connectedRoomId: 'science_lab',
+    isOpen: false,
+  },
+  {
+    id: 'hallway_library_door',
+    name: 'Library Door',
+    cost: 1000,
+    position: { x: 38, y: 1.5, z: 4 }, // Between hallway and library
+    width: 6,
+    height: 7.5,
+    connectedRoomId: 'library',
+    isOpen: false,
+  },
+  {
+    id: 'hallway_cafeteria_door',
+    name: 'Cafeteria Entrance',
+    cost: 1250,
+    position: { x: -20, y: 1.5, z: -3 }, // Between hallway and cafeteria
+    width: 14,
+    height: 7.5,
+    connectedRoomId: 'cafeteria',
+    isOpen: false,
+  },
 ];
 
 // ============================================================================
@@ -590,4 +609,14 @@ export function getTotalClosedDoorsCost(sessionId: string = 'default'): number {
 export function getClosedDoorsCount(sessionId: string = 'default'): number {
   const manager = getDoorManager(sessionId);
   return manager.getClosedDoors().length;
+}
+
+/**
+ * Initialize default doors in the DoorManager
+ * Call this once at game startup to register all default doors
+ */
+export function initializeDoors(): void {
+  const manager = getDoorManager();
+  // Doors are already initialized by the DoorManager constructor with DEFAULT_DOORS
+  console.log(`[DoorSystem] Initialized with ${manager.getAllDoors().length} door(s)`);
 }
