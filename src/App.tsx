@@ -1032,13 +1032,13 @@ export default function App() {
     };
     loop();
 
-    // Keyboard handler for door interaction (uses hoveredDoorRef from prompt system)
+    // Keyboard handler for door interaction (uses hoveredDoor from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
       if (e.code === 'KeyE' && isPointerLocked) {
         console.log("[E] key pressed");
         
         // Use the same door reference that drives the visible prompt
-        const currentDoor = hoveredDoorRef.current;
+        const currentDoor = hoveredDoor;
         
         if (!currentDoor) {
           console.log("Hovered/interacted door exists: NO (null)");
