@@ -440,20 +440,21 @@ export default function App() {
       const worldZ = room.cz + doorZ;
       
       const doorObj: RuntimeDoor = {
-        ...dc,
         id: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        type: 'gap',
+        axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
         x: worldX,
         z: worldZ,
         w: doorW,
         h: doorH,
         d: doorD,
-        axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
+        cost: dc.cost,
+        unlocked: false,
+        name: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        roomId: dc.roomId,
+        side: gap.side,
         isOpen: false,
         isPurchased: false,
-        side: gap.side,
-        type: dc.type,
-        unlocked: dc.unlocked,
-        name: dc.name,
       };
       doors.push(doorObj);
     });

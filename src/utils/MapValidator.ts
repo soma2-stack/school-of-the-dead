@@ -36,9 +36,34 @@ class RoomSealValidator {
   private currentIssueIndex = -1;
   private scanTargetRoom: string | null = null;
 
-  setData(rooms: RoomData[], gaps: Record<string, GapData[]>, doors: any[]) {
-    this.roomsData = rooms;
-    this.roomGapsData = gaps;
+  setData(rooms: any[], gaps: Record<string, any[]>, doors: any[]) {
+    // Convert RoomConfig to RoomData format
+    this.roomsData = rooms.map((r: any) => ({
+      name: r.name || r.id,
+      x: r.cx - (r.w / 2),
+      y: r.floorY,
+      z: r.cz - (r.d / 2),
+      width: r.w,
+      depth: r.d,
+      height: r.h,
+      doors: [],
+      stairDirection: (r as any).stairDirection,
+    }));
+    
+    // Convert ROOM_GAPS format to GapData format
+    this.roomGapsData = {};
+    Object.keys(gaps).forEach(roomId => {
+      const roomGaps = gaps[roomId];
+      const room = rooms.find((r: any) => r.id === roomId);
+      if (room && roomGaps) {
+        this.roomGapsData[roomId] = roomGaps.map((g: any) => ({
+          side: g.side,
+          offset: g.center,
+          width: g.width,
+        }));
+      }
+    });
+    
     this.doorsData = doors;
     this.issues = [];
     this.currentIssueIndex = -1;
@@ -376,6 +401,11 @@ class RoomSealValidator {
     if (!this.issues.find(i => i.id === issue.id)) {
       this.issues.push(issue);
     }
+  }
+
+  updateHighlights(time: number) {
+    // Update highlight animations for validation issues
+    // This method is called every frame when validation mode is active
   }
 }
 
