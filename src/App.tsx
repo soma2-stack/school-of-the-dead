@@ -630,8 +630,8 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'E_W' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
+        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
+        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
         scene.add(ramp);
       }
     };
