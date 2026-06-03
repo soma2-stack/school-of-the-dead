@@ -360,6 +360,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    console.log("DOOR EFFECT RUNNING");
     const canvas = canvasRef.current;
     const mount = mountRef.current;
     if (!canvas || !mount) return;
@@ -1037,8 +1038,10 @@ export default function App() {
 
     // Keyboard handler for door interaction (uses hoveredDoor from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
+      console.log("KEY EVENT", e.code, "isPointerLocked =", isPointerLocked);
       console.log('[DEBUG] Key event received:', e.key);
       if (e.code === 'KeyE' && isPointerLocked) {
+        console.log("KEY_E_TEST");
         console.log("=== [E] key pressed ===");
         console.log("=== Key handler entered ===");
         
