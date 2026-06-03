@@ -61,12 +61,20 @@ export interface DoorEventData {
 // Default Doors Configuration
 // Add new doors here to make them available in the game
 // 
-// Door positions calculated from room centers and gap locations in App.tsx:
-// - Starter Classroom: center (17.5, -40), N gap at z=-10 (room edge is z=-10)
-// - Hallway: center (20, -3), spans x=-20 to x=60, z=-10 to z=4
-// - Science Lab: center (5, 26.5), S gap at x=5 (room edge is z=4)
-// - Library: center (40, 26.5), S gap at x=40 (room edge is z=4)
-// - Cafeteria: center (-50, -3), E gap at z=-3 (room edge is x=-20)
+// Door positions calculated from ROOM_GAPS in App.tsx:
+// - starter room: center (17.5, -40), N gap at center=-17.5 (relative), width=6
+//   World position: x = 17.5 + (-17.5) = 0, z = -40 + 30 = -10
+// - hallway room: center (20, -3), spans x=-20 to x=60, z=-10 to z=4
+//   - S gap at center=-20 (relative), width=6 -> world x = 20 + (-20) = 0, z = -3 - 7 = -10
+//   - N gaps at center=-15 and center=20 (relative), width=6
+//   - E gap at center=0 (relative), width=6 -> world z = -3 + 7 = 4, x = 20 + 40 = 60
+//   - W gap at center=0 (relative), width=14 -> world z = -3 - 7 = -10, x = 20 - 40 = -20
+// - science_lab: center (5, 26.5), S gap at center=0 (relative), width=6
+//   World position: x = 5 + 0 = 5, z = 26.5 - 22.5 = 4
+// - library: center (40, 26.5), S gap at center=0 (relative), width=6
+//   World position: x = 40 + 0 = 40, z = 26.5 - 22.5 = 4
+// - cafeteria: center (-50, -3), E gap at center=0 (relative), width=14
+//   World position: x = -50 + 30 = -20, z = -3 + 0 = -3
 // ============================================================================
 
 export const DEFAULT_DOORS: BuyableDoorConfig[] = [
@@ -75,8 +83,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     name: 'Starter Classroom Door',
     cost: 750,
     // Starter Classroom north wall is at z = -40 + 30 = -10
-    // Hallway south wall is at z = -3 - 7 = -10 (they meet!)
-    // Gap center in starter is at x = -17.5 relative to room center 17.5, so world x = 0
+    // Gap center is at x = 17.5 + (-17.5) = 0
     position: { x: 0, y: 1.5, z: -10 },
     width: 6,
     height: 3,
@@ -89,7 +96,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     cost: 1000,
     // Science Lab south wall is at z = 26.5 - 22.5 = 4
     // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
-    // Gap center in science_lab is at x = 0 relative to room center 5, so world x = 5
+    // Gap center in science_lab is at x = 5 + 0 = 5
     position: { x: 5, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -102,7 +109,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     cost: 1000,
     // Library south wall is at z = 26.5 - 22.5 = 4
     // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
-    // Gap center in library is at x = 0 relative to room center 40, so world x = 40
+    // Gap center in library is at x = 40 + 0 = 40
     position: { x: 40, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -115,7 +122,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     cost: 1250,
     // Cafeteria east wall is at x = -50 + 30 = -20
     // Hallway west wall is at x = 20 - 40 = -20 (they meet!)
-    // Gap center in cafeteria is at z = 0 relative to room center -3, so world z = -3
+    // Gap center in cafeteria is at z = -3 + 0 = -3
     position: { x: -20, y: 1.5, z: -3 },
     width: 14,
     height: 3,
@@ -328,6 +335,11 @@ export class DoorManager {
     playerDirection: { x: number; y: number; z: number }
   ): string | null {
     const lookedAtDoor = this.getLookedAtDoor(playerPosition, playerDirection);
+
+    // Log when player is within range of any door (for debugging)
+    if (lookedAtDoor) {
+      console.log(`[Door] Player in range of: ${lookedAtDoor.name} at (${playerPosition.x.toFixed(1)}, ${playerPosition.y.toFixed(1)}, ${playerPosition.z.toFixed(1)})`);
+    }
 
     if (lookedAtDoor) {
       if (this.currentInteractedDoor !== lookedAtDoor.id) {

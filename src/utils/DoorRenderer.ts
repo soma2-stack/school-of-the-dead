@@ -94,20 +94,22 @@ export class DoorRenderer {
     this.scene.add(mesh);
     this.doorMeshes.set(door.id, mesh);
 
-    // Create floating label above door
-    const labelSprite = this.createTextLabel(door.id);
+    // Create floating label above door showing ID and position
+    const labelText = `${door.id}\n(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`;
+    const labelSprite = this.createTextLabel(labelText);
     labelSprite.position.set(x, y + door.height / 2 + 0.5, z);
     // Scale label to be visible
-    labelSprite.scale.set(3, 1, 1);
+    labelSprite.scale.set(4, 1.5, 1);
     this.scene.add(labelSprite);
     this.labelMeshes.set(door.id, labelSprite);
 
-    // Log spawn information
+    // Log spawn information with detailed position data
     console.log(`[DoorRenderer] ✅ Door spawned:`);
     console.log(`    - ID: ${door.id}`);
     console.log(`    - Name: ${door.name}`);
     console.log(`    - Position: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
     console.log(`    - Size: ${door.width.toFixed(2)} x ${door.height.toFixed(2)} x 0.20`);
+    console.log(`    - Label: "${labelText}"`);
   }
 
   /**
@@ -121,9 +123,9 @@ export class DoorRenderer {
       throw new Error('Failed to get 2D context for door label');
     }
 
-    // Set canvas size
+    // Set canvas size - increased height for multi-line text
     canvas.width = 512;
-    canvas.height = 128;
+    canvas.height = 256;
 
     // Clear and set background (transparent)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -132,12 +134,20 @@ export class DoorRenderer {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Draw text
-    ctx.font = 'Bold 48px Arial';
+    // Draw text - support multi-line with \n
+    ctx.font = 'Bold 42px Arial';
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    
+    const lines = text.split('\n');
+    const lineHeight = 50;
+    const totalHeight = lines.length * lineHeight;
+    const startY = (canvas.height - totalHeight) / 2 + lineHeight / 2;
+    
+    lines.forEach((line, index) => {
+      ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
+    });
     
     // Create texture from canvas
     const texture = new THREE.CanvasTexture(canvas);
