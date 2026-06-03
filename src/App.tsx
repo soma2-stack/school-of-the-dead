@@ -1032,26 +1032,36 @@ export default function App() {
     };
     loop();
 
-    // Keyboard handler for door interaction (uses DoorManager state)
+    // Keyboard handler for door interaction (uses hoveredDoorRef from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
       if (e.code === 'KeyE' && isPointerLocked) {
         console.log("[E] key pressed");
-        const doorManager = getDoorManager();
-        const pointsManager = getPointsManager();
-        const playerId = 'player1';
         
-        const currentDoor = doorManager.getCurrentInteractedDoor();
-        if (currentDoor) {
-          console.log("Hovered/interacted door exists");
-          console.log("purchaseDoor() called");
-          const result = doorManager.purchaseDoor(currentDoor.id, playerId);
-          console.log("purchaseDoor() returned");
-          
-          if (result.success) {
-            console.log('[App] Door purchased successfully:', currentDoor.name);
-            doorRenderer.updateDoorState(currentDoor.id, true);
-          } else {
-            console.log('[App] Door purchase failed:', result.reason);
+        // Use the same door reference that drives the visible prompt
+        const currentDoor = hoveredDoorRef.current;
+        
+        if (!currentDoor) {
+          console.log("Hovered/interacted door exists: NO (null)");
+          return;
+        }
+        
+        console.log("Hovered/interacted door exists:", currentDoor.name || "unnamed door");
+        console.log("purchaseDoor() called");
+        
+        const doorManager = getDoorManager();
+        const playerId = 'player1';
+        const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+        
+        console.log("purchaseDoor() returned");
+        
+        if (result.success) {
+          console.log('[App] Door purchased successfully:', currentDoor.name);
+          doorRenderer.updateDoorState(currentDoor.id, true);
+        } else {
+          console.log('[App] Door purchase failed:', result.reason);
+          if (result.reason === "INSUFFICIENT_POINTS") {
+            setShowNotEnoughPoints(true);
+            setTimeout(() => setShowNotEnoughPoints(false), 2000);
           }
         }
       }
