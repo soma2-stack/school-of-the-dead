@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { getDoorManager, initializeDoors } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
+import { getMapValidator, MapValidationIssue } from './utils/MapValidator';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -323,6 +324,12 @@ export default function App() {
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
   const [promptText, setPromptText] = useState<string>('');
   const [canInteract, setCanInteract] = useState<boolean>(false);
+  
+  // Map Validation Mode state
+  const [validationModeEnabled, setValidationModeEnabled] = useState<boolean>(false);
+  const [validationIssues, setValidationIssues] = useState<MapValidationIssue[]>([]);
+  const [currentIssueIndex, setCurrentIssueIndex] = useState<number>(-1);
+  const mapValidatorRef = useRef(getMapValidator());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -678,6 +685,51 @@ export default function App() {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
       
+      // Map Validation Mode - F8 to run full scan
+      if (e.code === 'F8') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        const result = validator.runFullScan(INITIAL_ROOMS, ROOM_GAPS, doors);
+        setValidationIssues(result.issues);
+        setValidationModeEnabled(true);
+        setCurrentIssueIndex(-1);
+        console.log(`[MapValidator] Scan complete: ${result.issues.length} issues found in ${result.scanTime.toFixed(2)}ms`);
+      }
+      
+      // Map Validation Mode - F9 to teleport to next issue
+      if (e.code === 'F9') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        const issues = validator.getIssues();
+        
+        if (issues.length > 0) {
+          const nextIndex = (currentIssueIndex + 1) % issues.length;
+          const issue = issues[nextIndex];
+          
+          // Teleport player to issue location
+          playerPos.current.set(issue.position.x, issue.position.y + 2, issue.position.z + 5);
+          yaw.current = Math.PI; // Face the issue
+          setCurrentIssueIndex(nextIndex);
+          console.log(`[MapValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description}`);
+        }
+      }
+      
+      // Toggle validation mode with F10
+      if (e.code === 'F10') {
+        e.preventDefault();
+        const validator = mapValidatorRef.current;
+        const enabled = validator.toggle(scene);
+        setValidationModeEnabled(enabled);
+        if (enabled) {
+          const result = validator.runFullScan(INITIAL_ROOMS, ROOM_GAPS, doors);
+          setValidationIssues(result.issues);
+        } else {
+          setValidationIssues([]);
+          setCurrentIssueIndex(-1);
+        }
+        console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
+      }
+      
       // Door interaction - Press E to purchase door
       if (e.code === 'KeyE') {
         const doorManager = getDoorManager();
@@ -887,6 +939,11 @@ export default function App() {
       camera.rotation.y = yaw.current;
       camera.rotation.x = pitch.current;
       
+      // Update validation mode highlights if enabled
+      if (validationModeEnabled) {
+        mapValidatorRef.current.updateHighlights(now / 1000);
+      }
+      
       // Door interaction raycast
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const doorColliders = Array.from(doorColliderMap.keys());
@@ -974,6 +1031,80 @@ export default function App() {
             Click to Play · WASD Move · Mouse Look · V Noclip · ESC Free Cursor
           </div>
         </div>
+      )}
+
+      {/* Map Validation Mode UI */}
+      {validationModeEnabled && (
+        <>
+          {/* Validation mode indicator */}
+          <div className="absolute top-4 left-4 pointer-events-none z-10">
+            <div className="bg-red-900/80 border border-red-500 px-3 py-2 rounded-lg text-xs font-mono text-red-300">
+              <div className="font-bold text-red-200 mb-1">MAP VALIDATION MODE</div>
+              <div>Issues: {validationIssues.length}</div>
+              {currentIssueIndex >= 0 && (
+                <div className="text-yellow-300">Viewing: {currentIssueIndex + 1}/{validationIssues.length}</div>
+              )}
+              <div className="mt-2 text-gray-400 text-[10px]">
+                F8: Scan · F9: Next Issue · F10: Toggle
+              </div>
+            </div>
+          </div>
+
+          {/* Issues list */}
+          {validationIssues.length > 0 && (
+            <div className="absolute top-4 right-4 max-w-md max-h-96 overflow-y-auto pointer-events-auto z-10">
+              <div className="bg-black/80 border border-red-500/50 rounded-lg p-3">
+                <div className="text-xs font-mono text-red-300 font-bold mb-2">DETECTED ISSUES</div>
+                <div className="space-y-1">
+                  {validationIssues.map((issue, idx) => (
+                    <div
+                      key={issue.id}
+                      className={`text-[10px] font-mono p-1.5 rounded cursor-pointer transition-colors ${
+                        idx === currentIssueIndex
+                          ? 'bg-yellow-900/50 text-yellow-200 border border-yellow-500/50'
+                          : issue.severity === 'critical'
+                            ? 'bg-red-950/50 text-red-300 hover:bg-red-900/30'
+                            : issue.severity === 'high'
+                              ? 'bg-orange-950/50 text-orange-300 hover:bg-orange-900/30'
+                              : 'bg-gray-900/50 text-gray-300 hover:bg-gray-800/50'
+                      }`}
+                      onClick={() => {
+                        setCurrentIssueIndex(idx);
+                        const validator = mapValidatorRef.current;
+                        const issues = validator.getIssues();
+                        if (issues[idx]) {
+                          playerPos.current.set(issues[idx].position.x, issues[idx].position.y + 2, issues[idx].position.z + 5);
+                          yaw.current = Math.PI;
+                        }
+                      }}
+                    >
+                      <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                        issue.type === 'floor_gap' ? 'bg-red-500' :
+                        issue.type === 'missing_wall' ? 'bg-yellow-500' :
+                        issue.type === 'door_gap' ? 'bg-blue-500' :
+                        issue.type === 'overlap' ? 'bg-purple-500' :
+                        issue.type === 'stair_misalign' ? 'bg-orange-500' :
+                        'bg-pink-500'
+                      }`} />
+                      [{issue.severity.toUpperCase()}] {issue.type.replace('_', ' ')}
+                      <div className="text-gray-400 ml-4 truncate">{issue.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No issues message */}
+          {validationModeEnabled && validationIssues.length === 0 && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+              <div className="bg-green-900/80 border border-green-500 px-6 py-4 rounded-lg text-sm font-mono text-green-300">
+                <div className="font-bold text-green-200 mb-1">NO ISSUES DETECTED</div>
+                <div className="text-green-400">Map geometry is clean!</div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
