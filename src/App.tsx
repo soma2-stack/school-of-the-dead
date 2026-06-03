@@ -451,6 +451,9 @@ export default function App() {
         isOpen: false,
         isPurchased: false,
         side: gap.side,
+        type: dc.type,
+        unlocked: dc.unlocked,
+        name: dc.name,
       };
       doors.push(doorObj);
     });
