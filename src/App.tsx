@@ -17,7 +17,9 @@ import {
   Grid,
   Shield,
   EyeOff,
-  Download
+  Download,
+  Undo2,
+  Redo2
 } from 'lucide-react';
 
 // ============================================================================
@@ -41,7 +43,224 @@ interface Room {
   carvedFloors?: string[];   // coordinates of carved out floor tiles "ix,iz"
   carvedCeilings?: string[]; // coordinates of carved out ceiling tiles "ix,iz"
   climbHeight?: number;      // physical height of steps climbing
+  trapdoors?: Array<{ cx: number; cz: number; w: number; d: number }>;
+  ceilingHoles?: Array<{ cx: number; cz: number; w: number; d: number }>;
+  floorTexture?: string;
 }
+
+// Procedural textures generator cache
+const PROCEDURAL_TEXTURES_CACHE: Record<string, THREE.CanvasTexture> = {};
+
+const getProceduralTexture = (type: 'wood_floor' | 'ceiling_tiles' | 'wall_tiles'): THREE.CanvasTexture => {
+  if (PROCEDURAL_TEXTURES_CACHE[type]) {
+    return PROCEDURAL_TEXTURES_CACHE[type];
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  if (type === 'wood_floor') {
+    // Warm weathering dark rustic wood planks
+    ctx.fillStyle = '#452c1e';
+    ctx.fillRect(0, 0, 512, 512);
+
+    const plankHeight = 512 / 8;
+    for (let i = 0; i < 8; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#4e3425' : '#3c2518';
+      if (i % 3 === 0) ctx.fillStyle = '#432a1d';
+      ctx.fillRect(0, i * plankHeight, 512, plankHeight);
+
+      // Draw wood grain lines
+      ctx.strokeStyle = '#29170e';
+      ctx.lineWidth = 1;
+      for (let j = 0; j < 5; j++) {
+        ctx.beginPath();
+        ctx.moveTo(0, i * plankHeight + Math.random() * plankHeight);
+        ctx.quadraticCurveTo(
+          256, i * plankHeight + Math.random() * plankHeight * 2 - plankHeight / 2,
+          512, i * plankHeight + Math.random() * plankHeight
+        );
+        ctx.stroke();
+      }
+
+      // Draw joints (vertical seams staggered)
+      const joints = i % 2 === 0 ? [150, 380] : [220, 440];
+      ctx.fillStyle = '#1e110a';
+      joints.forEach(x => {
+        ctx.fillRect(x, i * plankHeight, 2, plankHeight);
+      });
+
+      // Dark edges for planks
+      ctx.strokeStyle = '#1a0d06';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, i * plankHeight);
+      ctx.lineTo(512, i * plankHeight);
+      ctx.stroke();
+    }
+  } else if (type === 'ceiling_tiles') {
+    // Off-white decayed ceiling tiles with water-damaged stains, mold, metal frame
+    ctx.fillStyle = '#dcd5ca';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Grunge noise background
+    for (let i = 0; i < 600; i++) {
+      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)';
+      ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+    }
+
+    // Grid details (2x2 tile layout in 512x512)
+    const tileSize = 256;
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const x = c * tileSize;
+        const y = r * tileSize;
+
+        // Water stains halos
+        ctx.fillStyle = 'rgba(115, 87, 59, 0.15)';
+        ctx.strokeStyle = 'rgba(92, 70, 48, 0.35)';
+        ctx.lineWidth = 1.5;
+
+        for (let s = 0; s < 4; s++) {
+          const cx = x + 30 + Math.random() * (tileSize - 60);
+          const cy = y + 30 + Math.random() * (tileSize - 60);
+          const radius = 25 + Math.random() * 45;
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Mold specks
+        ctx.fillStyle = 'rgba(40, 45, 35, 0.65)';
+        for (let m = 0; m < 35; m++) {
+          const mx = x + Math.random() * tileSize;
+          const my = y + Math.random() * tileSize;
+          ctx.fillRect(mx, my, 1.5, 1.5);
+        }
+
+        // Cracks and paper tear
+        ctx.strokeStyle = 'rgba(50,50,50,0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let px = x + 20;
+        let py = y + 20;
+        ctx.moveTo(px, py);
+        for (let k = 0; k < 10; k++) {
+          px += (Math.random() - 0.5) * 15;
+          py += Math.random() * 20;
+          ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // Metal Grid border overlays
+    ctx.strokeStyle = '#2d2e33';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(512, 0);
+    ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+    ctx.moveTo(0, 512); ctx.lineTo(512, 512);
+    ctx.moveTo(0, 0); ctx.lineTo(0, 512);
+    ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+    ctx.moveTo(512, 0); ctx.lineTo(512, 512);
+    ctx.stroke();
+
+    // Red-brown rust spot highlights
+    ctx.fillStyle = 'rgba(92, 49, 14, 0.55)';
+    for (let gridIdx = 0; gridIdx < 20; gridIdx++) {
+      ctx.fillRect(Math.random() * 512, 253 + Math.random() * 6, Math.random() * 25, Math.random() * 3);
+      ctx.fillRect(253 + Math.random() * 6, Math.random() * 512, Math.random() * 3, Math.random() * 25);
+    }
+  } else if (type === 'wall_tiles') {
+    // Dirty mossy green school wall tiles
+    ctx.fillStyle = '#6d8a6b';
+    ctx.fillRect(0, 0, 512, 512);
+
+    const numTiles = 8;
+    const tSize = 64;
+    for (let r = 0; r < numTiles; r++) {
+      for (let c = 0; c < numTiles; c++) {
+        const tx = c * tSize;
+        const ty = r * tSize;
+
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#728e6f' : '#688566';
+        if ((r * c) % 5 === 0) ctx.fillStyle = '#5c7859';
+        ctx.fillRect(tx + 1, ty + 1, tSize - 2, tSize - 2);
+
+        // Tile inner glow bevel borders
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.strokeRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+        // Random subtle crack offsets
+        if (Math.random() < 0.15) {
+          ctx.strokeStyle = 'rgba(20, 25, 20, 0.55)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+          ctx.lineTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+          ctx.stroke();
+        }
+
+        // Hollow missing tiles showing dark cement/rock
+        if ((r === 2 && c === 4) || (r === 6 && c === 1) || (r === 4 && c === 6)) {
+          ctx.fillStyle = '#222520';
+          ctx.fillRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+          ctx.fillStyle = '#444c41';
+          for (let b = 0; b < 10; b++) {
+            ctx.fillRect(tx + Math.random() * tSize, ty + Math.random() * tSize, Math.random() * 6, Math.random() * 6);
+          }
+        }
+      }
+    }
+
+    // Tile Grout Grid lines (mossy black/grey)
+    ctx.strokeStyle = '#252924';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= numTiles; i++) {
+      ctx.moveTo(0, i * tSize); ctx.lineTo(512, i * tSize);
+      ctx.moveTo(i * tSize, 0); ctx.lineTo(i * tSize, 512);
+    }
+    ctx.stroke();
+
+    // Dark mold drippings vertically
+    for (let dripIdx = 0; dripIdx < 12; dripIdx++) {
+      const dx = Math.random() * 512;
+      const dy = Math.random() * 80;
+      const dH = 150 + Math.random() * 250;
+
+      const grad = ctx.createLinearGradient(dx, dy, dx, dy + dH);
+      grad.addColorStop(0, 'rgba(21, 26, 19, 0.55)');
+      grad.addColorStop(0.3, 'rgba(15, 20, 14, 0.35)');
+      grad.addColorStop(1, 'rgba(15, 20, 14, 0.0)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(dx - 3, dy, 6, dH);
+    }
+
+    // Scratch marks & etched graffiti
+    ctx.strokeStyle = 'rgba(224, 215, 200, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.font = '22px Arial';
+    ctx.strokeText("WASH ME", 80, 200);
+    ctx.strokeText("CLASS OF '95", 280, 390);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  PROCEDURAL_TEXTURES_CACHE[type] = texture;
+  return texture;
+};
 
 const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
   const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
@@ -87,15 +306,15 @@ const getCardinalDirection = (radians: number): { degree: number; label: string 
 };
 
 const INITIAL_ROOMS: Room[] = [
-  { id: 'starter', name: 'Starter Classroom', cx: 17.5, cz: -40, w: 75, d: 60, floorY: 0, h: 10, color: '#3d5c3a' },
+  { id: 'starter', name: 'Starter Classroom', cx: 17.5, cz: -40, w: 75, d: 60, floorY: 0, h: 10, color: '#3d5c3a', floorTexture: "wood_floor.png" },
   { id: 'hallway', name: 'Main Hallway', cx: 20, cz: -3, w: 80, d: 14, floorY: 0, h: 10, color: '#323247' },
   { id: 'science_lab', name: 'Science Lab', cx: 5, cz: 26.5, w: 30, d: 45, floorY: 0, h: 10, color: '#4a3720' },
-  { id: 'library', name: 'Library Shelf Area', cx: 40, cz: 26.5, w: 36, d: 45, floorY: 0, h: 10, color: '#453c1b' },
+  { id: 'library', name: 'Library Shelf Area', cx: 40, cz: 26.5, w: 36, d: 45, floorY: 0, h: 10, color: '#453c1b', floorTexture: "wood_floor.png" },
   { id: 'stairwell', name: 'Stairwell Access', cx: 68, cz: -3, w: 16, d: 10, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'W_E' },
   {
     id: 'gym',
     name: 'Gymnasium (Floor 2)',
-    cx: 116,
+    cx: 144,
     cz: 15,
     w: 80,
     d: 60,
@@ -104,7 +323,21 @@ const INITIAL_ROOMS: Room[] = [
     color: '#20434f',
     carvedFloors: []
   },
-  { id: 'cafeteria', name: 'Cafeteria Wing', cx: -50, cz: -3, w: 60, d: 50, floorY: 0, h: 10, color: '#2a261f' }
+  { id: 'cafeteria', name: 'Cafeteria Wing', cx: -50, cz: -3, w: 60, d: 50, floorY: 0, h: 10, color: '#2a261f' },
+  { id: 'courtyard', name: 'Overgrown Courtyard', cx: -63, cz: 57, w: 90, d: 70, floorY: 0, h: 15, color: '#162e1a', disabledCeiling: true, trapdoors: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] },
+  { id: 'underground_tunnel', name: 'Utility Tunnel', cx: -103, cz: 63.4, w: 12, d: 80, floorY: -12, h: 9, color: '#111412', ceilingHoles: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] },
+  { id: 'the_vault', name: 'Fallout Shelter Vault', cx: -103, cz: 123.4, w: 60, d: 40, floorY: -12, h: 9, color: '#282b29' },
+  { id: 'upper_hallway', name: '2nd Floor Hallway', cx: 90, cz: -3, w: 28, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+  { id: 'principal_office', name: "Principal's Office", cx: 90, cz: 127, w: 56, d: 56, floorY: 11, h: 10, color: '#362a2a' },
+  { id: 'upper_hallway_2', name: '2nd floor hallway 2', cx: 90, cz: 51.5, w: 18, d: 95, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+  { id: 'security_room', name: 'Master Security & Breaker Room', cx: 66, cz: 51.5, w: 30, d: 35, floorY: 11, h: 10, color: '#1a212b' },
+  { id: 'upper_hallway_north', name: '2nd Floor North Connector', cx: 150, cz: 92, w: 102, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+  { id: 'gym_north_hallway', name: 'Gym North Connector', cx: 144, cz: 65, w: 18, d: 40, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+  { id: 'nurses_office', name: "Nurse's Office", cx: 164, cz: 112, w: 32, d: 26, floorY: 11, h: 10, color: '#1f3d3c', floorTexture: "wood_floor.png" },
+  { id: 'nurses_office_backroom', name: "Nurse's Office Backroom", cx: 164, cz: 135, w: 24, d: 20, floorY: 11, h: 10, color: '#19302f', floorTexture: "wood_floor.png" },
+  { id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'N_S' },
+  { id: 'lower_hallway_south', name: 'South Wing Hallway', cx: 90, cz: -76.5, w: 14, d: 85, floorY: 0, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" },
+  { id: 'main_office', name: 'Main Office', cx: 90, cz: -139, w: 50, d: 40, floorY: 0, h: 10, color: '#1e293b', floorTexture: "wood_floor.png" }
 ];
 
 // Connection/Doorway openings config
@@ -124,11 +357,85 @@ const ROOM_GAPS: Record<string, Array<{ side: 'N' | 'S' | 'E' | 'W'; center: num
     { side: 'E', center: 0, width: 10.0 }     // connects to gym (global Z = -3)
   ],
   gym: [
-    { side: 'W', center: -18, width: 10.0 }     // second floor entrance (global X = 76, aligns with staircase)
+    { side: 'W', center: -18, width: 10.0 },     // second floor entrance (global X = 76, aligns with staircase)
+    { side: 'S', center: 0, width: 10.0 },
+    { side: 'N', center: 0, width: 10.0 }
   ],
   cafeteria: [
-    { side: 'E', center: 0, width: 14.0 }     // connects to hallway (global Z = -3)
+    { side: 'E', center: 0, width: 14.0 },     // connects to hallway (global Z = -3)
+    { side: 'N', center: 0, width: 12.0 }
+  ],
+  courtyard: [
+    { side: 'S', center: 13, width: 12.0 }
+  ],
+  boiler_room: [
+    { side: 'N', center: 0, width: 12.0 }
+  ],
+  underground_tunnel: [
+    { side: 'S', center: 0, width: 12.0 },
+    { side: 'N', center: 0, width: 12.0 }
+  ],
+  the_vault: [
+    { side: 'S', center: 0, width: 12.0 }
+  ],
+  upper_hallway: [
+    { side: 'W', center: 0, width: 10 },
+    { side: 'E', center: 0, width: 10 },
+    { side: 'S', center: 0, width: 6 },
+    { side: 'N', center: 0, width: 10 }
+  ],
+  principal_office: [
+    { side: 'S', center: 0, width: 8.0 }
+  ],
+  upper_hallway_2: [
+    { side: 'S', center: 0, width: 10 },
+    { side: 'W', center: 0, width: 8.0 },
+    { side: 'E', center: 40.5, width: 10.0 },
+    { side: 'N', center: 0, width: 8.0 }
+  ],
+  security_room: [
+    { side: 'E', center: 0, width: 8.0 }
+  ],
+  upper_hallway_north: [
+    { side: 'W', center: 0, width: 10.0 },
+    { side: 'N', center: 12, width: 10.0 },
+    { side: 'N', center: 14.0, width: 6.0 },
+    { side: 'S', center: -6, width: 10.0 }
+  ],
+  gym_north_hallway: [
+    { side: 'N', center: 0, width: 10.0 },
+    { side: 'S', center: 0, width: 10.0 }
+  ],
+  nurses_office: [
+    { side: 'S', center: 0, width: 6.0 },
+    { side: 'N', center: 0, width: 6.0 }
+  ],
+  nurses_office_backroom: [
+    { side: 'S', center: 0, width: 6.0 }
+  ],
+  stairwell_2: [
+    { side: 'N', center: 0, width: 6.0 },
+    { side: 'S', center: 0, width: 6.0 }
+  ],
+  lower_hallway_south: [
+    { side: 'N', center: 0, width: 6.0 },
+    { side: 'S', center: 0, width: 6.0 }
+  ],
+  main_office: [
+    { side: 'N', center: 0, width: 6.0 }
   ]
+};
+
+const MAP_PROPS = [
+  { "id": "mystery_box_spawn", "type": "interactable", "roomId": "starter", "cx": 15, "cz": -25, "w": 4, "d": 2, "h": 3, "color": "#8b5a2b" },
+  { "id": "main_power_switch", "type": "interactable", "roomId": "security_room", "cx": 54, "cz": 51.5, "w": 4, "d": 1, "h": 4, "color": "#8b0000" }
+];
+
+export const MAP_CONFIG = {
+  wallThickness: 0.4,
+  ceilingThickness: 0.15,
+  doorHeight: 7.5,
+  floorThickness: 0.2
 };
 
 // Player eye level height & radius limits
@@ -168,7 +475,8 @@ export default function App() {
                 w: 75,
                 d: 60,
                 h: 10,
-                disabledCeiling: false
+                disabledCeiling: false,
+                floorTexture: "wood_floor.png"
               };
             }
             if (r.id === 'science_lab') {
@@ -190,7 +498,8 @@ export default function App() {
                 w: 36,
                 d: 45,
                 h: 10,
-                disabledCeiling: false
+                disabledCeiling: false,
+                floorTexture: "wood_floor.png"
               };
             }
             if (r.id === 'gym') {
@@ -198,7 +507,7 @@ export default function App() {
               // Keep their existing carved floors if they customized it, otherwise empty list
               return { 
                 ...r, 
-                cx: 116, 
+                cx: 144, 
                 cz: 15, 
                 w: 80, 
                 d: 60, 
@@ -216,8 +525,255 @@ export default function App() {
                 cz: -3
               };
             }
+             if (r.id === 'courtyard') {
+              // Strictly enforce courtyard position X to -63 and Z to 57
+              return {
+                ...r,
+                cx: -63,
+                cz: 57,
+                trapdoors: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ]
+              };
+            }
+            if (r.id === 'underground_tunnel') {
+              return {
+                ...r,
+                cx: -103,
+                cz: 63.4,
+                w: 12,
+                d: 80,
+                floorY: -12,
+                h: 9,
+                disabledCeiling: false,
+                ceilingHoles: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ]
+              };
+            }
+            if (r.id === 'the_vault') {
+              return {
+                ...r,
+                cx: -103,
+                cz: 123.4,
+                w: 60,
+                d: 40,
+                floorY: -12,
+                h: 9,
+                disabledCeiling: false
+              };
+            }
+            if (r.id === 'upper_hallway') {
+              return {
+                ...r,
+                cx: 90,
+                cz: -3,
+                w: 28,
+                d: 14,
+                floorY: 11,
+                h: 10,
+                color: '#2a2d36',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'principal_office') {
+              return {
+                ...r,
+                cx: 90,
+                cz: 127,
+                w: 56,
+                d: 56,
+                floorY: 11,
+                h: 10,
+                color: '#362a2a'
+              };
+            }
+            if (r.id === 'upper_hallway_2') {
+              return {
+                ...r,
+                cx: 90,
+                cz: 51.5,
+                w: 18,
+                d: 95,
+                floorY: 11,
+                h: 10,
+                color: '#2a2d36',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'security_room') {
+              return {
+                ...r,
+                cx: 66,
+                cz: 51.5,
+                w: 30,
+                d: 35,
+                floorY: 11,
+                h: 10,
+                color: '#1a212b'
+              };
+            }
+            if (r.id === 'upper_hallway_north') {
+              return {
+                ...r,
+                cx: 150,
+                cz: 92,
+                w: 102,
+                d: 14,
+                floorY: 11,
+                h: 10,
+                color: '#2a2d36',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'gym_north_hallway') {
+              return {
+                ...r,
+                cx: 144,
+                cz: 65,
+                w: 18,
+                d: 40,
+                floorY: 11,
+                h: 10,
+                color: '#2a2d36',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'nurses_office') {
+              return {
+                ...r,
+                cx: 164,
+                cz: 112,
+                w: 32,
+                d: 26,
+                floorY: 11,
+                h: 10,
+                color: '#1f3d3c',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'nurses_office_backroom') {
+              return {
+                ...r,
+                cx: 164,
+                cz: 135,
+                w: 24,
+                d: 20,
+                floorY: 11,
+                h: 10,
+                color: '#19302f',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'stairwell_2') {
+              return {
+                ...r,
+                cx: 90,
+                cz: -22,
+                w: 16,
+                d: 24,
+                floorY: 0,
+                h: 22,
+                climbHeight: 11,
+                color: '#542828',
+                isStaircase: true,
+                stairDirection: 'N_S'
+              };
+            }
+            if (r.id === 'lower_hallway_south') {
+              return {
+                ...r,
+                cx: 90,
+                cz: -76.5,
+                w: 14,
+                d: 85,
+                floorY: 0,
+                h: 10,
+                color: '#2a2d36',
+                floorTexture: "wood_floor.png"
+              };
+            }
+            if (r.id === 'main_office') {
+              return {
+                ...r,
+                cx: 90,
+                cz: -139,
+                w: 50,
+                d: 40,
+                floorY: 0,
+                h: 10,
+                color: '#1e293b',
+                floorTexture: "wood_floor.png"
+              };
+            }
             return r;
           });
+          // Ensure courtyard is present
+          const hasCourtyard = parsed.some((r: any) => r.id === 'courtyard');
+          if (!hasCourtyard) {
+            parsed.push({ id: 'courtyard', name: 'Overgrown Courtyard', cx: -63, cz: 57, w: 90, d: 70, floorY: 0, h: 15, color: '#162e1a', disabledCeiling: true, trapdoors: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] });
+          }
+          // Ensure underground_tunnel is present
+          const hasTunnel = parsed.some((r: any) => r.id === 'underground_tunnel');
+          if (!hasTunnel) {
+            parsed.push({ id: 'underground_tunnel', name: 'Utility Tunnel', cx: -103, cz: 63.4, w: 12, d: 80, floorY: -12, h: 9, color: '#111412', ceilingHoles: [ { cx: -42, cz: -48.5, w: 8, d: 8 }, { cx: -42, cz: -31, w: 12, d: 6 } ] });
+          }
+          // Ensure the_vault is present
+          const hasVault = parsed.some((r: any) => r.id === 'the_vault');
+          if (!hasVault) {
+            parsed.push({ id: 'the_vault', name: 'Fallout Shelter Vault', cx: -103, cz: 123.4, w: 60, d: 40, floorY: -12, h: 9, color: '#282b29' });
+          }
+          // Ensure upper_hallway is present
+          const hasUpperHallway = parsed.some((r: any) => r.id === 'upper_hallway');
+          if (!hasUpperHallway) {
+            parsed.push({ id: 'upper_hallway', name: '2nd Floor Hallway', cx: 90, cz: -3, w: 28, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" });
+          }
+          // Ensure principal_office is present
+          const hasPrincipalOffice = parsed.some((r: any) => r.id === 'principal_office');
+          if (!hasPrincipalOffice) {
+            parsed.push({ id: 'principal_office', name: "Principal's Office", cx: 90, cz: 127, w: 56, d: 56, floorY: 11, h: 10, color: '#362a2a' });
+          }
+          // Ensure upper_hallway_2 is present
+          const hasUpperHallway2 = parsed.some((r: any) => r.id === 'upper_hallway_2');
+          if (!hasUpperHallway2) {
+            parsed.push({ id: 'upper_hallway_2', name: '2nd floor hallway 2', cx: 90, cz: 51.5, w: 18, d: 95, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" });
+          }
+          // Ensure security_room is present
+          const hasSecurityRoom = parsed.some((r: any) => r.id === 'security_room');
+          if (!hasSecurityRoom) {
+            parsed.push({ id: 'security_room', name: 'Master Security & Breaker Room', cx: 66, cz: 51.5, w: 30, d: 35, floorY: 11, h: 10, color: '#1a212b' });
+          }
+          // Ensure upper_hallway_north is present
+          const hasUpperHallwayNorth = parsed.some((r: any) => r.id === 'upper_hallway_north');
+          if (!hasUpperHallwayNorth) {
+            parsed.push({ id: 'upper_hallway_north', name: '2nd Floor North Connector', cx: 150, cz: 92, w: 102, d: 14, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" });
+          }
+          // Ensure gym_north_hallway is present
+          const hasGymNorthHallway = parsed.some((r: any) => r.id === 'gym_north_hallway');
+          if (!hasGymNorthHallway) {
+            parsed.push({ id: 'gym_north_hallway', name: 'Gym North Connector', cx: 144, cz: 65, w: 18, d: 40, floorY: 11, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" });
+          }
+          // Ensure nurses_office is present
+          const hasNursesOffice = parsed.some((r: any) => r.id === 'nurses_office');
+          if (!hasNursesOffice) {
+            parsed.push({ id: 'nurses_office', name: "Nurse's Office", cx: 164, cz: 112, w: 32, d: 26, floorY: 11, h: 10, color: '#1f3d3c', floorTexture: "wood_floor.png" });
+          }
+          // Ensure nurses_office_backroom is present
+          const hasNursesBackroom = parsed.some((r: any) => r.id === 'nurses_office_backroom');
+          if (!hasNursesBackroom) {
+            parsed.push({ id: 'nurses_office_backroom', name: "Nurse's Office Backroom", cx: 164, cz: 135, w: 24, d: 20, floorY: 11, h: 10, color: '#19302f', floorTexture: "wood_floor.png" });
+          }
+          // Ensure stairwell_2 is present
+          const hasStairwell2 = parsed.some((r: any) => r.id === 'stairwell_2');
+          if (!hasStairwell2) {
+            parsed.push({ id: 'stairwell_2', name: 'Secondary Stairwell', cx: 90, cz: -22, w: 16, d: 24, floorY: 0, h: 22, climbHeight: 11, color: '#542828', isStaircase: true, stairDirection: 'N_S' });
+          }
+          // Ensure lower_hallway_south is present
+          const hasLowerHallwaySouth = parsed.some((r: any) => r.id === 'lower_hallway_south');
+          if (!hasLowerHallwaySouth) {
+            parsed.push({ id: 'lower_hallway_south', name: 'South Wing Hallway', cx: 90, cz: -76.5, w: 14, d: 85, floorY: 0, h: 10, color: '#2a2d36', floorTexture: "wood_floor.png" });
+          }
+          // Ensure main_office is present
+          const hasMainOffice = parsed.some((r: any) => r.id === 'main_office');
+          if (!hasMainOffice) {
+            parsed.push({ id: 'main_office', name: 'Main Office', cx: 90, cz: -139, w: 50, d: 40, floorY: 0, h: 10, color: '#1e293b', floorTexture: "wood_floor.png" });
+          }
           return parsed;
         }
       }
@@ -271,6 +827,253 @@ export default function App() {
               parsed.stairwell.push({ side: 'E', center: 0, width: 10.0 });
             }
           }
+          // Inject cafeteria North exit door if missing from saved gaps
+          if (parsed.cafeteria && Array.isArray(parsed.cafeteria)) {
+            const hasNorthExit = parsed.cafeteria.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorthExit) {
+              parsed.cafeteria.push({ side: 'N', center: 0, width: 12.0 });
+            }
+          } else {
+            parsed.cafeteria = [
+              { side: 'E', center: 0, width: 14.0 },
+              { side: 'N', center: 0, width: 12.0 }
+            ];
+          }
+          // Inject courtyard South gap if missing from saved gaps
+          if (!parsed.courtyard || !Array.isArray(parsed.courtyard)) {
+            parsed.courtyard = [
+              { side: 'S', center: 13, width: 12.0 }
+            ];
+          } else {
+            // Also adjust existing courtyard south gap to match new alignment
+            parsed.courtyard = parsed.courtyard.map((g: any) => {
+              if (g.side === 'S') return { ...g, center: 13 };
+              return g;
+            });
+          }
+          // Inject boiler_room gap if missing
+          if (!parsed.boiler_room || !Array.isArray(parsed.boiler_room)) {
+            parsed.boiler_room = [
+              { side: 'N', center: 0, width: 12.0 }
+            ];
+          }
+          // Inject underground_tunnel gaps if missing
+          if (!parsed.underground_tunnel || !Array.isArray(parsed.underground_tunnel)) {
+            parsed.underground_tunnel = [
+              { side: 'S', center: 0, width: 12.0 },
+              { side: 'N', center: 0, width: 12.0 }
+            ];
+          }
+          // Inject the_vault gaps if missing
+          if (!parsed.the_vault || !Array.isArray(parsed.the_vault)) {
+            parsed.the_vault = [
+              { side: 'S', center: 0, width: 12.0 }
+            ];
+          } else {
+            // Adjust to face the tunnel on South side
+            parsed.the_vault = parsed.the_vault.map((g: any) => {
+              if (g.side === 'N') return { ...g, side: 'S' };
+              return g;
+            });
+            const hasSouth = parsed.the_vault.some((g: any) => g.side === 'S');
+            if (!hasSouth) {
+              parsed.the_vault.push({ side: 'S', center: 0, width: 12.0 });
+            }
+          }
+          // Inject upper_hallway gaps if missing
+          if (!parsed.upper_hallway || !Array.isArray(parsed.upper_hallway)) {
+            parsed.upper_hallway = [
+              { side: 'W', center: 0, width: 10 },
+              { side: 'E', center: 0, width: 10 },
+              { side: 'S', center: 0, width: 6 },
+              { side: 'N', center: 0, width: 10 }
+            ];
+          } else {
+            const hasNorth = parsed.upper_hallway.some((g: any) => g.side === 'N');
+            if (!hasNorth) {
+              parsed.upper_hallway.push({ side: 'N', center: 0, width: 10 });
+            }
+          }
+          // Inject principal_office gaps if missing
+          if (!parsed.principal_office || !Array.isArray(parsed.principal_office)) {
+            parsed.principal_office = [
+              { side: 'S', center: 0, width: 8.0 }
+            ];
+          } else {
+            const hasSouth = parsed.principal_office.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.principal_office = parsed.principal_office.filter((g: any) => g.side !== 'S');
+              parsed.principal_office.push({ side: 'S', center: 0, width: 8.0 });
+            }
+          }
+          // Inject upper_hallway_2 gaps if missing
+          if (!parsed.upper_hallway_2 || !Array.isArray(parsed.upper_hallway_2)) {
+            parsed.upper_hallway_2 = [
+              { side: 'S', center: 0, width: 10 },
+              { side: 'W', center: 0, width: 8.0 },
+              { side: 'E', center: 40.5, width: 10.0 },
+              { side: 'N', center: 0, width: 8.0 }
+            ];
+          } else {
+            // Check if there is an existing 'W' gap. We can replace/add as needed.
+            // Let's ensure there is a gap with center 0 and width 8 on side W if requested.
+            const hasWestWithZero = parsed.upper_hallway_2.some((g: any) => g.side === 'W' && g.center === 0);
+            if (!hasWestWithZero) {
+              // Remove other W gaps to prevent duplicates, then push
+              parsed.upper_hallway_2 = parsed.upper_hallway_2.filter((g: any) => g.side !== 'W');
+              parsed.upper_hallway_2.push({ side: 'W', center: 0, width: 8.0 });
+            }
+            // Always overwrite the 'E' side gap to be at center 40.5 to align with the connector at cz = 92
+            parsed.upper_hallway_2 = parsed.upper_hallway_2.filter((g: any) => g.side !== 'E');
+            parsed.upper_hallway_2.push({ side: 'E', center: 40.5, width: 10.0 });
+            // Always ensure the 'N' side gap exists to connect to principal_office
+            const hasNorthWithZero = parsed.upper_hallway_2.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorthWithZero) {
+              parsed.upper_hallway_2 = parsed.upper_hallway_2.filter((g: any) => g.side !== 'N');
+              parsed.upper_hallway_2.push({ side: 'N', center: 0, width: 8.0 });
+            }
+          }
+          // Inject security_room gaps if missing
+          if (!parsed.security_room || !Array.isArray(parsed.security_room)) {
+            parsed.security_room = [
+              { side: 'E', center: 0, width: 8.0 }
+            ];
+          } else {
+            const hasEastWithZero = parsed.security_room.some((g: any) => g.side === 'E' && g.center === 0);
+            if (!hasEastWithZero) {
+              parsed.security_room = parsed.security_room.filter((g: any) => g.side !== 'E');
+              parsed.security_room.push({ side: 'E', center: 0, width: 8.0 });
+            }
+          }
+          // Inject gym South and North wall gaps
+          if (parsed.gym && Array.isArray(parsed.gym)) {
+            parsed.gym = parsed.gym.filter((g: any) => !(g.side === 'N' && g.center === -14));
+            const hasSouth = parsed.gym.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.gym.push({ side: 'S', center: 0, width: 10.0 });
+            }
+            const hasNorth = parsed.gym.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.gym = parsed.gym.filter((g: any) => g.side !== 'N');
+              parsed.gym.push({ side: 'N', center: 0, width: 10.0 });
+            }
+          }
+          // Inject upper_hallway_north gaps if missing or outdated
+          if (!parsed.upper_hallway_north || !Array.isArray(parsed.upper_hallway_north)) {
+            parsed.upper_hallway_north = [
+              { side: 'W', center: 0, width: 10.0 },
+              { side: 'N', center: 12, width: 10.0 },
+              { side: 'N', center: 14.0, width: 6.0 },
+              { side: 'S', center: -6, width: 10.0 }
+            ];
+          } else {
+            const hasWest = parsed.upper_hallway_north.some((g: any) => g.side === 'W' && g.center === 0);
+            if (!hasWest) {
+              parsed.upper_hallway_north = parsed.upper_hallway_north.filter((g: any) => g.side !== 'W');
+              parsed.upper_hallway_north.push({ side: 'W', center: 0, width: 10.0 });
+            }
+            const hasNorth12 = parsed.upper_hallway_north.some((g: any) => g.side === 'N' && g.center === 12);
+            if (!hasNorth12) {
+              parsed.upper_hallway_north.push({ side: 'N', center: 12, width: 10.0 });
+            }
+            const hasNorth14 = parsed.upper_hallway_north.some((g: any) => g.side === 'N' && g.center === 14.0);
+            if (!hasNorth14) {
+              parsed.upper_hallway_north.push({ side: 'N', center: 14.0, width: 6.0 });
+            }
+            const hasSouth = parsed.upper_hallway_north.some((g: any) => g.side === 'S' && g.center === -6);
+            if (!hasSouth) {
+              parsed.upper_hallway_north = parsed.upper_hallway_north.filter((g: any) => g.side !== 'S');
+              parsed.upper_hallway_north.push({ side: 'S', center: -6, width: 10.0 });
+            }
+          }
+          // Inject gym_north_hallway gaps if missing or outdated
+          if (!parsed.gym_north_hallway || !Array.isArray(parsed.gym_north_hallway)) {
+            parsed.gym_north_hallway = [
+              { side: 'N', center: 0, width: 10.0 },
+              { side: 'S', center: 0, width: 10.0 }
+            ];
+          } else {
+            const hasNorth = parsed.gym_north_hallway.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.gym_north_hallway = parsed.gym_north_hallway.filter((g: any) => g.side !== 'N');
+              parsed.gym_north_hallway.push({ side: 'N', center: 0, width: 10.0 });
+            }
+            const hasSouth = parsed.gym_north_hallway.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.gym_north_hallway = parsed.gym_north_hallway.filter((g: any) => g.side !== 'S');
+              parsed.gym_north_hallway.push({ side: 'S', center: 0, width: 10.0 });
+            }
+          }
+          // Inject nurses_office gaps
+          if (!parsed.nurses_office || !Array.isArray(parsed.nurses_office)) {
+            parsed.nurses_office = [
+              { side: 'S', center: 0, width: 6.0 },
+              { side: 'N', center: 0, width: 6.0 }
+            ];
+          } else {
+            const hasSouth = parsed.nurses_office.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.nurses_office.push({ side: 'S', center: 0, width: 6.0 });
+            }
+            const hasNorth = parsed.nurses_office.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.nurses_office.push({ side: 'N', center: 0, width: 6.0 });
+            }
+          }
+          // Inject nurses_office_backroom gaps
+          if (!parsed.nurses_office_backroom || !Array.isArray(parsed.nurses_office_backroom)) {
+            parsed.nurses_office_backroom = [
+              { side: 'S', center: 0, width: 6.0 }
+            ];
+          } else {
+            const hasSouth = parsed.nurses_office_backroom.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.nurses_office_backroom.push({ side: 'S', center: 0, width: 6.0 });
+            }
+          }
+          // Inject stairwell_2 gaps if missing
+          if (!parsed.stairwell_2 || !Array.isArray(parsed.stairwell_2)) {
+            parsed.stairwell_2 = [
+              { side: 'N', center: 0, width: 6.0 },
+              { side: 'S', center: 0, width: 6.0 }
+            ];
+          } else {
+            const hasNorth = parsed.stairwell_2.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.stairwell_2.push({ side: 'N', center: 0, width: 6.0 });
+            }
+            const hasSouth = parsed.stairwell_2.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.stairwell_2.push({ side: 'S', center: 0, width: 6.0 });
+            }
+          }
+          // Inject lower_hallway_south gaps if missing
+          if (!parsed.lower_hallway_south || !Array.isArray(parsed.lower_hallway_south)) {
+            parsed.lower_hallway_south = [
+              { side: 'N', center: 0, width: 6.0 },
+              { side: 'S', center: 0, width: 6.0 }
+            ];
+          } else {
+            const hasNorth = parsed.lower_hallway_south.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.lower_hallway_south.push({ side: 'N', center: 0, width: 6.0 });
+            }
+            const hasSouth = parsed.lower_hallway_south.some((g: any) => g.side === 'S' && g.center === 0);
+            if (!hasSouth) {
+              parsed.lower_hallway_south.push({ side: 'S', center: 0, width: 6.0 });
+            }
+          }
+          // Inject main_office gaps if missing
+          if (!parsed.main_office || !Array.isArray(parsed.main_office)) {
+            parsed.main_office = [
+              { side: 'N', center: 0, width: 6.0 }
+            ];
+          } else {
+            const hasNorth = parsed.main_office.some((g: any) => g.side === 'N' && g.center === 0);
+            if (!hasNorth) {
+              parsed.main_office.push({ side: 'N', center: 0, width: 6.0 });
+            }
+          }
           // Do NOT override parsed.gym anymore so any wall segments edited by the user are fully preserved!
           return parsed;
         }
@@ -282,6 +1085,131 @@ export default function App() {
   });
 
   const [noclip, setNoclip] = useState<boolean>(false);
+
+  // --- UNDO / REDO HISTORY ENGINE ---
+  const undoStackRef = useRef<Array<{ rooms: Room[]; roomGaps: Record<string, any> }>>([]);
+  const redoStackRef = useRef<Array<{ rooms: Room[]; roomGaps: Record<string, any> }>>([]);
+  const isUndoRedoAction = useRef<boolean>(false);
+  const lastSavedState = useRef<{ rooms: Room[]; roomGaps: Record<string, any> } | null>(null);
+
+  // Initialize lastSavedState once on mount
+  useEffect(() => {
+    lastSavedState.current = {
+      rooms: JSON.parse(JSON.stringify(rooms)),
+      roomGaps: JSON.parse(JSON.stringify(roomGaps))
+    };
+  }, []);
+
+  // Monitor changes to state to record historical snapshots
+  useEffect(() => {
+    if (isUndoRedoAction.current) {
+      isUndoRedoAction.current = false;
+      lastSavedState.current = {
+        rooms: JSON.parse(JSON.stringify(rooms)),
+        roomGaps: JSON.parse(JSON.stringify(roomGaps))
+      };
+      return;
+    }
+
+    if (!lastSavedState.current) return;
+
+    // Check if current state actually differs from last saved state
+    const roomsStr = JSON.stringify(rooms);
+    const lastRoomsStr = JSON.stringify(lastSavedState.current.rooms);
+    const gapsStr = JSON.stringify(roomGaps);
+    const lastGapsStr = JSON.stringify(lastSavedState.current.roomGaps);
+
+    if (roomsStr !== lastRoomsStr || gapsStr !== lastGapsStr) {
+      // Debounce history snapshot creation by 400ms to group continuous inputs (sliders, typing, paints)
+      const timer = setTimeout(() => {
+        undoStackRef.current.push({
+          rooms: JSON.parse(JSON.stringify(lastSavedState.current!.rooms)),
+          roomGaps: JSON.parse(JSON.stringify(lastSavedState.current!.roomGaps))
+        });
+
+        redoStackRef.current = [];
+
+        // Cap undo history at 50 steps
+        if (undoStackRef.current.length > 50) {
+          undoStackRef.current.shift();
+        }
+
+        lastSavedState.current = {
+          rooms: JSON.parse(JSON.stringify(rooms)),
+          roomGaps: JSON.parse(JSON.stringify(roomGaps))
+        };
+      }, 400);
+
+      return () => clearTimeout(timer);
+    }
+  }, [rooms, roomGaps]);
+
+  const handleUndo = () => {
+    if (undoStackRef.current.length === 0) return;
+    
+    const prev = undoStackRef.current.pop()!;
+    
+    redoStackRef.current.push({
+      rooms: JSON.parse(JSON.stringify(rooms)),
+      roomGaps: JSON.parse(JSON.stringify(roomGaps))
+    });
+
+    isUndoRedoAction.current = true;
+    setRooms(prev.rooms);
+    setRoomGaps(prev.roomGaps);
+    
+    setSaveNotification('⏪ Undone');
+    setTimeout(() => setSaveNotification(null), 1000);
+  };
+
+  const handleRedo = () => {
+    if (redoStackRef.current.length === 0) return;
+
+    const next = redoStackRef.current.pop()!;
+
+    undoStackRef.current.push({
+      rooms: JSON.parse(JSON.stringify(rooms)),
+      roomGaps: JSON.parse(JSON.stringify(roomGaps))
+    });
+
+    isUndoRedoAction.current = true;
+    setRooms(next.rooms);
+    setRoomGaps(next.roomGaps);
+
+    setSaveNotification('⏩ Redone');
+    setTimeout(() => setSaveNotification(null), 1000);
+  };
+
+  // Bind Undo & Redo globally on window keydown
+  useEffect(() => {
+    const handleUndoRedoKeys = (e: KeyboardEvent) => {
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (isCtrl && e.key.toLowerCase() === 'z') {
+        const active = document.activeElement?.tagName;
+        if (active === 'INPUT' || active === 'TEXTAREA') {
+          return;
+        }
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (isCtrl && e.key.toLowerCase() === 'y') {
+        const active = document.activeElement?.tagName;
+        if (active === 'INPUT' || active === 'TEXTAREA') {
+          return;
+        }
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleUndoRedoKeys);
+    return () => {
+      window.removeEventListener('keydown', handleUndoRedoKeys);
+    };
+  }, [rooms, roomGaps]);
 
   useEffect(() => {
     try {
@@ -612,9 +1540,9 @@ export default function App() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dead Halls - 3D Map Blueprint Export</title>
-  <script src="https://unpkg.com/three@0.147.0/build/three.min.js"><\/script>
-  <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"><\/script>
-  <script src="https://cdn.tailwindcss.com"><\/script>
+  <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     body {
@@ -649,12 +1577,15 @@ export default function App() {
       </div>
 
       <!-- Action items -->
-      <div class="grid grid-cols-2 gap-2">
-        <button onclick="copyLayoutJSON()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:text-white px-3 py-2 text-xs font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1">
-          📋 Copy JSON Data
+      <div class="grid grid-cols-3 gap-1.5">
+        <button onclick="copyLayoutJSON()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:text-white px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Copy JSON data to clipboard">
+          📋 Copy JSON
         </button>
-        <button onclick="downloadThisHTML()" class="bg-emerald-500 text-slate-950 hover:bg-emerald-400 px-3 py-2 text-xs font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1">
+        <button onclick="downloadThisHTML()" class="bg-emerald-500 text-slate-950 hover:bg-emerald-400 px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Download interactive 3D map as HTML">
           💾 Download HTML
+        </button>
+        <button onclick="downloadLayoutJSON()" class="bg-amber-500 text-slate-950 hover:bg-amber-400 px-2 py-2 text-[10px] font-mono font-bold rounded cursor-pointer transition flex items-center justify-center gap-1" title="Export layout as raw JSON file">
+          📥 Export JSON File
         </button>
       </div>
 
@@ -715,14 +1646,31 @@ export default function App() {
     const MAP_ROOMS = ${roomsJson};
     const MAP_GAPS = ${gapsJson};
 
+    const MAP_PROPS = [
+      { "id": "mystery_box_spawn", "type": "interactable", "roomId": "starter", "cx": 15, "cz": -25, "w": 4, "d": 2, "h": 3, "color": "#8b5a2b" },
+      { "id": "main_power_switch", "type": "interactable", "roomId": "security_room", "cx": 54, "cz": 51.5, "w": 4, "d": 1, "h": 4, "color": "#8b0000" }
+    ];
+
     // Fill left pane text displays
     document.getElementById('json-code').innerText = JSON.stringify(MAP_ROOMS, null, 2);
     document.getElementById('gaps-code').innerText = JSON.stringify(MAP_GAPS, null, 2);
 
     function copyLayoutJSON() {
-      const data = { rooms: MAP_ROOMS, gaps: MAP_GAPS };
+      const data = { rooms: MAP_ROOMS, gaps: MAP_GAPS, props: MAP_PROPS };
       navigator.clipboard.writeText(JSON.stringify(data, null, 2));
       alert('School map blueprint layout JSON copied securely to clipboard!');
+    }
+
+    function downloadLayoutJSON() {
+      const data = { rooms: MAP_ROOMS, gaps: MAP_GAPS, props: MAP_PROPS };
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'school_of_the_dead_layout.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
 
     function downloadThisHTML() {
@@ -738,6 +1686,13 @@ export default function App() {
     }
 
     // --- THREE.JS INTERACTIVE ENVIRONMENT WORKFLOW ---
+    const MAP_CONFIG = {
+      wallThickness: 0.4,
+      ceilingThickness: 0.15,
+      doorHeight: 7.5,
+      floorThickness: 0.2
+    };
+
     const canvas = document.getElementById('blueprint-canvas');
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
@@ -757,7 +1712,7 @@ export default function App() {
     const controls = new THREE.OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2.05; // limit looking under the level floor
+    controls.maxPolarAngle = Math.PI; // allow full vertical rotation to view sublevel geometry
 
     // Lights
     const ambientLight = new THREE.AmbientLight(0x334155, 1.2);
@@ -777,6 +1732,199 @@ export default function App() {
     scene.add(grid1);
 
     // Build Rooms
+    const PROCEDURAL_TEXTURES_CACHE = {};
+    const getProceduralTexture = (type) => {
+      if (PROCEDURAL_TEXTURES_CACHE[type]) {
+        return PROCEDURAL_TEXTURES_CACHE[type];
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      if (type === 'wood_floor') {
+        ctx.fillStyle = '#452c1e';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const plankHeight = 512 / 8;
+        for (let i = 0; i < 8; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#4e3425' : '#3c2518';
+          if (i % 3 === 0) ctx.fillStyle = '#432a1d';
+          ctx.fillRect(0, i * plankHeight, 512, plankHeight);
+
+          ctx.strokeStyle = '#29170e';
+          ctx.lineWidth = 1;
+          for (let j = 0; j < 5; j++) {
+            ctx.beginPath();
+            ctx.moveTo(0, i * plankHeight + Math.random() * plankHeight);
+            ctx.quadraticCurveTo(
+              256, i * plankHeight + Math.random() * plankHeight * 2 - plankHeight / 2,
+              512, i * plankHeight + Math.random() * plankHeight
+            );
+            ctx.stroke();
+          }
+
+          const joints = i % 2 === 0 ? [150, 380] : [220, 440];
+          ctx.fillStyle = '#1e110a';
+          joints.forEach(x => {
+            ctx.fillRect(x, i * plankHeight, 2, plankHeight);
+          });
+
+          ctx.strokeStyle = '#1a0d06';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, i * plankHeight);
+          ctx.lineTo(512, i * plankHeight);
+          ctx.stroke();
+        }
+      } else if (type === 'ceiling_tiles') {
+        ctx.fillStyle = '#dcd5ca';
+        ctx.fillRect(0, 0, 512, 512);
+
+        for (let i = 0; i < 600; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)';
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+        }
+
+        const tileSize = 256;
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 2; c++) {
+            const x = c * tileSize;
+            const y = r * tileSize;
+
+            ctx.fillStyle = 'rgba(115, 87, 59, 0.15)';
+            ctx.strokeStyle = 'rgba(92, 70, 48, 0.35)';
+            ctx.lineWidth = 1.5;
+
+            for (let s = 0; s < 4; s++) {
+              const cx = x + 30 + Math.random() * (tileSize - 60);
+              const cy = y + 30 + Math.random() * (tileSize - 60);
+              const radius = 25 + Math.random() * 45;
+
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+              ctx.fill();
+
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+
+            ctx.fillStyle = 'rgba(40, 45, 35, 0.65)';
+            for (let m = 0; m < 35; m++) {
+              const mx = x + Math.random() * tileSize;
+              const my = y + Math.random() * tileSize;
+              ctx.fillRect(mx, my, 1.5, 1.5);
+            }
+
+            ctx.strokeStyle = 'rgba(50,50,50,0.25)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            let px = x + 20;
+            let py = y + 20;
+            ctx.moveTo(px, py);
+            for (let k = 0; k < 10; k++) {
+              px += (Math.random() - 0.5) * 15;
+              py += Math.random() * 20;
+              ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+        }
+
+        ctx.strokeStyle = '#2d2e33';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(512, 0);
+        ctx.moveTo(0, 256); ctx.lineTo(512, 256);
+        ctx.moveTo(0, 512); ctx.lineTo(512, 512);
+        ctx.moveTo(0, 0); ctx.lineTo(0, 512);
+        ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+        ctx.moveTo(512, 0); ctx.lineTo(512, 512);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(92, 49, 14, 0.55)';
+        for (let gridIdx = 0; gridIdx < 20; gridIdx++) {
+          ctx.fillRect(Math.random() * 512, 253 + Math.random() * 6, Math.random() * 25, Math.random() * 3);
+          ctx.fillRect(253 + Math.random() * 6, Math.random() * 512, Math.random() * 3, Math.random() * 25);
+        }
+      } else if (type === 'wall_tiles') {
+        ctx.fillStyle = '#6d8a6b';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const numTiles = 8;
+        const tSize = 64;
+        for (let r = 0; r < numTiles; r++) {
+          for (let c = 0; c < numTiles; c++) {
+            const tx = c * tSize;
+            const ty = r * tSize;
+
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#728e6f' : '#688566';
+            if ((r * c) % 5 === 0) ctx.fillStyle = '#5c7859';
+            ctx.fillRect(tx + 1, ty + 1, tSize - 2, tSize - 2);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.strokeRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+            if (Math.random() < 0.15) {
+              ctx.strokeStyle = 'rgba(20, 25, 20, 0.55)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+              ctx.lineTo(tx + Math.random() * tSize, ty + Math.random() * tSize);
+              ctx.stroke();
+            }
+
+            if ((r === 2 && c === 4) || (r === 6 && c === 1) || (r === 4 && c === 6)) {
+              ctx.fillStyle = '#222520';
+              ctx.fillRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+
+              ctx.fillStyle = '#444c41';
+              for (let b = 0; b < 10; b++) {
+                ctx.fillRect(tx + Math.random() * tSize, ty + Math.random() * tSize, Math.random() * 6, Math.random() * 6);
+              }
+            }
+          }
+        }
+
+        ctx.strokeStyle = '#252924';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= numTiles; i++) {
+          ctx.moveTo(0, i * tSize); ctx.lineTo(512, i * tSize);
+          ctx.moveTo(i * tSize, 0); ctx.lineTo(i * tSize, 512);
+        }
+        ctx.stroke();
+
+        for (let dripIdx = 0; dripIdx < 12; dripIdx++) {
+          const dx = Math.random() * 512;
+          const dy = Math.random() * 80;
+          const dH = 150 + Math.random() * 250;
+
+          const grad = ctx.createLinearGradient(dx, dy, dx, dy + dH);
+          grad.addColorStop(0, 'rgba(21, 26, 19, 0.55)');
+          grad.addColorStop(0.3, 'rgba(15, 20, 14, 0.35)');
+          grad.addColorStop(1, 'rgba(15, 20, 14, 0.0)');
+
+          ctx.fillStyle = grad;
+          ctx.fillRect(dx - 3, dy, 6, dH);
+        }
+
+        ctx.strokeStyle = 'rgba(224, 215, 200, 0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.font = '22px Arial';
+        ctx.strokeText("WASH ME", 80, 200);
+        ctx.strokeText("CLASS OF '95", 280, 390);
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      PROCEDURAL_TEXTURES_CACHE[type] = texture;
+      return texture;
+    };
+
     const materials = {
       floor: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9, metalness: 0.1 }),
       gymFloor: new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.7, metalness: 0.1 }),
@@ -787,131 +1935,164 @@ export default function App() {
 
     const ceilingMeshes = [];
 
-    // Calculate wall segments containing openings
-    MAP_ROOMS.forEach(r => {
-      // 1) FLOORS
-      const fGeo = new THREE.BoxGeometry(r.w, 0.2, r.d);
+    // Helper functions for modular geometry construction to prevent spaghetti code
+    const buildFloor = (r) => {
+      const fGeo = new THREE.BoxGeometry(r.w, MAP_CONFIG.floorThickness, r.d);
       const isGym = r.id === 'gym';
-      const fMesh = new THREE.Mesh(fGeo, isGym ? materials.gymFloor : new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.8 }));
-      fMesh.position.set(r.cx, r.floorY - 0.1, r.cz);
+      let fMat;
+      if (r.floorTexture) {
+        let tex;
+        if (r.floorTexture === "wood_floor.png") {
+          tex = getProceduralTexture("wood_floor").clone();
+          tex.repeat.set(r.w / 12, r.d / 12);
+        } else {
+          const loader = new THREE.TextureLoader();
+          tex = loader.load(r.floorTexture);
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(r.w / 10, r.d / 10);
+        }
+        fMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.1 });
+      } else {
+        fMat = isGym ? materials.gymFloor : new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.8 });
+      }
+      const fMesh = new THREE.Mesh(fGeo, fMat);
+      fMesh.position.set(r.cx, r.floorY - MAP_CONFIG.floorThickness / 2, r.cz);
       scene.add(fMesh);
 
-      // 2) CEILINGS (semi-transparent slate-blue blueprint glass so overhead look is distinct and visible)
-      if (!r.disabledCeiling) {
-        const cGeo = new THREE.BoxGeometry(r.w - 0.4, 0.15, r.d - 0.4);
-        const cMat = new THREE.MeshStandardMaterial({ 
-          color: 0x38bdf8, // vibrant cyan blueprint glass
-          transparent: true, 
-          opacity: 0.45, 
-          roughness: 0.2,
-          metalness: 0.8,
-          side: THREE.DoubleSide
+      if (r.trapdoors && Array.isArray(r.trapdoors)) {
+        r.trapdoors.forEach((td) => {
+          let finalCx = td.cx;
+          let finalCz = td.cz;
+          if (td.cx === -42) {
+            finalCx = -103;
+            if (td.cz === -48.5) finalCz = 23.4;
+            else if (td.cz === -31) finalCz = 40.9;
+          }
+          const tdGeo = new THREE.BoxGeometry(td.w, 0.05, td.d);
+          const tdMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+          const tdMesh = new THREE.Mesh(tdGeo, tdMat);
+          tdMesh.position.set(finalCx, r.floorY + 0.15, finalCz);
+          scene.add(tdMesh);
         });
-        const cMesh = new THREE.Mesh(cGeo, cMat);
-        cMesh.position.set(r.cx, r.floorY + r.h, r.cz);
-        scene.add(cMesh);
-        cMesh.userData = { isCeiling: true, baseColor: r.color };
-        ceilingMeshes.push(cMesh);
       }
+    };
 
-      // 3) WALL SEGMENTS CONSTRUCT WITH DOOR OPENINGS
-      const gaps = MAP_GAPS[r.id] || [];
+    const buildCeiling = (r) => {
+      if (!r.disabledCeiling) {
+        const createPart = (cx, cz, w, d) => {
+          if (w <= 0.1 || d <= 0.1) return;
+          const cGeo = new THREE.BoxGeometry(w, MAP_CONFIG.ceilingThickness, d);
+          const cMat = new THREE.MeshStandardMaterial({ 
+            color: 0x38bdf8, // vibrant cyan blueprint glass
+            transparent: true, 
+            opacity: 0.45, 
+            roughness: 0.2,
+            metalness: 0.8,
+            side: THREE.DoubleSide
+          });
+          const cMesh = new THREE.Mesh(cGeo, cMat);
+          cMesh.position.set(cx, r.floorY + r.h, cz);
+          scene.add(cMesh);
+          cMesh.userData = { isCeiling: true, baseColor: r.color, roomId: r.id, w: w, d: d };
+          ceilingMeshes.push(cMesh);
+        };
 
-      // NORTH WALL (along Z = +d/2 relative) -> global Z = cz + d/2
-      const gapNList = gaps.filter(g => g.side === 'N');
-      let currentN = r.cx - r.w / 2;
-      gapNList.forEach(gap => {
-        const gapCenterGlobal = r.cx + gap.center;
-        const gapL = gapCenterGlobal - gap.width / 2;
-        const gapR = gapCenterGlobal + gap.width / 2;
+        const rawHoles = r.ceilingHoles || [];
+        const holes = rawHoles.map((h) => {
+          if (h.cx === -42) {
+            let finalCz = h.cz;
+            if (h.cz === -48.5) finalCz = 23.4;
+            else if (h.cz === -31) finalCz = 40.9;
+            return { ...h, cx: -103, cz: finalCz };
+          }
+          return h;
+        });
 
-        if (currentN < gapL) {
-          const wWidth = gapL - currentN;
-          addWallSegment(currentN + wWidth/2, r.cz + r.d/2, wWidth, r.h, 0.4, r.floorY);
+        if (holes && holes.length > 0) {
+          const rxMin = r.cx - (r.w - MAP_CONFIG.wallThickness) / 2;
+          const rxMax = r.cx + (r.w - MAP_CONFIG.wallThickness) / 2;
+          const rzMin = r.cz - (r.d - MAP_CONFIG.wallThickness) / 2;
+          const rzMax = r.cz + (r.d - MAP_CONFIG.wallThickness) / 2;
+
+          const xBoundaries = [rxMin, rxMax];
+          const zBoundaries = [rzMin, rzMax];
+
+          holes.forEach((h) => {
+            const hxMin = h.cx - h.w / 2;
+            const hxMax = h.cx + h.w / 2;
+            const hzMin = h.cz - h.d / 2;
+            const hzMax = h.cz + h.d / 2;
+
+            const cxMin = Math.max(rxMin, hxMin);
+            const cxMax = Math.min(rxMax, hxMax);
+            const czMin = Math.max(rzMin, hzMin);
+            const czMax = Math.min(rzMax, hzMax);
+
+            if (cxMax > cxMin + 0.05) {
+              xBoundaries.push(cxMin, cxMax);
+            }
+            if (czMax > czMin + 0.05) {
+              zBoundaries.push(czMin, czMax);
+            }
+          });
+
+          xBoundaries.sort((a, b) => a - b);
+          zBoundaries.sort((a, b) => a - b);
+
+          const xCoords = [];
+          xBoundaries.forEach((x) => {
+            if (xCoords.length === 0 || x - xCoords[xCoords.length - 1] > 0.05) {
+              xCoords.push(x);
+            }
+          });
+
+          const zCoords = [];
+          zBoundaries.forEach((z) => {
+            if (zCoords.length === 0 || z - zCoords[zCoords.length - 1] > 0.05) {
+              zCoords.push(z);
+            }
+          });
+
+          for (let i = 0; i < xCoords.length - 1; i++) {
+            for (let j = 0; j < zCoords.length - 1; j++) {
+              const x1 = xCoords[i];
+              const x2 = xCoords[i + 1];
+              const z1 = zCoords[j];
+              const z2 = zCoords[j + 1];
+              
+              const partW = x2 - x1;
+              const partD = z2 - z1;
+              if (partW <= 0.05 || partD <= 0.05) continue;
+
+              const centerX = (x1 + x2) / 2;
+              const centerZ = (z1 + z2) / 2;
+
+              let inHole = false;
+              for (const h of holes) {
+                const hxMin = h.cx - h.w / 2;
+                const hxMax = h.cx + h.w / 2;
+                const hzMin = h.cz - h.d / 2;
+                const hzMax = h.cz + h.d / 2;
+                if (centerX >= hxMin - 0.02 && centerX <= hxMax + 0.02 &&
+                    centerZ >= hzMin - 0.02 && centerZ <= hzMax + 0.02) {
+                  inHole = true;
+                  break;
+                }
+              }
+
+              if (!inHole) {
+                createPart(centerX, centerZ, partW, partD);
+              }
+            }
+          }
+        } else {
+          createPart(r.cx, r.cz, r.w - MAP_CONFIG.wallThickness, r.d - MAP_CONFIG.wallThickness);
         }
-        // Draw door gap top lintel (wall segment above doorway)
-        const doorHeight = 7.5;
-        if (r.h > doorHeight) {
-          addWallSegment(gapCenterGlobal, r.cz + r.d/2, gap.width, r.h - doorHeight, 0.4, r.floorY + doorHeight);
-        }
-        currentN = gapR;
-      });
-      if (currentN < r.cx + r.w / 2) {
-        const wWidth = (r.cx + r.w / 2) - currentN;
-        addWallSegment(currentN + wWidth/2, r.cz + r.d/2, wWidth, r.h, 0.4, r.floorY);
       }
+    };
 
-      // SOUTH WALL (along Z = -d/2 relative) -> global Z = cz - d/2
-      const gapSList = gaps.filter(g => g.side === 'S');
-      let currentS = r.cx - r.w / 2;
-      gapSList.forEach(gap => {
-        const gapCenterGlobal = r.cx + gap.center;
-        const gapL = gapCenterGlobal - gap.width / 2;
-        const gapR = gapCenterGlobal + gap.width / 2;
-
-        if (currentS < gapL) {
-          const wWidth = gapL - currentS;
-          addWallSegment(currentS + wWidth/2, r.cz - r.d/2, wWidth, r.h, 0.4, r.floorY);
-        }
-        // Draw door gap top lintel (wall segment above doorway)
-        const doorHeight = 7.5;
-        if (r.h > doorHeight) {
-          addWallSegment(gapCenterGlobal, r.cz - r.d/2, gap.width, r.h - doorHeight, 0.4, r.floorY + doorHeight);
-        }
-        currentS = gapR;
-      });
-      if (currentS < r.cx + r.w / 2) {
-        const wWidth = (r.cx + r.w / 2) - currentS;
-        addWallSegment(currentS + wWidth/2, r.cz - r.d/2, wWidth, r.h, 0.4, r.floorY);
-      }
-
-      // EAST WALL (along X = +w/2 relative) -> global X = cx + w/2
-      const gapEList = gaps.filter(g => g.side === 'E');
-      let currentE = r.cz - r.d / 2;
-      gapEList.forEach(gap => {
-        const gapCenterGlobal = r.cz + gap.center;
-        const gapL = gapCenterGlobal - gap.width / 2;
-        const gapR = gapCenterGlobal + gap.width / 2;
-
-        if (currentE < gapL) {
-          const wDepth = gapL - currentE;
-          addWallSegment(r.cx + r.w/2, currentE + wDepth/2, 0.4, r.h, wDepth, r.floorY);
-        }
-        const doorHeight = 7.5;
-        if (r.h > doorHeight) {
-          addWallSegment(r.cx + r.w/2, gapCenterGlobal, 0.4, r.h - doorHeight, gap.width, r.floorY + doorHeight);
-        }
-        currentE = gapR;
-      });
-      if (currentE < r.cz + r.d / 2) {
-        const wDepth = (r.cz + r.d / 2) - currentE;
-        addWallSegment(r.cx + r.w/2, currentE + wDepth/2, 0.4, r.h, wDepth, r.floorY);
-      }
-
-      // WEST WALL (along X = -w/2 relative) -> global X = cx - w/2
-      const gapWList = gaps.filter(g => g.side === 'W');
-      let currentW = r.cz - r.d / 2;
-      gapWList.forEach(gap => {
-        const gapCenterGlobal = r.cz + gap.center;
-        const gapL = gapCenterGlobal - gap.width / 2;
-        const gapR = gapCenterGlobal + gap.width / 2;
-
-        if (currentW < gapL) {
-          const wDepth = gapL - currentW;
-          addWallSegment(r.cx - r.w/2, currentW + wDepth/2, 0.4, r.h, wDepth, r.floorY);
-        }
-        const doorHeight = 7.5;
-        if (r.h > doorHeight) {
-          addWallSegment(r.cx - r.w/2, gapCenterGlobal, 0.4, r.h - doorHeight, gap.width, r.floorY + doorHeight);
-        }
-        currentW = gapR;
-      });
-      if (currentW < r.cz + r.d / 2) {
-        const wDepth = (r.cz + r.d / 2) - currentW;
-        addWallSegment(r.cx - r.w/2, currentW + wDepth/2, 0.4, r.h, wDepth, r.floorY);
-      }
-
-      // 4) STAIRCASE Steps Geometry Draw
+    const buildStairs = (r) => {
       if (r.isStaircase) {
         const stepsCount = 13;
         const climb = r.climbHeight ?? r.h;
@@ -932,7 +2113,83 @@ export default function App() {
           }
         }
       }
+    };
+
+    const buildProps = () => {
+      MAP_PROPS.forEach(p => {
+        const room = MAP_ROOMS.find(r => r.id === p.roomId);
+        if (!room) return;
+        const geo = new THREE.BoxGeometry(p.w, p.h, p.d);
+        const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(p.cx, room.floorY + p.h / 2, p.cz);
+        scene.add(mesh);
+      });
+    };
+
+    const buildWallSide = (r, sideGaps, side) => {
+      const isNorthSouth = side === 'N' || side === 'S';
+      
+      let currentVal = isNorthSouth ? (r.cx - r.w / 2) : (r.cz - r.d / 2);
+      const endVal = isNorthSouth ? (r.cx + r.w / 2) : (r.cz + r.d / 2);
+      
+      const wallCoord = side === 'N' ? (r.cz + r.d / 2) :
+                        side === 'S' ? (r.cz - r.d / 2) :
+                        side === 'E' ? (r.cx + r.w / 2) :
+                        (r.cx - r.w / 2);
+
+      sideGaps.forEach(gap => {
+        const gapCenterGlobal = (isNorthSouth ? r.cx : r.cz) + gap.center;
+        const gapL = gapCenterGlobal - gap.width / 2;
+        const gapR = gapCenterGlobal + gap.width / 2;
+
+        if (currentVal < gapL) {
+          const wLength = gapL - currentVal;
+          if (isNorthSouth) {
+            addWallSegment(currentVal + wLength / 2, wallCoord, wLength, r.h, MAP_CONFIG.wallThickness, r.floorY, r.id);
+          } else {
+            addWallSegment(wallCoord, currentVal + wLength / 2, MAP_CONFIG.wallThickness, r.h, wLength, r.floorY, r.id);
+          }
+        }
+        
+        const doorHeight = MAP_CONFIG.doorHeight;
+        if (r.h > doorHeight) {
+          if (isNorthSouth) {
+            addWallSegment(gapCenterGlobal, wallCoord, gap.width, r.h - doorHeight, MAP_CONFIG.wallThickness, r.floorY + doorHeight, r.id);
+          } else {
+            addWallSegment(wallCoord, gapCenterGlobal, MAP_CONFIG.wallThickness, r.h - doorHeight, gap.width, r.floorY + doorHeight, r.id);
+          }
+        }
+        currentVal = gapR;
+      });
+ 
+      if (currentVal < endVal) {
+        const wLength = endVal - currentVal;
+        if (isNorthSouth) {
+          addWallSegment(currentVal + wLength / 2, wallCoord, wLength, r.h, MAP_CONFIG.wallThickness, r.floorY, r.id);
+        } else {
+          addWallSegment(wallCoord, currentVal + wLength / 2, MAP_CONFIG.wallThickness, r.h, wLength, r.floorY, r.id);
+        }
+      }
+    };
+
+    const buildWalls = (r, gaps) => {
+      buildWallSide(r, gaps.filter(g => g.side === 'N'), 'N');
+      buildWallSide(r, gaps.filter(g => g.side === 'S'), 'S');
+      buildWallSide(r, gaps.filter(g => g.side === 'E'), 'E');
+      buildWallSide(r, gaps.filter(g => g.side === 'W'), 'W');
+    };
+
+    // Calculate wall segments containing openings
+    MAP_ROOMS.forEach(r => {
+      buildFloor(r);
+      buildCeiling(r);
+      const gaps = MAP_GAPS[r.id] || [];
+      buildWalls(r, gaps);
+      buildStairs(r);
     });
+
+    buildProps();
 
     let roofMode = 'glass';
     function setRoofMode(mode) {
@@ -958,11 +2215,22 @@ export default function App() {
           if (mode === 'solid') {
             mesh.material.transparent = false;
             mesh.material.opacity = 1.0;
-            // Use solid slate metallic roof tile
-            mesh.material.color.setHex(0x475569); 
-            mesh.material.roughness = 0.6;
-            mesh.material.metalness = 0.5;
+            if (['starter', 'library', 'science_lab', 'hallway'].includes(mesh.userData.roomId)) {
+              const cTex = getProceduralTexture('ceiling_tiles').clone();
+              cTex.repeat.set(mesh.userData.w / 4, mesh.userData.d / 4);
+              mesh.material.map = cTex;
+              mesh.material.color.setHex(0xffffff);
+              mesh.material.roughness = 0.9;
+              mesh.material.metalness = 0.1;
+            } else {
+              mesh.material.map = null;
+              // Use solid slate metallic roof tile
+              mesh.material.color.setHex(0x475569); 
+              mesh.material.roughness = 0.6;
+              mesh.material.metalness = 0.5;
+            }
           } else {
+            mesh.material.map = null;
             // glass/blueprint look
             mesh.material.transparent = true;
             mesh.material.opacity = 0.45;
@@ -970,13 +2238,21 @@ export default function App() {
             mesh.material.roughness = 0.2;
             mesh.material.metalness = 0.8;
           }
+          mesh.material.needsUpdate = true;
         }
       });
     }
 
-    function addWallSegment(x, z, w, h, d, floorY) {
+    function addWallSegment(x, z, w, h, d, floorY, roomId) {
       const geo = new THREE.BoxGeometry(w, h, d);
-      const mesh = new THREE.Mesh(geo, materials.wall);
+      let wallMat = materials.wall;
+      if (['starter', 'library', 'science_lab', 'hallway'].includes(roomId)) {
+        const wTex = getProceduralTexture('wall_tiles').clone();
+        const wallLength = w > d ? w : d;
+        wTex.repeat.set(wallLength / 8, h / 8);
+        wallMat = new THREE.MeshStandardMaterial({ map: wTex, roughness: 0.8 });
+      }
+      const mesh = new THREE.Mesh(geo, wallMat);
       mesh.position.set(x, floorY + h/2, z);
       scene.add(mesh);
     }
@@ -1060,7 +2336,7 @@ export default function App() {
                      gapZ >= o.cz - o.d/2 - margin && gapZ <= o.cz + o.d/2 + margin;
             });
             const doorFloorY = other ? Math.max(r.floorY, other.floorY) : r.floorY;
-            const doorHeight = 7.5;
+            const doorHeight = MAP_CONFIG.doorHeight;
             const doorTopY = doorFloorY + doorHeight;
             if (doorTopY < r.floorY + r.h) {
               list.push({
@@ -1120,7 +2396,7 @@ export default function App() {
                      gapZ >= o.cz - o.d/2 - margin && gapZ <= o.cz + o.d/2 + margin;
             });
             const doorFloorY = other ? Math.max(r.floorY, other.floorY) : r.floorY;
-            const doorHeight = 7.5;
+            const doorHeight = MAP_CONFIG.doorHeight;
             const doorTopY = doorFloorY + doorHeight;
             if (doorTopY < r.floorY + r.h) {
               list.push({
@@ -1180,7 +2456,7 @@ export default function App() {
                      gapZ >= o.cz - o.d/2 - margin && gapZ <= o.cz + o.d/2 + margin;
             });
             const doorFloorY = other ? Math.max(r.floorY, other.floorY) : r.floorY;
-            const doorHeight = 7.5;
+            const doorHeight = MAP_CONFIG.doorHeight;
             const doorTopY = doorFloorY + doorHeight;
             if (doorTopY < r.floorY + r.h) {
               list.push({
@@ -1240,7 +2516,7 @@ export default function App() {
                      gapZ >= o.cz - o.d/2 - margin && gapZ <= o.cz + o.d/2 + margin;
             });
             const doorFloorY = other ? Math.max(r.floorY, other.floorY) : r.floorY;
-            const doorHeight = 7.5;
+            const doorHeight = MAP_CONFIG.doorHeight;
             const doorTopY = doorFloorY + doorHeight;
             if (doorTopY < r.floorY + r.h) {
               list.push({
@@ -1522,7 +2798,7 @@ export default function App() {
 
   // Delete currently selected custom room
   const handleDeleteSelectedRoom = () => {
-    const CORE_ROOMS = ['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria'];
+    const CORE_ROOMS = ['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria', 'courtyard', 'underground_tunnel', 'the_vault', 'upper_hallway', 'principal_office', 'upper_hallway_2', 'security_room', 'upper_hallway_north', 'gym_north_hallway', 'nurses_office', 'nurses_office_backroom', 'stairwell_2', 'lower_hallway_south', 'main_office'];
     if (CORE_ROOMS.includes(selectedRoomId)) return;
     
     setRooms(prev => prev.filter(r => r.id !== selectedRoomId));
@@ -1722,7 +2998,7 @@ export default function App() {
         helpersGroup.add(floor0Grid);
 
         const gymRoom = roomsRef.current.find(rm => rm.id === 'gym');
-        const gymCX = gymRoom ? gymRoom.cx : 116;
+        const gymCX = gymRoom ? gymRoom.cx : 144;
         const gymCZ = gymRoom ? gymRoom.cz : 15;
         const gym1Grid = new THREE.GridHelper(100, Math.round(100 / stepSize), 0xe23a3a, 0x1e293b);
         gym1Grid.position.set(gymCX, 11.05, gymCZ);
@@ -1736,6 +3012,30 @@ export default function App() {
         let currentFloorMat;
         if (r.disabledFloor) {
           currentFloorMat = materials.demolishedFloor;
+        } else if (r.floorTexture) {
+          let tex;
+          if (r.floorTexture === "wood_floor.png") {
+            tex = getProceduralTexture("wood_floor").clone();
+            tex.repeat.set(r.w / 12, r.d / 12);
+          } else {
+            const loader = new THREE.TextureLoader();
+            tex = loader.load(r.floorTexture);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(r.w / 10, r.d / 10);
+          }
+          if (isSel) {
+            currentFloorMat = new THREE.MeshStandardMaterial({
+              map: tex,
+              roughness: 0.6,
+              metalness: 0.1,
+              color: 0x99ffec,
+              emissive: 0x004433,
+              emissiveIntensity: 0.5
+            });
+          } else {
+            currentFloorMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.1 });
+          }
         } else {
           currentFloorMat = isSel ? materials.selectedFloor : new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.8 });
         }
@@ -1766,11 +3066,11 @@ export default function App() {
 
               // Render active solid floor cell
               if (!floorTileCarved) {
-                const fGeo = new THREE.BoxGeometry(cellW - 0.05, 0.2, cellD - 0.05); // beautiful gap-separated structural tiles
+                const fGeo = new THREE.BoxGeometry(cellW - 0.05, MAP_CONFIG.floorThickness, cellD - 0.05); // beautiful gap-separated structural tiles
                 const fMesh = new THREE.Mesh(fGeo, currentFloorMat);
                 fMesh.position.set(
                   r.cx - r.w / 2 + (ix + 0.5) * cellW,
-                  r.floorY - 0.1,
+                  r.floorY - MAP_CONFIG.floorThickness / 2,
                   r.cz - r.d / 2 + (iz + 0.5) * cellD
                 );
                 fMesh.receiveShadow = true;
@@ -1796,11 +3096,18 @@ export default function App() {
 
               // Render active solid ceiling cell
               if (!ceilingTileCarved) {
-                const cGeo = new THREE.BoxGeometry(cellW - 0.05, 0.2, cellD - 0.05);
-                const cMesh = new THREE.Mesh(cGeo, materials.wall);
+                const cGeo = new THREE.BoxGeometry(cellW - 0.05, MAP_CONFIG.floorThickness, cellD - 0.05);
+                let cellMat = materials.wall;
+                if (['starter', 'library', 'science_lab', 'hallway'].includes(r.id) && !wireframeModeRef.current) {
+                  const cTex = getProceduralTexture('ceiling_tiles').clone();
+                  // Align repeat per cells to make 2x2 grid patterns look seamless
+                  cTex.repeat.set(cellW / 4, cellD / 4);
+                  cellMat = new THREE.MeshStandardMaterial({ map: cTex, roughness: 0.9 });
+                }
+                const cMesh = new THREE.Mesh(cGeo, cellMat);
                 cMesh.position.set(
                   r.cx - r.w / 2 + (ix + 0.5) * cellW,
-                  r.floorY + r.h + 0.1,
+                  r.floorY + r.h + MAP_CONFIG.floorThickness / 2,
                   r.cz - r.d / 2 + (iz + 0.5) * cellD
                 );
                 cMesh.userData = { roomId: r.id, type: 'ceiling', tileKey };
@@ -1890,7 +3197,26 @@ export default function App() {
       // Reconstruct solid walls from segmented list
       getWallSegmentsRef.current.forEach((seg, index) => {
         const isSelRoom = seg.roomId === selectedRoomIdRef.current;
-        const wallMat = isSelRoom ? materials.selectedWall : materials.wall;
+        let wallMat = isSelRoom ? materials.selectedWall : materials.wall;
+        if (['starter', 'library', 'science_lab', 'hallway'].includes(seg.roomId) && !wireframeModeRef.current) {
+          const wTex = getProceduralTexture('wall_tiles').clone();
+          const segW = seg.maxX - seg.minX;
+          const segH = seg.maxY - seg.minY;
+          const segD = seg.maxZ - seg.minZ;
+          const wallLength = segW > segD ? segW : segD;
+          wTex.repeat.set(wallLength / 8, segH / 8);
+          if (isSelRoom) {
+            wallMat = new THREE.MeshStandardMaterial({ 
+              map: wTex, 
+              roughness: 0.7, 
+              color: 0x99ffec, 
+              emissive: 0x003344, 
+              emissiveIntensity: 0.5 
+            });
+          } else {
+            wallMat = new THREE.MeshStandardMaterial({ map: wTex, roughness: 0.8 });
+          }
+        }
 
         const wGeo = new THREE.BoxGeometry(
           seg.maxX - seg.minX,
@@ -1984,6 +3310,17 @@ export default function App() {
           });
         });
       }
+
+      // Render MAP_PROPS in the live editor viewport
+      MAP_PROPS.forEach(p => {
+        const room = roomsRef.current.find(r => r.id === p.roomId);
+        if (!room) return;
+        const geo = new THREE.BoxGeometry(p.w, p.h, p.d);
+        const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(p.cx, room.floorY + p.h / 2, p.cz);
+        mapGroup.add(mesh);
+      });
     };
 
     updateThreeGeometries();
@@ -2891,6 +4228,22 @@ export default function App() {
           </div>
           
           <div className="flex items-center space-x-1 shrink-0">
+            <button 
+              type="button"
+              onClick={handleUndo}
+              className="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-slate-700 hover:bg-slate-900 text-xs text-slate-300 hover:text-white rounded flex items-center transition cursor-pointer"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 className="size-3" />
+            </button>
+            <button 
+              type="button"
+              onClick={handleRedo}
+              className="px-2 py-1 bg-slate-950 border border-slate-800 hover:border-slate-700 hover:bg-slate-900 text-xs text-slate-300 hover:text-white rounded flex items-center transition cursor-pointer"
+              title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+            >
+              <Redo2 className="size-3" />
+            </button>
             <button 
               type="button"
               onClick={handleSave}
@@ -3861,9 +5214,9 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleDeleteSelectedRoom}
-                    disabled={['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria'].includes(selectedRoomId)}
+                    disabled={['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria', 'courtyard', 'underground_tunnel', 'the_vault', 'upper_hallway', 'principal_office', 'upper_hallway_2', 'security_room', 'upper_hallway_north', 'gym_north_hallway', 'nurses_office', 'nurses_office_backroom', 'stairwell_2', 'lower_hallway_south', 'main_office'].includes(selectedRoomId)}
                     className={`flex-1 font-extrabold font-mono text-[10px] uppercase p-2.5 rounded flex items-center justify-center gap-1 transition ${
-                      ['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria'].includes(selectedRoomId)
+                      ['starter', 'hallway', 'science_lab', 'library', 'stairwell', 'gym', 'cafeteria', 'courtyard', 'underground_tunnel', 'the_vault', 'upper_hallway', 'principal_office', 'upper_hallway_2', 'security_room', 'upper_hallway_north', 'gym_north_hallway', 'nurses_office', 'nurses_office_backroom', 'stairwell_2', 'lower_hallway_south', 'main_office'].includes(selectedRoomId)
                         ? 'bg-slate-950/40 border border-slate-900/80 text-slate-600 cursor-not-allowed'
                         : 'bg-rose-950/60 border border-rose-900 hover:bg-rose-900 text-rose-200 cursor-pointer'
                     }`}
