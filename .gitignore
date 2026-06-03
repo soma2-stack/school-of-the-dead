@@ -19,7 +19,99 @@ venv/
 .ENV
 .env
 .env.*
+.venv/
+.ENV/
+.env.bak
 .env.local
+.env.dev
+.env.production
+.env.test
+.env.staging
+.env.backup
+.env.example
+.env.sample
+.env.template
+.env.defaults
+.env.global
+.env.local.example
+.env.local.sample
+.env.local.template
+.env.local.defaults
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+.env.staging.local
+.env.backup
+.env.backup.local
+.env.example
+.env.example.local
+.env.sample
+.env.sample.local
+.env.template
+.env.template.local
+.env.defaults
+.env.defaults.local
+.env.global
+.env.global.local
+.env.local.example
+.env.local.example.local
+.env.local.sample
+.env.local.sample.local
+.env.local.template
+.env.local.template.local
+.env.local.defaults
+.env.local.defaults.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+.env.staging.local
+.env.backup
+.env.backup.local
+.env.example
+.env.example.local
+.env.sample
+.env.sample.local
+.env.template
+.env.template.local
+.env.defaults
+.env.defaults.local
+.env.global
+.env.global.local
+.env.local.example
+.env.local.example.local
+.env.local.sample
+.env.local.sample.local
+.env.local.template
+.env.local.template.local
+.env.local.defaults
+.env.local.defaults.local
+
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+.env/
+.ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
@@ -28,23 +120,20 @@ venv/
 .coverage
 coverage/
 htmlcov/
+.nyc_output/
+.nyc_coverage/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# OS
-.DS_Store
-Thumbs.db
+# Testing
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
 
 # Compressed
 *.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
 *.gz
-*.tar
-*.tgz
 *.bz2
 *.xz
 *.7z
@@ -59,8 +148,11 @@ Thumbs.db
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+
+# Temporary
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
 ```
