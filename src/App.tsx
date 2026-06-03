@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { getDoorManager, initializeDoors } from './utils/doors';
+import { getDoorManager, initializeDoors, DoorEventType } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
 import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
+import { DevDebugPanel } from './utils/DevDebugPanel';
+import { PointsDisplay } from './utils/PointsDisplay';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -330,6 +332,9 @@ export default function App() {
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [currentIssueIndex, setCurrentIssueIndex] = useState<number>(-1);
   const mapValidatorRef = useRef(getRoomSealValidator());
+  
+  // Not Enough Points feedback state
+  const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -338,6 +343,25 @@ export default function App() {
 
     // Initialize doors system
     initializeDoors();
+    
+    // Set up door event listener for purchase attempts
+    const doorManager = getDoorManager();
+    const unsubscribePurchaseAttempt = doorManager.on('purchaseAttempt', (data) => {
+      console.log('[App] Door purchase attempt failed:', data.doorName);
+      setShowNotEnoughPoints(true);
+      setTimeout(() => setShowNotEnoughPoints(false), 2000);
+    });
+    
+    // Cleanup on unmount
+    return () => {
+      unsubscribePurchaseAttempt();
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const mount = mountRef.current;
+    if (!canvas || !mount) return;
 
     // ---- SCENE SETUP ----
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -1023,6 +1047,23 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden select-none">
+      {/* Points Display */}
+      <div className="absolute top-4 right-4 z-20">
+        <PointsDisplay playerId="player1" />
+      </div>
+
+      {/* Not Enough Points Feedback */}
+      {showNotEnoughPoints && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
+          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
+            NOT ENOUGH POINTS
+          </div>
+        </div>
+      )}
+
+      {/* Dev Debug Panel */}
+      <DevDebugPanel playerId="player1" />
+
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
