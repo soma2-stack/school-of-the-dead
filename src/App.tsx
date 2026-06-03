@@ -1039,27 +1039,31 @@ export default function App() {
     const handleInteractionKey = (e: KeyboardEvent) => {
       console.log('[DEBUG] Key event received:', e.key);
       if (e.code === 'KeyE' && isPointerLocked) {
-        console.log("[E] key pressed");
+        console.log("=== [E] key pressed ===");
+        console.log("=== Key handler entered ===");
         
         // Use the same door reference that drives the visible prompt
         const currentDoor = hoveredDoor;
         
         if (!currentDoor) {
-          console.log("Hovered/interacted door exists: NO (null)");
+          console.log("Current door found: NO (null)");
           return;
         }
         
-        console.log("Hovered/interacted door exists:", currentDoor.name || "unnamed door");
+        console.log("Current door found: YES");
+        console.log("Door ID:", currentDoor.id);
         console.log("purchaseDoor() called");
         
         const doorManager = getDoorManager();
         const playerId = 'player1';
         const result = doorManager.purchaseDoor(currentDoor.id, playerId);
         
-        console.log("purchaseDoor() returned");
+        console.log("purchaseDoor() result:", result);
+        console.log("Result.success:", result.success);
         
         if (result.success) {
           console.log('[App] Door purchased successfully:', currentDoor.name);
+          console.log("DoorRenderer update called");
           doorRenderer.updateDoorState(currentDoor.id, true);
         } else {
           console.log('[App] Door purchase failed:', result.reason);
