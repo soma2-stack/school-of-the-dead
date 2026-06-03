@@ -689,7 +689,8 @@ export default function App() {
       if (e.code === 'F8') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
-        const result = validator.runFullScan(INITIAL_ROOMS, ROOM_GAPS, doors);
+        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
+        const result = validator.runFullScan();
         setValidationIssues(result.issues);
         setValidationModeEnabled(true);
         setCurrentIssueIndex(-1);
@@ -718,10 +719,11 @@ export default function App() {
       if (e.code === 'F10') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
+        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
         const enabled = validator.toggle(scene);
         setValidationModeEnabled(enabled);
         if (enabled) {
-          const result = validator.runFullScan(INITIAL_ROOMS, ROOM_GAPS, doors);
+          const result = validator.runFullScan();
           setValidationIssues(result.issues);
         } else {
           setValidationIssues([]);

@@ -26,8 +26,20 @@ export class MapValidator {
   private debugMeshes: THREE.Mesh[] = [];
   private scene: THREE.Scene | null = null;
   private isEnabled: boolean = false;
+  private roomsData: any[] = [];
+  private roomGapsData: Record<string, any[]> = {};
+  private doorsData: any[] = [];
 
   constructor() {}
+
+  /**
+   * Set data references for scanning
+   */
+  public setData(rooms: any[], roomGaps: Record<string, any[]>, doors: any[]): void {
+    this.roomsData = rooms;
+    this.roomGapsData = roomGaps;
+    this.doorsData = doors;
+  }
 
   /**
    * Enable validation mode and highlight issues
@@ -64,7 +76,7 @@ export class MapValidator {
   /**
    * Run a full map scan and detect all issues
    */
-  public runFullScan(rooms: any[], roomGaps: Record<string, any[]>, doors: any[]): ValidationResult {
+  public runFullScan(): ValidationResult {
     const startTime = performance.now();
     this.issues = [];
     
@@ -76,22 +88,22 @@ export class MapValidator {
     this.clearHighlights();
 
     // Scan for floor gaps
-    this.scanFloorGaps(rooms, roomGaps);
+    this.scanFloorGaps(this.roomsData, this.roomGapsData);
 
     // Scan for missing wall sections
-    this.scanMissingWalls(rooms, roomGaps);
+    this.scanMissingWalls(this.roomsData, this.roomGapsData);
 
     // Scan for door gaps
-    this.scanDoorGaps(doors, roomGaps);
+    this.scanDoorGaps(this.doorsData, this.roomGapsData);
 
     // Scan for overlapping geometry
-    this.scanOverlaps(rooms);
+    this.scanOverlaps(this.roomsData);
 
     // Scan for stair misalignment
-    this.scanStairAlignment(rooms);
+    this.scanStairAlignment(this.roomsData);
 
     // Scan for void holes
-    this.scanVoidHoles(rooms, roomGaps);
+    this.scanVoidHoles(this.roomsData, this.roomGapsData);
 
     // Highlight all found issues
     this.highlightAllIssues();
@@ -101,7 +113,7 @@ export class MapValidator {
     return {
       issues: [...this.issues],
       scanTime,
-      totalRoomsScanned: rooms.length
+      totalRoomsScanned: this.roomsData.length
     };
   }
 
