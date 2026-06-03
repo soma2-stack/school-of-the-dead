@@ -61,20 +61,30 @@ export interface DoorEventData {
 // Default Doors Configuration
 // Add new doors here to make them available in the game
 // 
-// Door positions calculated from ROOM_GAPS in App.tsx:
-// - starter room: center (17.5, -40), N gap at center=-17.5 (relative), width=6
-//   World position: x = 17.5 + (-17.5) = 0, z = -40 + 30 = -10
-// - hallway room: center (20, -3), spans x=-20 to x=60, z=-10 to z=4
-//   - S gap at center=-20 (relative), width=6 -> world x = 20 + (-20) = 0, z = -3 - 7 = -10
-//   - N gaps at center=-15 and center=20 (relative), width=6
-//   - E gap at center=0 (relative), width=6 -> world z = -3 + 7 = 4, x = 20 + 40 = 60
-//   - W gap at center=0 (relative), width=14 -> world z = -3 - 7 = -10, x = 20 - 40 = -20
-// - science_lab: center (5, 26.5), S gap at center=0 (relative), width=6
-//   World position: x = 5 + 0 = 5, z = 26.5 - 22.5 = 4
-// - library: center (40, 26.5), S gap at center=0 (relative), width=6
-//   World position: x = 40 + 0 = 40, z = 26.5 - 22.5 = 4
-// - cafeteria: center (-50, -3), E gap at center=0 (relative), width=14
-//   World position: x = -50 + 30 = -20, z = -3 + 0 = -3
+// Door positions calculated from ROOM_GAPS and INITIAL_ROOMS in App.tsx:
+// Room dimensions: w=width (x-axis), d=depth (z-axis), centered at (cx, cz)
+// Wall positions: N wall at cz + d/2, S wall at cz - d/2, E wall at cx + w/2, W wall at cx - w/2
+// Gap center is relative to room center, so world position = room_center + relative_offset
+//
+// Starter Classroom: cx=17.5, cz=-40, w=75, d=60
+//   - N gap: side='N', center=-17.5, width=6
+//   - N wall at z = -40 + 30 = -10
+//   - Door x = 17.5 + (-17.5) = 0, z = -10
+//
+// Hallway: cx=20, cz=-3, w=80, d=14
+//   - S gap: center=-20, width=6 -> x=0, z=-10 (connects to starter)
+//   - N gaps: center=-15 (x=5), center=20 (x=40) at z=4
+//   - W gap: center=0, width=14 -> x=-20, z=-3 (connects to cafeteria)
+//   - E gap: center=0, width=6 -> x=60, z=4 (connects to stairwell)
+//
+// Science Lab: cx=5, cz=26.5, w=30, d=45
+//   - S gap: center=0, width=6 -> x=5, z=4 (connects to hallway)
+//
+// Library: cx=40, cz=26.5, w=36, d=45
+//   - S gap: center=0, width=6 -> x=40, z=4 (connects to hallway)
+//
+// Cafeteria: cx=-50, cz=-3, w=60, d=50
+//   - E gap: center=0, width=14 -> x=-20, z=-3 (connects to hallway)
 // ============================================================================
 
 export const DEFAULT_DOORS: BuyableDoorConfig[] = [
@@ -82,8 +92,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'starter_classroom_door',
     name: 'Starter Classroom Door',
     cost: 750,
-    // Starter Classroom north wall is at z = -40 + 30 = -10
-    // Gap center is at x = 17.5 + (-17.5) = 0
+    // Starter Classroom: N wall at z=-10, gap center at x=0
     position: { x: 0, y: 1.5, z: -10 },
     width: 6,
     height: 3,
@@ -94,9 +103,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_science_lab_door',
     name: 'Science Lab Door',
     cost: 1000,
-    // Science Lab south wall is at z = 26.5 - 22.5 = 4
-    // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
-    // Gap center in science_lab is at x = 5 + 0 = 5
+    // Science Lab: S wall at z=4, gap center at x=5
     position: { x: 5, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -107,9 +114,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_library_door',
     name: 'Library Door',
     cost: 1000,
-    // Library south wall is at z = 26.5 - 22.5 = 4
-    // Hallway north wall is at z = -3 + 7 = 4 (they meet!)
-    // Gap center in library is at x = 40 + 0 = 40
+    // Library: S wall at z=4, gap center at x=40
     position: { x: 40, y: 1.5, z: 4 },
     width: 6,
     height: 3,
@@ -120,9 +125,7 @@ export const DEFAULT_DOORS: BuyableDoorConfig[] = [
     id: 'hallway_cafeteria_door',
     name: 'Cafeteria Entrance',
     cost: 1250,
-    // Cafeteria east wall is at x = -50 + 30 = -20
-    // Hallway west wall is at x = 20 - 40 = -20 (they meet!)
-    // Gap center in cafeteria is at z = -3 + 0 = -3
+    // Cafeteria: E wall at x=-20, gap center at z=-3
     position: { x: -20, y: 1.5, z: -3 },
     width: 14,
     height: 3,
