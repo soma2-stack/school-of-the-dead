@@ -1,5 +1,19 @@
 ```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+dist/
+build/
+*.o
+*.obj
+*.out
+
 # Dependencies
+node_modules/
+.venv/
+venv/
 node_modules/
 
 # Build outputs
@@ -91,4 +105,4 @@ Since only source files were modified (`src/App.tsx`, `src/types.ts`), the outpu
 
 ```gitignore
 
-```
+(Empty - output nothing)
