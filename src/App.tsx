@@ -1017,14 +1017,35 @@ export default function App() {
         setCanInteract(false);
       }
       
+      // Sync with DoorManager for event handling
+      const doorManager = getDoorManager();
+      const playerPosVec = { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z };
+      const playerDirVec = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
+      doorManager.updateInteraction(playerPosVec, playerDirVec);
+      
       renderer.render(scene, camera);
     };
     loop();
 
-    // Keyboard handler for door interaction
+    // Keyboard handler for door interaction (uses DoorManager state)
     const handleInteractionKey = (e: KeyboardEvent) => {
-      if (e.code === 'KeyE' && isPointerLocked && canInteract) {
-        handleDoorInteraction();
+      if (e.code === 'KeyE' && isPointerLocked) {
+        const doorManager = getDoorManager();
+        const pointsManager = getPointsManager();
+        const playerId = 'player1';
+        
+        const currentDoor = doorManager.getCurrentInteractedDoor();
+        if (currentDoor) {
+          console.log('[App] E pressed - Attempting to purchase door:', currentDoor.name);
+          const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+          
+          if (result.success) {
+            console.log('[App] Door purchased successfully:', currentDoor.name);
+            doorRenderer.updateDoorState(currentDoor.id, true);
+          } else {
+            console.log('[App] Door purchase failed:', result.reason);
+          }
+        }
       }
     };
     window.addEventListener('keydown', handleInteractionKey);
