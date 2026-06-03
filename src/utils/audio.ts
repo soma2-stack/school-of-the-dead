@@ -161,7 +161,41 @@ class AudioSynth {
       // Ignore audio resume restrictions
     }
   }
+
+  // Door purchase sound
+  playDoorPurchase() {
+    this.playUnlock(); // Reuse unlock chime for door purchase
+  }
 }
 
 export const sound = new AudioSynth();
+
+/**
+ * Play a sound by name
+ */
+export function playSound(soundName: string): void {
+  switch (soundName) {
+    case 'click':
+      sound.playClick();
+      break;
+    case 'unlock':
+      sound.playUnlock();
+      break;
+    case 'door_purchase':
+      sound.playDoorPurchase();
+      break;
+    case 'denied':
+      sound.playDenied();
+      break;
+    case 'points':
+      sound.playPoints();
+      break;
+    case 'rumble':
+      sound.playRumble();
+      break;
+    default:
+      console.warn(`Unknown sound: ${soundName}`);
+  }
+}
+
 export default sound;
