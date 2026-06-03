@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { getDoorManager } from './utils/doors';
+import { getPointsManager } from './utils/points';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -440,6 +442,25 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
+      
+      // Door interaction - Press E to purchase door
+      if (e.code === 'KeyE') {
+        const doorManager = getDoorManager();
+        const pointsManager = getPointsManager();
+        const playerId = 'player1'; // TODO: Replace with actual player ID from game state
+        
+        const currentDoor = doorManager.getCurrentInteractedDoor();
+        if (currentDoor) {
+          console.log('[App] Attempting to purchase door:', currentDoor.name);
+          const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+          
+          if (result.success) {
+            console.log('[App] Door purchased successfully:', currentDoor.name);
+          } else {
+            console.log('[App] Door purchase failed:', result.reason);
+          }
+        }
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => { keysPressed.current[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
@@ -520,6 +541,19 @@ export default function App() {
       camera.rotation.order = 'YXZ';
       camera.rotation.y = yaw.current;
       camera.rotation.x = pitch.current;
+      
+      // Update door interaction based on player position and look direction
+      const doorManager = getDoorManager();
+      const lookDirection = new THREE.Vector3(
+        -Math.sin(yaw.current) * Math.cos(pitch.current),
+        Math.sin(pitch.current),
+        -Math.cos(yaw.current) * Math.cos(pitch.current)
+      );
+      doorManager.updateInteraction(
+        { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+        { x: lookDirection.x, y: lookDirection.y, z: lookDirection.z }
+      );
+      
       renderer.render(scene, camera);
     };
     loop();
