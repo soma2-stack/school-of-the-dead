@@ -35,6 +35,7 @@ export interface DoorConfig {
   z: number;
   w: number;
   h: number;
+  d?: number;
   shiftZ?: number;
   shiftX?: number;
   rx?: number;
