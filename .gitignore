@@ -19,30 +19,40 @@ node_modules/
 # Build outputs
 dist/
 build/
-*.js.map
-*.ts.map
+target/
 
-# Logs and temp files
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.python-version
+
+# Logs
 *.log
-*.tmp
-*.swp
 
 # Environment variables
 .env
 .env.local
 *.env.*
 
-# Editors
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# Python cache (if present)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# OS
+.DS_Store
+Thumbs.db
 
-# Coverage reports
+# Coverage
 coverage/
 htmlcov/
 .coverage

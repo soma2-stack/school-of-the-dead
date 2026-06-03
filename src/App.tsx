@@ -302,6 +302,7 @@ export const MAP_CONFIG = {
   ceilingThickness: 0.15,
   doorHeight: 7.5,
   floorThickness: 0.2,
+  doorDepth: 0.3,
 };
 
 const doorHt = MAP_CONFIG.doorHeight;
