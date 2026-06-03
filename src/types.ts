@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export interface RoomConfig {
   id: string;
   name: string;
@@ -39,6 +41,15 @@ export interface DoorConfig {
   cost: number;
   unlocked: boolean;
   name: string;
+  roomId: string;
+  side: 'N' | 'S' | 'E' | 'W';
+}
+
+export interface RuntimeDoor extends DoorConfig {
+  isOpen: boolean;
+  isPurchased: boolean;
+  mesh?: THREE.Mesh;
+  collider?: THREE.Mesh;
 }
 
 export interface WindowConfig {
