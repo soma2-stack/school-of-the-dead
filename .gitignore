@@ -1,5 +1,9 @@
-```
-# Build artifacts
+```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
 dist/
 build/
 *.o
@@ -10,11 +14,12 @@ build/
 node_modules/
 .venv/
 venv/
-__pycache__/
+node_modules/
 .mypy_cache/
 .pytest_cache/
-target/
-.gradle/
+.coverage
+coverage/
+htmlcov/
 
 # Logs and temp files
 *.log
@@ -31,36 +36,13 @@ target/
 .vscode/
 .idea/
 
-# OS specific
+# System files
 .DS_Store
 Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```
+
+Wait, let me reconsider the input. The only changes are modifications to source files (.tsx and .ts), not build artifacts or dependency files. According to rule 6, if the changes contain only source/config files and no build artifacts, dependencies, or temp files, I should output an empty .gitignore.
+
+Since only `src/App.tsx` and `src/types.ts` were modified (both source code files), no additional ignores are needed beyond what might already exist.
+
+(Empty - output nothing)
