@@ -376,6 +376,25 @@ export default function App() {
     spawnStatus: 'idle'
   });
 
+  // Debug Lighting toggle function (defined at component scope for JSX access)
+  const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+  const originalAmbientIntensityRef = useRef<number>(1.0);
+  
+  const toggleDebugLighting = () => {
+    const enabled = !debugLightingEnabled;
+    setDebugLightingEnabled(enabled);
+    if (ambientLightRef.current) {
+      if (enabled) {
+        originalAmbientIntensityRef.current = ambientLightRef.current.intensity;
+        ambientLightRef.current.intensity = debugLightingBrightness;
+        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightness);
+      } else {
+        ambientLightRef.current.intensity = originalAmbientIntensityRef.current;
+        console.log('[DEBUG LIGHTING] OFF');
+      }
+    }
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const mount = mountRef.current;
@@ -543,6 +562,7 @@ export default function App() {
     // ---- LIGHTING ----
     const ambientLight = new THREE.AmbientLight(0x222222, 1.0);
     scene.add(ambientLight);
+    ambientLightRef.current = ambientLight;
 
     const roomLightColors: Record<string, number> = {
       starter: 0x3a4d2a, hallway: 0x1a1a2e, science_lab: 0x2a2010, library: 0x2a2010,
@@ -559,25 +579,12 @@ export default function App() {
       scene.add(light);
     });
 
-    // Debug Lighting toggle (F2)
-    let originalAmbientIntensity = 1.0;
-    const toggleDebugLighting = () => {
-      const enabled = !debugLightingEnabled;
-      setDebugLightingEnabled(enabled);
-      if (enabled) {
-        originalAmbientIntensity = ambientLight.intensity;
-        ambientLight.intensity = debugLightingBrightness;
-        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightness);
-      } else {
-        ambientLight.intensity = originalAmbientIntensity;
-        console.log('[DEBUG LIGHTING] OFF');
-      }
-    };
+    // Expose global toggle function
     (window as any).toggleDebugLighting = toggleDebugLighting;
     (window as any).setDebugLightingBrightness = (brightness: number) => {
       setDebugLightingBrightness(brightness);
-      if (debugLightingEnabled) {
-        ambientLight.intensity = brightness;
+      if (debugLightingEnabled && ambientLightRef.current) {
+        ambientLightRef.current.intensity = brightness;
       }
       console.log('[DEBUG LIGHTING] Brightness set to:', brightness);
     };
@@ -1647,8 +1654,8 @@ export default function App() {
         onToggleDebugLighting={toggleDebugLighting}
         onSetDebugLightingBrightness={(brightness: number) => {
           setDebugLightingBrightness(brightness);
-          if (debugLightingEnabled) {
-            ambientLight.intensity = brightness;
+          if (debugLightingEnabled && ambientLightRef.current) {
+            ambientLightRef.current.intensity = brightness;
           }
         }}
       />
