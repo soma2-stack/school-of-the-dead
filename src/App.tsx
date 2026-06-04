@@ -8,6 +8,7 @@ import { DevDebugPanel } from './utils/DevDebugPanel';
 import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
+import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -341,6 +342,13 @@ export default function App() {
   const [currentFloorIssueIndex, setCurrentFloorIssueIndex] = useState<number>(-1);
   const floorAuditorRef = useRef(getFloorAuditor());
   
+  // Map Connectivity Audit state
+  const [connectivityDebugMode, setConnectivityDebugMode] = useState<boolean>(false);
+  const [connectivityIssues, setConnectivityIssues] = useState<ConnectivityIssue[]>([]);
+  const [currentConnectivityIssueIndex, setCurrentConnectivityIssueIndex] = useState<number>(-1);
+  const connectivityAuditorRef = useRef(getConnectivityAuditor());
+  const [connectivityReport, setConnectivityReport] = useState<any>(null);
+  
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
 
@@ -363,6 +371,41 @@ export default function App() {
     // Cleanup on unmount
     return () => {
       unsubscribePurchaseAttempt();
+    };
+  }, []);
+
+  // Expose global command for running connectivity audit from console
+  useEffect(() => {
+    (window as any).runConnectivityAudit = () => {
+      const auditor = connectivityAuditorRef.current;
+      auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+      const report = auditor.runAudit();
+      const issues = auditor.getIssues();
+      setConnectivityIssues(issues);
+      setConnectivityReport(report);
+      setConnectivityDebugMode(true);
+      setCurrentConnectivityIssueIndex(-1);
+      
+      console.log('=== MAP CONNECTIVITY AUDIT REPORT ===');
+      console.log(`Total Rooms Scanned: ${INITIAL_ROOMS.length}`);
+      console.log(`Total Connected Rooms: ${report.totalConnectedRooms}`);
+      console.log(`Disconnected Rooms: ${report.disconnectedRooms.length}`);
+      if (report.disconnectedRooms.length > 0) {
+        report.disconnectedRooms.forEach(id => console.log(`  - ${id}`));
+      }
+      console.log(`Void Exposures: ${report.voidExposures.length}`);
+      console.log(`Missing Walls: ${report.missingWalls.length}`);
+      console.log(`Missing Ceilings: ${report.missingCeilings.length}`);
+      console.log(`Navigation Breaks: ${report.navigationBreaks.length}`);
+      console.log(`Total Issues: ${report.totalIssues}`);
+      console.log(`Scan Duration: ${report.scanDurationMs.toFixed(2)}ms`);
+      console.log('=====================================');
+      
+      return report;
+    };
+    
+    return () => {
+      delete (window as any).runConnectivityAudit;
     };
   }, []);
 
@@ -767,6 +810,41 @@ export default function App() {
           yaw.current = Math.PI; // Face the issue
           setCurrentFloorIssueIndex(nextIndex);
           console.log(`[FloorIntegrityAudit] Teleported to issue ${nextIndex + 1}/${floorAuditIssues.length}: ${issue.cause} in ${issue.roomName}`);
+        }
+      }
+      
+      // Map Connectivity Audit - F6 to run full connectivity audit
+      if (e.code === 'F6') {
+        e.preventDefault();
+        const auditor = connectivityAuditorRef.current;
+        auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+        const report = auditor.runAudit();
+        const issues = auditor.getIssues();
+        setConnectivityIssues(issues);
+        setConnectivityReport(report);
+        setConnectivityDebugMode(true);
+        setCurrentConnectivityIssueIndex(-1);
+        console.log(`[MapConnectivityAudit] Audit complete: ${report.totalIssues} issues found`);
+        console.log(`  - Connected Rooms: ${report.totalConnectedRooms}`);
+        console.log(`  - Disconnected Rooms: ${report.disconnectedRooms.length}`);
+        console.log(`  - Void Exposures: ${report.voidExposures.length}`);
+        console.log(`  - Missing Walls: ${report.missingWalls.length}`);
+        console.log(`  - Missing Ceilings: ${report.missingCeilings.length}`);
+        console.log(`  - Navigation Breaks: ${report.navigationBreaks.length}`);
+      }
+      
+      // Map Connectivity Audit - F5 to teleport to next connectivity issue
+      if (e.code === 'F5') {
+        e.preventDefault();
+        if (connectivityIssues.length > 0) {
+          const nextIndex = (currentConnectivityIssueIndex + 1) % connectivityIssues.length;
+          const issue = connectivityIssues[nextIndex];
+          
+          // Teleport player to issue location
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI; // Face the issue
+          setCurrentConnectivityIssueIndex(nextIndex);
+          console.log(`[MapConnectivityAudit] Teleported to issue ${nextIndex + 1}/${connectivityIssues.length}: ${issue.description} in ${issue.roomName}`);
         }
       }
       
