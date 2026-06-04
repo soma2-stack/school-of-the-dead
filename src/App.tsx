@@ -1083,11 +1083,6 @@ export default function App() {
 
     // ---- COLLISION ----
     const getRoomAtPos = (px: number, pz: number, py: number) => {
-      // Diagnostic logging
-      console.log("[ROOM DETECTOR START]");
-      console.log("Player Position:", { x: px, y: py, z: pz });
-      console.log("Room Count:", INITIAL_ROOMS.length);
-      
       for (const room of INITIAL_ROOMS) {
         const xMin = room.cx - room.w / 2;
         const xMax = room.cx + room.w / 2;
@@ -1107,32 +1102,24 @@ export default function App() {
           playerFeetY >= roomMinY &&
           playerFeetY <= roomMaxY;
         
-        console.log({
-          roomName: room.name,
-          roomCenter: [room.cx, room.cz],
-          roomWidth: room.w,
-          roomDepth: room.d,
-          floorY: room.floorY,
-          playerPosition: { x: px, y: py, z: pz },
-          playerFeetY,
-          bounds: {
-            x: [xMin, xMax],
-            z: [zMin, zMax],
-            floorY: room.floorY
-          },
-          insideX,
-          insideZ,
-          insideY,
-          insideRoom: insideX && insideZ && insideY
-        });
+        console.log(`ROOM CHECK: ${room.name}`);
+        console.log(`Player: ${px} ${pz} ${py}`);
+        console.log("Bounds:");
+        console.log(`xMin=${xMin}`);
+        console.log(`xMax=${xMax}`);
+        console.log(`zMin=${zMin}`);
+        console.log(`zMax=${zMax}`);
+        console.log("");
+        console.log(`insideX=${insideX}`);
+        console.log(`insideZ=${insideZ}`);
+        console.log(`insideY=${insideY}`);
+        console.log("");
         
         if (insideX && insideZ && insideY) {
-          console.log("[ROOM DETECTOR] Found matching room:", room.name);
           return room;
         }
       }
       
-      console.log("[ROOM DETECTOR] No matching room found");
       return undefined;
     };
 
@@ -1543,7 +1530,10 @@ export default function App() {
         
         // Get current room name
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
+        console.log("ROOM RETURNED", currentRoom?.name);
         const newRoomName = currentRoom?.name || 'None';
+        console.log("SETTING ROOM TO", newRoomName);
+        console.log("CURRENT ROOM STATE", currentRoomName);
         setCurrentRoomName(newRoomName);
         
         // Debug logging every 60 frames (~1 second)
