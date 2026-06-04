@@ -149,11 +149,11 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
   } else if (dir === 'S_N') {
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
-    return r.floorY + (1 - t) * climb;
-  } else {
+    return r.floorY + t * climb;
+  } else if (dir === 'N_S') {
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
-    return r.floorY + t * climb;
+    return r.floorY + (1 - t) * climb;
   }
 };
 
@@ -878,8 +878,31 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
+        
+        // DEBUG: Log stairwell transforms
+        console.log(`[STAIR DEBUG] Room: ${r.id}, dir: ${dir}, w: ${r.w}, d: ${r.d}, climb: ${climb}`);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          const angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
+          ramp.rotation.z = angle;
+          console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+        } else {
+          // N_S or S_N
+          const angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
+          ramp.rotation.x = angle;
+          console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+        }
+        
+        // DEBUG: Add wireframe overlay to visualize actual ramp orientation
+        const wireframe = new THREE.LineSegments(
+          new THREE.WireframeGeometry(new THREE.BoxGeometry(r.w, 0.3, r.d)),
+          new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 })
+        );
+        wireframe.position.copy(ramp.position);
+        wireframe.rotation.copy(ramp.rotation);
+        scene.add(wireframe);
+        console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
+        
         scene.add(ramp);
       }
     };
@@ -1083,11 +1106,6 @@ export default function App() {
 
     // ---- COLLISION ----
     const getRoomAtPos = (px: number, pz: number, py: number) => {
-      // Diagnostic logging
-      console.log("[ROOM DETECTOR START]");
-      console.log("Player Position:", { x: px, y: py, z: pz });
-      console.log("Room Count:", INITIAL_ROOMS.length);
-      
       for (const room of INITIAL_ROOMS) {
         const xMin = room.cx - room.w / 2;
         const xMax = room.cx + room.w / 2;
@@ -1095,40 +1113,37 @@ export default function App() {
         const zMax = room.cz + room.d / 2;
         
         // Player Y is eye height (~1.6 units above feet)
-        // Check if player's feet are close to the room's floor level
         const playerFeetY = py - 1.6;
-        const floorTolerance = 2.0; // Allow 2 units tolerance for slopes/stairs
+        
+        // Room height bounds: from floor to ceiling (floorY + h), with tolerances
+        const roomMinY = room.floorY - 1;
+        const roomMaxY = room.floorY + room.h + 2;
         
         const insideX = px >= xMin && px <= xMax;
         const insideZ = pz >= zMin && pz <= zMax;
-        const insideY = Math.abs(playerFeetY - room.floorY) < floorTolerance;
+        const insideY =
+          playerFeetY >= roomMinY &&
+          playerFeetY <= roomMaxY;
         
-        console.log({
-          roomName: room.name,
-          roomCenter: [room.cx, room.cz],
-          roomWidth: room.w,
-          roomDepth: room.d,
-          floorY: room.floorY,
-          playerPosition: { x: px, y: py, z: pz },
-          playerFeetY,
-          bounds: {
-            x: [xMin, xMax],
-            z: [zMin, zMax],
-            floorY: room.floorY
-          },
-          insideX,
-          insideZ,
-          insideY,
-          insideRoom: insideX && insideZ && insideY
-        });
+        console.log(`ROOM CHECK: ${room.name}`);
+        console.log(`Player: ${px} ${pz} ${py}`);
+        console.log("Bounds:");
+        console.log(`xMin=${xMin}`);
+        console.log(`xMax=${xMax}`);
+        console.log(`zMin=${zMin}`);
+        console.log(`zMax=${zMax}`);
+        console.log("");
+        console.log(`insideX=${insideX}`);
+        console.log(`insideZ=${insideZ}`);
+        console.log(`insideY=${insideY}`);
+        console.log("");
         
         if (insideX && insideZ && insideY) {
-          console.log("[ROOM DETECTOR] Found matching room:", room.name);
+          console.log("RETURNING ROOM", room.name);
           return room;
         }
       }
       
-      console.log("[ROOM DETECTOR] No matching room found");
       return undefined;
     };
 
@@ -1147,6 +1162,7 @@ export default function App() {
     const tryMove = (pos: THREE.Vector3, delta: THREE.Vector3): THREE.Vector3 => {
       const next = pos.clone().add(delta);
       const currentRoom = getRoomAtPos(pos.x, pos.z, pos.y);
+      console.log("tryMove ROOM RETURNED", currentRoom?.name);
       if (!currentRoom) return next;
       const xMin = currentRoom.cx - currentRoom.w / 2; const xMax = currentRoom.cx + currentRoom.w / 2;
       const zMin = currentRoom.cz - currentRoom.d / 2; const zMax = currentRoom.cz + currentRoom.d / 2;
@@ -1294,11 +1310,29 @@ export default function App() {
       } else {
         velocityY.current -= 30 * dt;
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
+        console.log("physics ROOM RETURNED", currentRoom?.name);
+        
+        // TEMPORARY: Update room state directly from physics loop
+        const detectedRoom = getRoomAtPos(
+          playerPos.current.x,
+          playerPos.current.z,
+          playerPos.current.y
+        );
+        setCurrentRoomName(detectedRoom?.name || "None");
+        console.log("ROOM STATE UPDATED FROM PHYSICS", detectedRoom?.name);
+        
         let groundY = currentRoom
           ? (currentRoom.isStaircase
             ? getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z) + PLAYER_EYE_HEIGHT
             : currentRoom.floorY + PLAYER_EYE_HEIGHT)
           : PLAYER_EYE_HEIGHT;
+        
+        // DEBUG: Log stair collision detection
+        if (currentRoom?.isStaircase) {
+          const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
+          console.log(`[STAIR COLLISION] Room: ${currentRoom.name}, Player: (${playerPos.current.x.toFixed(2)}, ${playerPos.current.z.toFixed(2)}), StairHeight: ${stairHeight.toFixed(2)}, groundY: ${groundY.toFixed(2)}`);
+          console.log(`[STAIR COLLISION] Room bounds: cx=${currentRoom.cx}, cz=${currentRoom.cz}, w=${currentRoom.w}, d=${currentRoom.d}, dir=${currentRoom.stairDirection}`);
+        }
         playerPos.current.y += velocityY.current * dt;
         if (playerPos.current.y <= groundY) {
           playerPos.current.y = groundY;
@@ -1539,17 +1573,27 @@ export default function App() {
         
         // Get current room name
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
+        console.log("RENDER ROOM RETURNED", currentRoom?.name);
         const newRoomName = currentRoom?.name || 'None';
+        console.log("SETTING ROOM STATE", newRoomName);
+        console.log("CURRENT ROOM STATE BEFORE", currentRoomName);
         setCurrentRoomName(newRoomName);
+        console.log("CURRENT ROOM STATE AFTER SET", newRoomName);
         
         // Debug logging every 60 frames (~1 second)
         if ((window as any).__debugFrameCount % 60 === 0) {
           console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
+          console.log(`[ROOM DEBUG] State check - currentRoomName will be: ${newRoomName}`);
           if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
             const firstRoom = INITIAL_ROOMS[0];
             console.log(`[ROOM DEBUG] First room '${firstRoom.name}' bounds: X[${firstRoom.cx - firstRoom.w/2}, ${firstRoom.cx + firstRoom.w/2}] Z[${firstRoom.cz - firstRoom.d/2}, ${firstRoom.cz + firstRoom.d/2}]`);
           }
         }
+      }
+      
+      // Log every frame to verify render loop is running
+      if (frameCount % 60 === 0) {
+        console.log("[RENDER LOOP] Frame", frameCount, "Room state:", currentRoomName);
       }
     };
     loop();
