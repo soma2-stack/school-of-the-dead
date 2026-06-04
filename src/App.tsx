@@ -9,6 +9,7 @@ import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
+import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -349,6 +350,11 @@ export default function App() {
   const connectivityAuditorRef = useRef(getConnectivityAuditor());
   const [connectivityReport, setConnectivityReport] = useState<any>(null);
   
+  // Geometry Inspector state
+  const [geometryInspectorEnabled, setGeometryInspectorEnabled] = useState<boolean>(false);
+  const geometryInspectorRef = useRef<GeometryInspector | null>(null);
+  const [inspectedMeshInfo, setInspectedMeshInfo] = useState<{ meshName: string; roomId?: string; wallId?: string; floorId?: string } | null>(null);
+  
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
 
@@ -494,6 +500,26 @@ export default function App() {
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
+
+    // Initialize Geometry Inspector
+    const raycasterForInspector = new THREE.Raycaster();
+    const geometryInspector = createGeometryInspector(scene, camera, raycasterForInspector);
+    geometryInspectorRef.current = geometryInspector;
+    
+    // Expose global toggle function
+    (window as any).toggleGeometryInspector = () => {
+      geometryInspector.toggle();
+      setGeometryInspectorEnabled(geometryInspector.isActive());
+      console.log('[GeometryInspector] Toggled:', geometryInspector.isActive() ? 'ON' : 'OFF');
+    };
+    (window as any).enableGeometryInspector = () => {
+      geometryInspector.enable();
+      setGeometryInspectorEnabled(true);
+    };
+    (window as any).disableGeometryInspector = () => {
+      geometryInspector.disable();
+      setGeometryInspectorEnabled(false);
+    };
 
     // ---- LIGHTING ----
     scene.add(new THREE.AmbientLight(0x222222, 1.0));
@@ -850,6 +876,17 @@ export default function App() {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
       
+      // Geometry Inspector - F4 to toggle geometry inspection mode
+      if (e.code === 'F4') {
+        e.preventDefault();
+        if (geometryInspectorRef.current) {
+          geometryInspectorRef.current.toggle();
+          setGeometryInspectorEnabled(geometryInspectorRef.current.isActive());
+          console.log('[GeometryInspector] Toggled:', geometryInspectorRef.current.isActive() ? 'ON' : 'OFF');
+          console.log('[GeometryInspector] Call window.inspectGeometry() to print all meshes within 20 units');
+        }
+      }
+      
       // Floor Debug Mode - F7 to toggle floor audit visualization
       if (e.code === 'F7') {
         e.preventDefault();
@@ -1186,6 +1223,37 @@ export default function App() {
         renderFloorDebug(scene, now / 1000);
       }
       
+      // Geometry Inspector - highlight mesh under crosshair
+      if (geometryInspectorEnabled && geometryInspectorRef.current) {
+        const inspector = geometryInspectorRef.current;
+        const hitMesh = inspector.inspectAtCrosshair();
+        
+        if (hitMesh) {
+          const bounds = new THREE.Box3().setFromObject(hitMesh);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          bounds.getSize(size);
+          bounds.getCenter(center);
+          
+          // Update highlight visual
+          inspector.updateHighlight(hitMesh);
+          
+          // Get mesh info for display
+          const info = inspector.getInspectedMesh();
+          if (info) {
+            setInspectedMeshInfo({
+              meshName: info.meshName,
+              roomId: info.roomId,
+              wallId: info.wallId,
+              floorId: info.floorId,
+            });
+          }
+        } else {
+          inspector.updateHighlight(null);
+          setInspectedMeshInfo(null);
+        }
+      }
+      
       // Door interaction raycast
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const doorColliders = Array.from(doorColliderMap.keys());
@@ -1329,7 +1397,21 @@ export default function App() {
       {/* Crosshair */}
       {isPointerLocked && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 border border-white/60" />
+          <div className={`w-1.5 h-1.5 rounded-full border border-white/60 ${geometryInspectorEnabled ? 'bg-yellow-400' : 'bg-emerald-400'}`} />
+        </div>
+      )}
+
+      {/* Geometry Inspector Info Display */}
+      {isPointerLocked && geometryInspectorEnabled && inspectedMeshInfo && (
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+          <div className="bg-black/80 border border-yellow-500/70 px-4 py-3 rounded-lg text-xs font-mono tracking-wide text-yellow-300 whitespace-nowrap">
+            <div className="font-bold text-yellow-200 mb-1">GEOMETRY INSPECTOR</div>
+            <div>Mesh: <span className="text-white">{inspectedMeshInfo.meshName}</span></div>
+            {inspectedMeshInfo.roomId && <div>Room ID: <span className="text-emerald-400">{inspectedMeshInfo.roomId}</span></div>}
+            {inspectedMeshInfo.wallId && <div>Wall ID: <span className="text-blue-400">{inspectedMeshInfo.wallId}</span></div>}
+            {inspectedMeshInfo.floorId && <div>Floor ID: <span className="text-purple-400">{inspectedMeshInfo.floorId}</span></div>}
+            <div className="mt-2 text-yellow-500/70 text-[10px]">Press F4 to toggle · window.inspectGeometry() for details</div>
+          </div>
         </div>
       )}
 
@@ -1346,7 +1428,7 @@ export default function App() {
       {!isPointerLocked && (
         <div className="absolute inset-x-0 bottom-8 flex justify-center pointer-events-none z-10">
           <div className="bg-black/70 border border-white/10 px-5 py-2 rounded-full text-[11px] font-mono tracking-widest text-white/50 uppercase">
-            Click to Play · WASD Move · Mouse Look · V Noclip · ESC Free Cursor
+            Click to Play · WASD Move · Mouse Look · V Noclip · F4 Geometry Inspector · ESC Free Cursor
           </div>
         </div>
       )}

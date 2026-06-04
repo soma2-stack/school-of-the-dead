@@ -1,3 +1,17 @@
 ```
+# Build artifacts
 dist/
+build/
+*.css
+
+# Dependencies
+node_modules/
+
+# Editors
+.vscode/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 ```
