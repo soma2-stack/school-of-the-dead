@@ -1095,13 +1095,17 @@ export default function App() {
         const zMax = room.cz + room.d / 2;
         
         // Player Y is eye height (~1.6 units above feet)
-        // Check if player's feet are close to the room's floor level
         const playerFeetY = py - 1.6;
-        const floorTolerance = 2.0; // Allow 2 units tolerance for slopes/stairs
+        
+        // Room height bounds: from floor to ceiling (floorY + h), with tolerances
+        const roomMinY = room.floorY - 1;
+        const roomMaxY = room.floorY + room.h + 2;
         
         const insideX = px >= xMin && px <= xMax;
         const insideZ = pz >= zMin && pz <= zMax;
-        const insideY = Math.abs(playerFeetY - room.floorY) < floorTolerance;
+        const insideY =
+          playerFeetY >= roomMinY &&
+          playerFeetY <= roomMaxY;
         
         console.log({
           roomName: room.name,
