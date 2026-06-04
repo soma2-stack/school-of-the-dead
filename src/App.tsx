@@ -403,6 +403,15 @@ export default function App() {
     const doors: RuntimeDoor[] = [];
     const doorColliderMap = new Map<THREE.Mesh, RuntimeDoor>();
     
+    // Mapping from raycast doorway IDs to DoorManager IDs
+    // This ensures the prompt system only shows purchasable doors that DoorManager recognizes
+    const RAYCAST_TO_DOORMANAGER_ID: Record<string, string> = {
+      'starter_N_0': 'starter_classroom_door',
+      'science_lab_S_0': 'hallway_science_lab_door',
+      'library_S_0': 'hallway_library_door',
+      'cafeteria_E_0': 'hallway_cafeteria_door',
+    };
+    
     // Build runtime door objects from config
     DOORS_CONFIG.forEach((dc, idx) => {
       const gaps = ROOM_GAPS[dc.roomId] || [];
@@ -411,6 +420,17 @@ export default function App() {
       
       const room = INITIAL_ROOMS.find(r => r.id === dc.roomId);
       if (!room) return;
+      
+      // Calculate raycast doorway ID
+      const raycastDoorId = `${dc.roomId}_${dc.side}_${dc.gapIndex}`;
+      
+      // Check if this doorway is a purchasable door (exists in mapping)
+      const doorManagerId = RAYCAST_TO_DOORMANAGER_ID[raycastDoorId];
+      
+      // Skip non-purchasable doorways (they behave as normal map geometry)
+      if (!doorManagerId) {
+        return;  // Use return instead of continue in forEach
+      }
       
       // Calculate door world position based on room and gap
       let doorX = 0, doorZ = 0, doorRotY = 0;
@@ -441,7 +461,7 @@ export default function App() {
       const worldZ = room.cz + doorZ;
       
       const doorObj: RuntimeDoor = {
-        id: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        id: doorManagerId,  // Use DoorManager ID, not raycast ID
         type: 'gap',
         axis: gap.side === 'N' || gap.side === 'S' ? 'z' : 'x',
         x: worldX,
@@ -451,11 +471,12 @@ export default function App() {
         d: doorD,
         cost: dc.cost,
         unlocked: false,
-        name: `${dc.roomId}_${dc.side}_${dc.gapIndex}`,
+        name: raycastDoorId,  // Keep raycast ID for display purposes
         roomId: dc.roomId,
         side: gap.side,
         isOpen: false,
         isPurchased: false,
+        doorManagerId: doorManagerId,  // Store the DoorManager ID for purchase logic
       };
       doors.push(doorObj);
     });
@@ -1038,7 +1059,11 @@ export default function App() {
         
         const doorManager = getDoorManager();
         const playerId = 'player1';
-        const result = doorManager.purchaseDoor(currentDoor.id, playerId);
+        
+        // Always use the DoorManager ID for purchase logic
+        // The door's id field now contains the DoorManager ID due to mapping
+        const purchaseDoorId = currentDoor.doorManagerId || currentDoor.id;
+        const result = doorManager.purchaseDoor(purchaseDoorId, playerId);
         
         console.log("purchaseDoor() result:", result);
         console.log("Result.success:", result.success);
