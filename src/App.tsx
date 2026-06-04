@@ -878,8 +878,30 @@ export default function App() {
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
-        if (dir === 'W_E' || dir === 'E_W') ramp.rotation.z = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-        else ramp.rotation.x = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
+        
+        // DEBUG: Log stairwell transforms
+        console.log(`[STAIR DEBUG] Room: ${r.id}, dir: ${dir}, w: ${r.w}, d: ${r.d}, climb: ${climb}`);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          const angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
+          ramp.rotation.z = angle;
+          console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+        } else {
+          const angle = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
+          ramp.rotation.x = angle;
+          console.log(`[STAIR DEBUG] Z-axis stair, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+        }
+        
+        // DEBUG: Add wireframe overlay to visualize actual ramp orientation
+        const wireframe = new THREE.LineSegments(
+          new THREE.WireframeGeometry(new THREE.BoxGeometry(r.w, 0.3, r.d)),
+          new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 })
+        );
+        wireframe.position.copy(ramp.position);
+        wireframe.rotation.copy(ramp.rotation);
+        scene.add(wireframe);
+        console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
+        
         scene.add(ramp);
       }
     };
@@ -1303,6 +1325,13 @@ export default function App() {
             ? getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z) + PLAYER_EYE_HEIGHT
             : currentRoom.floorY + PLAYER_EYE_HEIGHT)
           : PLAYER_EYE_HEIGHT;
+        
+        // DEBUG: Log stair collision detection
+        if (currentRoom?.isStaircase) {
+          const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
+          console.log(`[STAIR COLLISION] Room: ${currentRoom.name}, Player: (${playerPos.current.x.toFixed(2)}, ${playerPos.current.z.toFixed(2)}), StairHeight: ${stairHeight.toFixed(2)}, groundY: ${groundY.toFixed(2)}`);
+          console.log(`[STAIR COLLISION] Room bounds: cx=${currentRoom.cx}, cz=${currentRoom.cz}, w=${currentRoom.w}, d=${currentRoom.d}, dir=${currentRoom.stairDirection}`);
+        }
         playerPos.current.y += velocityY.current * dt;
         if (playerPos.current.y <= groundY) {
           playerPos.current.y = groundY;
