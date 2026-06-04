@@ -821,8 +821,9 @@ export default function App() {
     const canPassDoor = (roomId: string, side: 'N' | 'S' | 'E' | 'W', gapIndex: number): boolean => {
       const door = doors.find(d => d.roomId === roomId && d.side === side && DOORS_CONFIG.findIndex(dc => dc.roomId === roomId && dc.side === side && dc.gapIndex === gapIndex) >= 0);
       if (!door) return true; // No door here
-      if (door.isPurchased && door.isOpen) return true; // Open purchased door
-      return false; // Closed door blocks passage
+      if (!door.isPurchased) return false; // Unpurchased door blocks passage
+      if (door.isOpen) return true; // Open purchased door
+      return false; // Closed purchased door blocks passage
     };
 
     const tryMove = (pos: THREE.Vector3, delta: THREE.Vector3): THREE.Vector3 => {
@@ -849,7 +850,7 @@ export default function App() {
           const gapIdx = gaps.findIndex(g => g.side === 'S' && offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
           if (gapIdx >= 0) {
             const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'S');
-            if (door && door.isPurchased && !door.isOpen) {
+            if (door && !canPassDoor(currentRoom.id, 'S', gapIdx)) {
               nz = zMin + pr; // Blocked by closed door
             }
           }
@@ -864,9 +865,12 @@ export default function App() {
         if (!inGap) {
           nz = zMax - pr;
         } else {
-          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'N');
-          if (door && door.isPurchased && !door.isOpen) {
-            nz = zMax - pr;
+          const gapIdx = gaps.findIndex(g => g.side === 'N' && offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+          if (gapIdx >= 0) {
+            const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'N');
+            if (door && !canPassDoor(currentRoom.id, 'N', gapIdx)) {
+              nz = zMax - pr;
+            }
           }
         }
       }
@@ -879,9 +883,12 @@ export default function App() {
         if (!inGap) {
           nx = xMin + pr;
         } else {
-          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'W');
-          if (door && door.isPurchased && !door.isOpen) {
-            nx = xMin + pr;
+          const gapIdx = gaps.findIndex(g => g.side === 'W' && offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+          if (gapIdx >= 0) {
+            const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'W');
+            if (door && !canPassDoor(currentRoom.id, 'W', gapIdx)) {
+              nx = xMin + pr;
+            }
           }
         }
       }
@@ -894,9 +901,12 @@ export default function App() {
         if (!inGap) {
           nx = xMax - pr;
         } else {
-          const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'E');
-          if (door && door.isPurchased && !door.isOpen) {
-            nx = xMax - pr;
+          const gapIdx = gaps.findIndex(g => g.side === 'E' && offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
+          if (gapIdx >= 0) {
+            const door = doors.find(d => d.roomId === currentRoom.id && d.side === 'E');
+            if (door && !canPassDoor(currentRoom.id, 'E', gapIdx)) {
+              nx = xMax - pr;
+            }
           }
         }
       }
@@ -1071,7 +1081,19 @@ export default function App() {
         if (result.success) {
           console.log('[App] Door purchased successfully:', currentDoor.name);
           console.log("DoorRenderer update called");
-          doorRenderer.updateDoorState(currentDoor.id, true);
+          // Hide the actual door mesh created in App.tsx (not DoorRenderer's separate mesh)
+          if (currentDoor.mesh) {
+            currentDoor.mesh.visible = false;
+            console.log(`[App] Door mesh hidden: ${currentDoor.id}`);
+          }
+          // Also hide the collider to prevent any residual interaction
+          if (currentDoor.collider) {
+            currentDoor.collider.visible = false;
+            console.log(`[App] Door collider hidden: ${currentDoor.id}`);
+          }
+          // Update door state
+          currentDoor.isOpen = true;
+          currentDoor.isPurchased = true;
         } else {
           console.log('[App] Door purchase failed:', result.reason);
           if (result.reason === "INSUFFICIENT_POINTS") {
