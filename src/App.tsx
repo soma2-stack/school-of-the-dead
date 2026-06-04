@@ -882,21 +882,15 @@ export default function App() {
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
         
-        // DEBUG: Log stairwell transforms
-        console.log(`[STAIR DEBUG] Room: ${r.id}, dir: ${dir}, w: ${r.w}, d: ${r.d}, climb: ${climb}`);
-        console.log(`[STAIR DEBUG] Room center: (${r.cx}, ${r.floorY}, ${r.cz})`);
-        
         // Calculate angle first
         let angle = 0;
         if (dir === 'W_E' || dir === 'E_W') {
           angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-          console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         } else {
           // N_S or S_N
           // For S_N: south (negative Z) is bottom, north (positive Z) is top → need negative rotation.x
           // For N_S: north (positive Z) is bottom, south (negative Z) is top → need positive rotation.x
           angle = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
-          console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
         
         // Calculate offsets for proper pivot positioning
@@ -905,8 +899,6 @@ export default function App() {
           ? Math.sqrt(r.w * r.w + climb * climb) 
           : Math.sqrt(r.d * r.d + climb * climb);
         const yOffset = (hypotenuse - (dir === 'W_E' || dir === 'E_W' ? r.w : r.d)) / 2;
-        
-        console.log(`[STAIR DEBUG] Calculated hypotenuse: ${hypotenuse.toFixed(4)}, yOffset adjustment: ${yOffset.toFixed(4)}`);
         
         // VISUAL stair mesh - bright BLUE
         const visualRamp = new THREE.Mesh(
@@ -921,9 +913,6 @@ export default function App() {
           visualRamp.rotation.x = angle;
         }
         
-        console.log(`[STAIR VISUAL] ${r.name} position:`, visualRamp.position.clone());
-        console.log(`[STAIR VISUAL] ${r.name} rotation:`, visualRamp.rotation.clone());
-        console.log(`[STAIR VISUAL] ${r.name} scale:`, visualRamp.scale.clone());
         scene.add(visualRamp);
         
         // COLLISION ramp - bright RED (invisible physics representation)
@@ -939,16 +928,12 @@ export default function App() {
           collisionRamp.rotation.x = angle;
         }
         
-        console.log(`[STAIR COLLISION] ${r.name} position:`, collisionRamp.position.clone());
-        console.log(`[STAIR COLLISION] ${r.name} rotation:`, collisionRamp.rotation.clone());
-        console.log(`[STAIR COLLISION] ${r.name} scale:`, collisionRamp.scale.clone());
         scene.add(collisionRamp);
         
         // Calculate and log offsets between visual and collision
         const offsetX = visualRamp.position.x - collisionRamp.position.x;
         const offsetY = visualRamp.position.y - collisionRamp.position.y;
         const offsetZ = visualRamp.position.z - collisionRamp.position.z;
-        console.log(`[STAIR OFFSET] Visual - Collision: X=${offsetX.toFixed(4)}, Y=${offsetY.toFixed(4)}, Z=${offsetZ.toFixed(4)}`);
         
         // Add wireframe overlay to visualize actual ramp orientation
         const wireframe = new THREE.LineSegments(
@@ -958,7 +943,6 @@ export default function App() {
         wireframe.position.copy(visualRamp.position);
         wireframe.rotation.copy(visualRamp.rotation);
         scene.add(wireframe);
-        console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
         
         // Store stair debug data for the STAIRS tab
         const rotationDiffX = Math.abs(visualRamp.rotation.x - collisionRamp.rotation.x);
@@ -966,6 +950,12 @@ export default function App() {
         const rotationDiffZ = Math.abs(visualRamp.rotation.z - collisionRamp.rotation.z);
         const isMisaligned = Math.abs(offsetX) > 0.01 || Math.abs(offsetY) > 0.01 || Math.abs(offsetZ) > 0.01 ||
                              rotationDiffX > 0.001 || rotationDiffY > 0.001 || rotationDiffZ > 0.001;
+        
+        // Calculate validation deltas
+        const positionDelta = Math.sqrt(offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ);
+        const rotationDelta = Math.sqrt(rotationDiffX * rotationDiffX + rotationDiffY * rotationDiffY + rotationDiffZ * rotationDiffZ);
+        const heightDelta = Math.abs((visualRamp.position.y - r.floorY) - (collisionRamp.position.y - r.floorY));
+        const validationPass = positionDelta < 0.01 && rotationDelta < 0.001 && heightDelta < 0.01;
         
         setStairDebugData((prev) => [
           ...prev,
@@ -990,11 +980,18 @@ export default function App() {
             climbHeight: climb,
             isMisaligned,
             misalignmentWarning: isMisaligned ? `MISALIGNED STAIR DETECTED - Offset: (${offsetX.toFixed(4)}, ${offsetY.toFixed(4)}, ${offsetZ.toFixed(4)})` : undefined,
+            // Validation data
+            positionDelta,
+            rotationDelta,
+            heightDelta,
+            validationPass,
           },
         ]);
       }
     };
 
+    // Reset stair debug data before building rooms
+    setStairDebugData([]);
     INITIAL_ROOMS.forEach(r => buildRoom(r));
 
     // Props
@@ -1418,8 +1415,6 @@ export default function App() {
         // DEBUG: Log stair collision detection
         if (currentRoom?.isStaircase) {
           const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
-          console.log(`[STAIR COLLISION] Room: ${currentRoom.name}, Player: (${playerPos.current.x.toFixed(2)}, ${playerPos.current.z.toFixed(2)}), StairHeight: ${stairHeight.toFixed(2)}, groundY: ${groundY.toFixed(2)}`);
-          console.log(`[STAIR COLLISION] Room bounds: cx=${currentRoom.cx}, cz=${currentRoom.cz}, w=${currentRoom.w}, d=${currentRoom.d}, dir=${currentRoom.stairDirection}`);
           
           // Update player stair analysis for the STAIRS tab
           setPlayerStairAnalysis({

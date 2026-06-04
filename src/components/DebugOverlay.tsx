@@ -23,6 +23,11 @@ export interface StairDebugData {
   climbHeight: number;
   isMisaligned: boolean;
   misalignmentWarning?: string;
+  // Validation data
+  positionDelta: number;
+  rotationDelta: number;
+  heightDelta: number;
+  validationPass: boolean;
 }
 
 export interface PlayerStairAnalysis {
@@ -698,21 +703,23 @@ const DebugOverlay: React.FC<Props> = ({
                       key={stair.id}
                       style={{
                         border: stair.isMisaligned ? '1px solid #f00' : '1px solid #333',
-                        backgroundColor: stair.isMisaligned ? 'rgba(255, 0, 0, 0.15)' : 'transparent',
+                        backgroundColor: !stair.validationPass ? 'rgba(255, 0, 0, 0.15)' : 'transparent',
                         borderRadius: '3px',
                         padding: '6px',
                         marginBottom: '6px',
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <strong style={{ color: stair.isMisaligned ? '#f00' : '#0f0' }}>
+                        <strong style={{ color: stair.validationPass ? '#0f0' : '#f00' }}>
                           [{stair.id}] {stair.name}
                         </strong>
-                        {stair.isMisaligned && (
-                          <span style={{ color: '#f00', fontSize: '9px', fontWeight: 'bold' }}>
-                            ⚠️ MISALIGNED
-                          </span>
-                        )}
+                        <span style={{ 
+                          color: stair.validationPass ? '#0f0' : '#f00', 
+                          fontSize: '9px', 
+                          fontWeight: 'bold' 
+                        }}>
+                          {stair.validationPass ? '✓ PASS' : '⚠️ FAIL'}
+                        </span>
                       </div>
                       
                       <div style={{ fontSize: '9px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
@@ -743,9 +750,19 @@ const DebugOverlay: React.FC<Props> = ({
                         <span style={{ color: Math.abs(stair.rotationDiffX) > 0.001 || Math.abs(stair.rotationDiffY) > 0.001 || Math.abs(stair.rotationDiffZ) > 0.001 ? '#f00' : '#0f0' }}>
                           X:{stair.rotationDiffX.toFixed(4)} Y:{stair.rotationDiffY.toFixed(4)} Z:{stair.rotationDiffZ.toFixed(4)}
                         </span>
+                        
+                        {/* Validation Summary */}
+                        <span style={{ color: '#0ff' }}>Position Delta:</span>
+                        <span style={{ color: stair.positionDelta < 0.01 ? '#0f0' : '#f00' }}>{stair.positionDelta.toFixed(4)}</span>
+                        
+                        <span style={{ color: '#0ff' }}>Rotation Delta:</span>
+                        <span style={{ color: stair.rotationDelta < 0.001 ? '#0f0' : '#f00' }}>{stair.rotationDelta.toFixed(4)}</span>
+                        
+                        <span style={{ color: '#0ff' }}>Height Delta:</span>
+                        <span style={{ color: stair.heightDelta < 0.01 ? '#0f0' : '#f00' }}>{stair.heightDelta.toFixed(4)}</span>
                       </div>
                       
-                      {stair.isMisaligned && stair.misalignmentWarning && (
+                      {!stair.validationPass && stair.misalignmentWarning && (
                         <div style={{
                           marginTop: '4px',
                           padding: '4px',
