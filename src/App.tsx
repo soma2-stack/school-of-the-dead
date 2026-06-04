@@ -1496,7 +1496,17 @@ export default function App() {
         
         // Get current room name
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
-        setCurrentRoomName(currentRoom?.name || 'None');
+        const newRoomName = currentRoom?.name || 'None';
+        setCurrentRoomName(newRoomName);
+        
+        // Debug logging every 60 frames (~1 second)
+        if ((window as any).__debugFrameCount % 60 === 0) {
+          console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
+          if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
+            const firstRoom = INITIAL_ROOMS[0];
+            console.log(`[ROOM DEBUG] First room '${firstRoom.name}' bounds: X[${firstRoom.cx - firstRoom.w/2}, ${firstRoom.cx + firstRoom.w/2}] Z[${firstRoom.cz - firstRoom.d/2}, ${firstRoom.cz + firstRoom.d/2}]`);
+          }
+        }
       }
     };
     loop();
