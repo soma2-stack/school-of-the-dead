@@ -1081,7 +1081,19 @@ export default function App() {
         if (result.success) {
           console.log('[App] Door purchased successfully:', currentDoor.name);
           console.log("DoorRenderer update called");
-          doorRenderer.updateDoorState(currentDoor.id, true);
+          // Hide the actual door mesh created in App.tsx (not DoorRenderer's separate mesh)
+          if (currentDoor.mesh) {
+            currentDoor.mesh.visible = false;
+            console.log(`[App] Door mesh hidden: ${currentDoor.id}`);
+          }
+          // Also hide the collider to prevent any residual interaction
+          if (currentDoor.collider) {
+            currentDoor.collider.visible = false;
+            console.log(`[App] Door collider hidden: ${currentDoor.id}`);
+          }
+          // Update door state
+          currentDoor.isOpen = true;
+          currentDoor.isPurchased = true;
         } else {
           console.log('[App] Door purchase failed:', result.reason);
           if (result.reason === "INSUFFICIENT_POINTS") {
