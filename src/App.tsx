@@ -871,39 +871,69 @@ export default function App() {
 
       // Staircase ramp
       if (r.isStaircase) {
-        const ramp = new THREE.Mesh(
-          new THREE.BoxGeometry(r.w, 0.3, r.d),
-          new THREE.MeshLambertMaterial({ color: 0x5a3020, side: THREE.DoubleSide })
-        );
-        ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
         
         // DEBUG: Log stairwell transforms
         console.log(`[STAIR DEBUG] Room: ${r.id}, dir: ${dir}, w: ${r.w}, d: ${r.d}, climb: ${climb}`);
+        console.log(`[STAIR DEBUG] Room center: (${r.cx}, ${r.floorY}, ${r.cz})`);
         
+        // Calculate angle first
+        let angle = 0;
         if (dir === 'W_E' || dir === 'E_W') {
-          const angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-          ramp.rotation.z = angle;
+          angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
           console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         } else {
           // N_S or S_N
-          const angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
-          ramp.rotation.x = angle;
+          angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
           console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
         
-        // DEBUG: Add wireframe overlay to visualize actual ramp orientation
+        // VISUAL stair mesh - bright BLUE
+        const visualRamp = new THREE.Mesh(
+          new THREE.BoxGeometry(r.w, 0.3, r.d),
+          new THREE.MeshLambertMaterial({ color: 0x0000ff, side: THREE.DoubleSide })
+        );
+        visualRamp.position.set(r.cx, r.floorY + climb / 2, r.cz);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          visualRamp.rotation.z = angle;
+        } else {
+          visualRamp.rotation.x = angle;
+        }
+        
+        console.log(`[STAIR VISUAL] ${r.name} position:`, visualRamp.position.clone());
+        console.log(`[STAIR VISUAL] ${r.name} rotation:`, visualRamp.rotation.clone());
+        console.log(`[STAIR VISUAL] ${r.name} scale:`, visualRamp.scale.clone());
+        scene.add(visualRamp);
+        
+        // COLLISION ramp - bright RED (invisible physics representation)
+        const collisionRamp = new THREE.Mesh(
+          new THREE.BoxGeometry(r.w, 0.3, r.d),
+          new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+        );
+        collisionRamp.position.set(r.cx, r.floorY + climb / 2, r.cz);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          collisionRamp.rotation.z = angle;
+        } else {
+          collisionRamp.rotation.x = angle;
+        }
+        
+        console.log(`[STAIR COLLISION] ${r.name} position:`, collisionRamp.position.clone());
+        console.log(`[STAIR COLLISION] ${r.name} rotation:`, collisionRamp.rotation.clone());
+        console.log(`[STAIR COLLISION] ${r.name} scale:`, collisionRamp.scale.clone());
+        scene.add(collisionRamp);
+        
+        // Add wireframe overlay to visualize actual ramp orientation
         const wireframe = new THREE.LineSegments(
           new THREE.WireframeGeometry(new THREE.BoxGeometry(r.w, 0.3, r.d)),
           new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 })
         );
-        wireframe.position.copy(ramp.position);
-        wireframe.rotation.copy(ramp.rotation);
+        wireframe.position.copy(visualRamp.position);
+        wireframe.rotation.copy(visualRamp.rotation);
         scene.add(wireframe);
         console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
-        
-        scene.add(ramp);
       }
     };
 
