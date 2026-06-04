@@ -7,6 +7,7 @@ import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
 import { DevDebugPanel } from './utils/DevDebugPanel';
 import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
+import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -333,6 +334,12 @@ export default function App() {
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [currentIssueIndex, setCurrentIssueIndex] = useState<number>(-1);
   const mapValidatorRef = useRef(getRoomSealValidator());
+  
+  // Floor Debug Mode state
+  const [floorDebugMode, setFloorDebugMode] = useState<boolean>(false);
+  const [floorAuditIssues, setFloorAuditIssues] = useState<FloorIssue[]>([]);
+  const [currentFloorIssueIndex, setCurrentFloorIssueIndex] = useState<number>(-1);
+  const floorAuditorRef = useRef(getFloorAuditor());
   
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
@@ -736,8 +743,35 @@ export default function App() {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
       
-      // Map Validation Mode - F8 to scan current room
+      // Floor Debug Mode - F7 to toggle floor audit visualization
+      if (e.code === 'F7') {
+        e.preventDefault();
+        const auditor = floorAuditorRef.current;
+        auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+        const report = auditor.runAudit();
+        setFloorAuditIssues(report.issues);
+        setFloorDebugMode(prev => !prev);
+        setCurrentFloorIssueIndex(-1);
+        console.log(`[FloorIntegrityAudit] Debug mode ${!floorDebugMode ? 'enabled' : 'disabled'}: ${report.totalIssuesFound} issues found`);
+      }
+      
+      // Floor Debug Mode - F8 to teleport to next floor issue
       if (e.code === 'F8') {
+        e.preventDefault();
+        if (floorAuditIssues.length > 0) {
+          const nextIndex = (currentFloorIssueIndex + 1) % floorAuditIssues.length;
+          const issue = floorAuditIssues[nextIndex];
+          
+          // Teleport player to issue location
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI; // Face the issue
+          setCurrentFloorIssueIndex(nextIndex);
+          console.log(`[FloorIntegrityAudit] Teleported to issue ${nextIndex + 1}/${floorAuditIssues.length}: ${issue.cause} in ${issue.roomName}`);
+        }
+      }
+      
+      // Map Validation Mode - F9 to scan current room
+      if (e.code === 'F9') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
         
@@ -765,8 +799,8 @@ export default function App() {
         console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
       }
       
-      // Map Validation Mode - F9 to teleport to next issue
-      if (e.code === 'F9') {
+      // Map Validation Mode - F10 to teleport to next issue
+      if (e.code === 'F10') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
         const issues = validator.getIssues();
@@ -783,8 +817,8 @@ export default function App() {
         }
       }
       
-      // Toggle validation mode with F10
-      if (e.code === 'F10') {
+      // Toggle validation mode with F11
+      if (e.code === 'F11') {
         e.preventDefault();
         const validator = mapValidatorRef.current;
         validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
@@ -1003,6 +1037,11 @@ export default function App() {
       // Update validation mode highlights if enabled
       if (validationModeEnabled) {
         mapValidatorRef.current.updateHighlights(now / 1000);
+      }
+      
+      // Render floor debug visualization if enabled
+      if (floorDebugMode) {
+        renderFloorDebug(scene, now / 1000);
       }
       
       // Door interaction raycast
