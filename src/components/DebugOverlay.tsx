@@ -17,6 +17,23 @@ export interface DebugData {
   floorIntegrityIssues: FloorIssue[];
   debugLightingEnabled?: boolean;
   debugLightingBrightness?: number;
+  // Room detector diagnostics
+  roomDetectorStatus?: {
+    playerPosition: { x: number; y: number; z: number };
+    roomCount: number;
+    closestRoom: string | null;
+    closestDistance: number;
+    currentRoom: string | null;
+    rejectionReason: string | null;
+    testedRooms?: Array<{
+      roomName: string;
+      bounds: { x: [number, number]; z: [number, number]; y: [number, number] };
+      insideX: boolean;
+      insideZ: boolean;
+      insideY: boolean;
+      insideRoom: boolean;
+    }>;
+  };
 }
 
 interface Props {
@@ -410,6 +427,56 @@ const DebugOverlay: React.FC<Props> = ({
 
           {activeTab === 'player' && (
             <div>
+              {/* Room Detector Status Section */}
+              {data.roomDetectorStatus && (
+                <div style={{ 
+                  border: '1px solid #f00', 
+                  backgroundColor: 'rgba(255, 0, 0, 0.1)', 
+                  padding: '8px', 
+                  marginBottom: '10px',
+                  borderRadius: '4px'
+                }}>
+                  <strong style={{ color: '#f00', display: 'block', marginBottom: '6px' }}>
+                    ROOM DETECTOR STATUS
+                  </strong>
+                  
+                  <div style={rowStyle}>
+                    <span>Player Position:</span>
+                    <span>[{data.roomDetectorStatus.playerPosition.x.toFixed(1)}, {data.roomDetectorStatus.playerPosition.y.toFixed(1)}, {data.roomDetectorStatus.playerPosition.z.toFixed(1)}]</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span>Room Count:</span>
+                    <span>{data.roomDetectorStatus.roomCount}</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span>Current Room:</span>
+                    <span style={{ color: data.roomDetectorStatus.currentRoom ? '#0f0' : '#f00' }}>
+                      {data.roomDetectorStatus.currentRoom || 'None'}
+                    </span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span>Closest Room:</span>
+                    <span>{data.roomDetectorStatus.closestRoom || 'N/A'}</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span>Distance:</span>
+                    <span>{data.roomDetectorStatus.closestDistance.toFixed(2)}</span>
+                  </div>
+                  {data.roomDetectorStatus.rejectionReason && (
+                    <div style={{ 
+                      marginTop: '6px', 
+                      padding: '4px', 
+                      backgroundColor: 'rgba(255, 0, 0, 0.2)',
+                      borderLeft: '2px solid #f00',
+                      fontSize: '10px'
+                    }}>
+                      <span style={{ color: '#f00' }}>Reason: </span>
+                      <span>{data.roomDetectorStatus.rejectionReason}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={rowStyle}>
                 <span>Pos X:</span>
                 <span>{data.playerPos.x.toFixed(2)}</span>

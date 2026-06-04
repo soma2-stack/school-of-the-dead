@@ -1082,12 +1082,53 @@ export default function App() {
     window.addEventListener('keyup', handleKeyUp);
 
     // ---- COLLISION ----
-    const getRoomAtPos = (px: number, pz: number, py: number) =>
-      INITIAL_ROOMS.find(r => {
-        const xMin = r.cx - r.w / 2; const xMax = r.cx + r.w / 2;
-        const zMin = r.cz - r.d / 2; const zMax = r.cz + r.d / 2;
-        return px >= xMin && px <= xMax && pz >= zMin && pz <= zMax && py >= r.floorY - 1 && py <= r.floorY + r.h + 1;
-      });
+    const getRoomAtPos = (px: number, pz: number, py: number) => {
+      // Diagnostic logging
+      console.log("[ROOM DETECTOR START]");
+      console.log("Player Position:", { x: px, y: py, z: pz });
+      console.log("Room Count:", INITIAL_ROOMS.length);
+      
+      for (const room of INITIAL_ROOMS) {
+        const xMin = room.cx - room.w / 2;
+        const xMax = room.cx + room.w / 2;
+        const zMin = room.cz - room.d / 2;
+        const zMax = room.cz + room.d / 2;
+        const yMin = room.floorY - 1;
+        const yMax = room.floorY + room.h + 1;
+        
+        const insideX = px >= xMin && px <= xMax;
+        const insideZ = pz >= zMin && pz <= zMax;
+        const insideY = py >= yMin && py <= yMax;
+        const insideRoom = insideX && insideZ && insideY;
+        
+        console.log({
+          roomName: room.name,
+          roomCenter: [room.cx, room.cz],
+          roomWidth: room.w,
+          roomDepth: room.d,
+          floorY: room.floorY,
+          height: room.h,
+          bounds: {
+            x: [xMin, xMax],
+            z: [zMin, zMax],
+            y: [yMin, yMax]
+          },
+          playerPosition: { x: px, y: py, z: pz },
+          insideX,
+          insideZ,
+          insideY,
+          insideRoom
+        });
+        
+        if (insideRoom) {
+          console.log("[ROOM DETECTOR] Found matching room:", room.name);
+          return room;
+        }
+      }
+      
+      console.log("[ROOM DETECTOR] No matching room found");
+      return undefined;
+    };
 
     const canPassWall = (roomId: string, side: 'N' | 'S' | 'E' | 'W', offset: number): boolean =>
       (ROOM_GAPS[roomId] || []).filter(g => g.side === side).some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
@@ -1629,6 +1670,14 @@ export default function App() {
           floorIntegrityIssues: floorAuditIssues,
           debugLightingEnabled,
           debugLightingBrightness,
+          roomDetectorStatus: {
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            roomCount: INITIAL_ROOMS.length,
+            closestRoom: null,
+            closestDistance: 0,
+            currentRoom: currentRoomName,
+            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
+          },
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
