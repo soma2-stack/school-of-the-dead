@@ -1316,6 +1316,39 @@ export default function App() {
         const inspector = geometryInspectorRef.current;
         const hitMesh = inspector.inspectAtCrosshair();
         
+        // DIAGNOSTIC LOGGING: Compare room counts between systems
+        const allSceneMeshes: THREE.Mesh[] = [];
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && 
+              obj !== (inspector as any).highlightMesh && 
+              obj !== (inspector as any).wireframeMesh &&
+              !obj.name.includes('debug') &&
+              !obj.name.includes('highlight')) {
+            allSceneMeshes.push(obj);
+          }
+        });
+        
+        console.log('[DIAGNOSTIC] Geometry Inspector Scene Mesh Count:', allSceneMeshes.length);
+        console.log('[DIAGNOSTIC] Connectivity Audit Room Count:', INITIAL_ROOMS.length);
+        console.log('[DIAGNOSTIC] Connectivity Issues Array Length:', connectivityIssues.length);
+        
+        // Print room IDs scanned by each system
+        const sceneMeshIds = allSceneMeshes.map(m => m.name || m.uuid).slice(0, 10);
+        const roomIds = INITIAL_ROOMS.map(r => r.id);
+        console.log('[DIAGNOSTIC] Sample Scene Mesh Names:', sceneMeshIds);
+        console.log('[DIAGNOSTIC] Room IDs from INITIAL_ROOMS:', roomIds.slice(0, 10));
+        console.log('[DIAGNOSTIC] Total Issues Before Rendering:', connectivityIssues.length);
+        
+        // Print issue marker coordinates
+        if (connectivityIssues.length > 0) {
+          console.log('[DIAGNOSTIC] Issue Marker Coordinates:');
+          connectivityIssues.forEach((issue, idx) => {
+            if (idx < 5) {
+              console.log(`  #${idx + 1} ${issue.type}: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}] in ${issue.roomName}`);
+            }
+          });
+        }
+        
         if (hitMesh) {
           const bounds = new THREE.Box3().setFromObject(hitMesh);
           const size = new THREE.Vector3();
@@ -1507,6 +1540,31 @@ export default function App() {
             {inspectedMeshInfo.wallId && <div>Wall ID: <span className="text-blue-400">{inspectedMeshInfo.wallId}</span></div>}
             {inspectedMeshInfo.floorId && <div>Floor ID: <span className="text-purple-400">{inspectedMeshInfo.floorId}</span></div>}
             <div className="mt-2 text-yellow-500/70 text-[10px]">Press F4 to toggle · window.inspectGeometry() for details</div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Panel: Compare Geometry Inspector vs Connectivity Audit */}
+      {isPointerLocked && geometryInspectorEnabled && (
+        <div className="absolute top-4 right-4 pointer-events-none z-10">
+          <div className="bg-black/80 border border-cyan-500/50 px-4 py-3 rounded-lg text-xs font-mono text-cyan-300">
+            <div className="font-bold text-cyan-200 mb-2">DEBUG COMPARISON</div>
+            <div className="space-y-1">
+              <div>Geometry Inspector Rooms: <span className="text-white">{INITIAL_ROOMS.length}</span></div>
+              <div>Connectivity Audit Rooms: <span className="text-white">{INITIAL_ROOMS.length}</span></div>
+              <div className="pt-1 border-t border-cyan-700/50"></div>
+              <div>Geometry Inspector Issues: <span className="text-yellow-400">0</span></div>
+              <div>Connectivity Audit Issues: <span className="text-red-400">{connectivityIssues.length}</span></div>
+              {connectivityIssues.length > 0 && (
+                <>
+                  <div className="pt-1 border-t border-cyan-700/50"></div>
+                  <div className="text-[10px] text-gray-400">Void Exposures: {connectivityIssues.filter(i => i.type === 'void_exposure').length}</div>
+                  <div className="text-[10px] text-gray-400">Missing Ceilings: {connectivityIssues.filter(i => i.type === 'missing_ceiling').length}</div>
+                  <div className="text-[10px] text-gray-400">Navigation Breaks: {connectivityIssues.filter(i => i.type === 'disconnected_room' || i.type === 'no_path_to_starter').length}</div>
+                </>
+              )}
+            </div>
+            <div className="mt-2 text-cyan-600/70 text-[9px]">F6: Run Audit · F5: Teleport to Issue</div>
           </div>
         </div>
       )}
