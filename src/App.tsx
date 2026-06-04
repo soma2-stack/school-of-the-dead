@@ -360,6 +360,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    console.log("DOOR EFFECT RUNNING");
     const canvas = canvasRef.current;
     const mount = mountRef.current;
     if (!canvas || !mount) return;
@@ -778,29 +779,7 @@ export default function App() {
         console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
       }
       
-      // Door interaction - Press E to purchase door
-      if (e.code === 'KeyE') {
-        console.log('[DEBUG OLD] KeyE detected in old handleKeyDown');
-        console.log('[DEBUG OLD] isPointerLocked:', document.pointerLockElement !== null);
-        const doorManager = getDoorManager();
-        const pointsManager = getPointsManager();
-        const playerId = 'player1'; // TODO: Replace with actual player ID from game state
-        
-        const currentDoor = doorManager.getCurrentInteractedDoor();
-        console.log('[DEBUG OLD] getCurrentInteractedDoor returned:', currentDoor);
-        if (currentDoor) {
-          console.log('[App] Attempting to purchase door:', currentDoor.name);
-          const result = doorManager.purchaseDoor(currentDoor.id, playerId);
-          
-          if (result.success) {
-            console.log('[App] Door purchased successfully:', currentDoor.name);
-            // Hide the door mesh when purchased
-            doorRenderer.updateDoorState(currentDoor.id, true);
-          } else {
-            console.log('[App] Door purchase failed:', result.reason);
-          }
-        }
-      }
+      // Door interaction - Press E to purchase door (removed - handled by handleInteractionKey)
     };
     const handleKeyUp = (e: KeyboardEvent) => { keysPressed.current[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
@@ -1037,29 +1016,36 @@ export default function App() {
 
     // Keyboard handler for door interaction (uses hoveredDoor from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
+      const isCurrentlyPointerLocked = document.pointerLockElement !== null;
+      console.log("KEY EVENT", e.code, "isPointerLocked =", isCurrentlyPointerLocked);
       console.log('[DEBUG] Key event received:', e.key);
-      if (e.code === 'KeyE' && isPointerLocked) {
-        console.log("[E] key pressed");
+      if (e.code === 'KeyE' && isCurrentlyPointerLocked) {
+        console.log("KEY_E_TEST");
+        console.log("=== [E] key pressed ===");
+        console.log("=== Key handler entered ===");
         
         // Use the same door reference that drives the visible prompt
         const currentDoor = hoveredDoor;
         
         if (!currentDoor) {
-          console.log("Hovered/interacted door exists: NO (null)");
+          console.log("Current door found: NO (null)");
           return;
         }
         
-        console.log("Hovered/interacted door exists:", currentDoor.name || "unnamed door");
+        console.log("Current door found: YES");
+        console.log("Door ID:", currentDoor.id);
         console.log("purchaseDoor() called");
         
         const doorManager = getDoorManager();
         const playerId = 'player1';
         const result = doorManager.purchaseDoor(currentDoor.id, playerId);
         
-        console.log("purchaseDoor() returned");
+        console.log("purchaseDoor() result:", result);
+        console.log("Result.success:", result.success);
         
         if (result.success) {
           console.log('[App] Door purchased successfully:', currentDoor.name);
+          console.log("DoorRenderer update called");
           doorRenderer.updateDoorState(currentDoor.id, true);
         } else {
           console.log('[App] Door purchase failed:', result.reason);
@@ -1080,6 +1066,7 @@ export default function App() {
       document.removeEventListener('pointerlockchange', handleLockChange);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleInteractionKey);
       
       // Cleanup door renderer
       doorRenderer.destroy();
