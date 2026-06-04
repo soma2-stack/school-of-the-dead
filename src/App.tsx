@@ -149,11 +149,11 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
   } else if (dir === 'S_N') {
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
-    return r.floorY + (1 - t) * climb;
-  } else {
+    return r.floorY + t * climb;
+  } else if (dir === 'N_S') {
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
-    return r.floorY + t * climb;
+    return r.floorY + (1 - t) * climb;
   }
 };
 
@@ -887,9 +887,10 @@ export default function App() {
           ramp.rotation.z = angle;
           console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         } else {
-          const angle = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
+          // N_S or S_N
+          const angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
           ramp.rotation.x = angle;
-          console.log(`[STAIR DEBUG] Z-axis stair, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+          console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
         
         // DEBUG: Add wireframe overlay to visualize actual ramp orientation
