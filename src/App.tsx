@@ -1093,13 +1093,15 @@ export default function App() {
         const xMax = room.cx + room.w / 2;
         const zMin = room.cz - room.d / 2;
         const zMax = room.cz + room.d / 2;
-        const yMin = room.floorY - 1;
-        const yMax = room.floorY + room.h + 1;
+        
+        // Player Y is eye height (~1.6 units above feet)
+        // Check if player's feet are close to the room's floor level
+        const playerFeetY = py - 1.6;
+        const floorTolerance = 2.0; // Allow 2 units tolerance for slopes/stairs
         
         const insideX = px >= xMin && px <= xMax;
         const insideZ = pz >= zMin && pz <= zMax;
-        const insideY = py >= yMin && py <= yMax;
-        const insideRoom = insideX && insideZ && insideY;
+        const insideY = Math.abs(playerFeetY - room.floorY) < floorTolerance;
         
         console.log({
           roomName: room.name,
@@ -1107,20 +1109,20 @@ export default function App() {
           roomWidth: room.w,
           roomDepth: room.d,
           floorY: room.floorY,
-          height: room.h,
+          playerPosition: { x: px, y: py, z: pz },
+          playerFeetY,
           bounds: {
             x: [xMin, xMax],
             z: [zMin, zMax],
-            y: [yMin, yMax]
+            floorY: room.floorY
           },
-          playerPosition: { x: px, y: py, z: pz },
           insideX,
           insideZ,
           insideY,
-          insideRoom
+          insideRoom: insideX && insideZ && insideY
         });
         
-        if (insideRoom) {
+        if (insideX && insideZ && insideY) {
           console.log("[ROOM DETECTOR] Found matching room:", room.name);
           return room;
         }
