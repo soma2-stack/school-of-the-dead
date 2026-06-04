@@ -1215,21 +1215,7 @@ export default function App() {
           playerFeetY >= roomMinY &&
           playerFeetY <= roomMaxY;
         
-        console.log(`ROOM CHECK: ${room.name}`);
-        console.log(`Player: ${px} ${pz} ${py}`);
-        console.log("Bounds:");
-        console.log(`xMin=${xMin}`);
-        console.log(`xMax=${xMax}`);
-        console.log(`zMin=${zMin}`);
-        console.log(`zMax=${zMax}`);
-        console.log("");
-        console.log(`insideX=${insideX}`);
-        console.log(`insideZ=${insideZ}`);
-        console.log(`insideY=${insideY}`);
-        console.log("");
-        
         if (insideX && insideZ && insideY) {
-          console.log("RETURNING ROOM", room.name);
           return room;
         }
       }
@@ -1252,7 +1238,6 @@ export default function App() {
     const tryMove = (pos: THREE.Vector3, delta: THREE.Vector3): THREE.Vector3 => {
       const next = pos.clone().add(delta);
       const currentRoom = getRoomAtPos(pos.x, pos.z, pos.y);
-      console.log("tryMove ROOM RETURNED", currentRoom?.name);
       if (!currentRoom) return next;
       const xMin = currentRoom.cx - currentRoom.w / 2; const xMax = currentRoom.cx + currentRoom.w / 2;
       const zMin = currentRoom.cz - currentRoom.d / 2; const zMax = currentRoom.cz + currentRoom.d / 2;
@@ -1400,7 +1385,6 @@ export default function App() {
       } else {
         velocityY.current -= 30 * dt;
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
-        console.log("physics ROOM RETURNED", currentRoom?.name);
         
         // TEMPORARY: Update room state directly from physics loop
         const detectedRoom = getRoomAtPos(
@@ -1409,7 +1393,6 @@ export default function App() {
           playerPos.current.y
         );
         setCurrentRoomName(detectedRoom?.name || "None");
-        console.log("ROOM STATE UPDATED FROM PHYSICS", detectedRoom?.name);
         
         let groundY = currentRoom
           ? (currentRoom.isStaircase
@@ -1681,17 +1664,12 @@ export default function App() {
         
         // Get current room name
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
-        console.log("RENDER ROOM RETURNED", currentRoom?.name);
         const newRoomName = currentRoom?.name || 'None';
-        console.log("SETTING ROOM STATE", newRoomName);
-        console.log("CURRENT ROOM STATE BEFORE", currentRoomName);
         setCurrentRoomName(newRoomName);
-        console.log("CURRENT ROOM STATE AFTER SET", newRoomName);
         
         // Debug logging every 60 frames (~1 second)
         if ((window as any).__debugFrameCount % 60 === 0) {
           console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
-          console.log(`[ROOM DEBUG] State check - currentRoomName will be: ${newRoomName}`);
           if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
             const firstRoom = INITIAL_ROOMS[0];
             console.log(`[ROOM DEBUG] First room '${firstRoom.name}' bounds: X[${firstRoom.cx - firstRoom.w/2}, ${firstRoom.cx + firstRoom.w/2}] Z[${firstRoom.cz - firstRoom.d/2}, ${firstRoom.cz + firstRoom.d/2}]`);
