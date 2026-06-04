@@ -1288,6 +1288,16 @@ export default function App() {
         velocityY.current -= 30 * dt;
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
         console.log("physics ROOM RETURNED", currentRoom?.name);
+        
+        // TEMPORARY: Update room state directly from physics loop
+        const detectedRoom = getRoomAtPos(
+          playerPos.current.x,
+          playerPos.current.z,
+          playerPos.current.y
+        );
+        setCurrentRoomName(detectedRoom?.name || "None");
+        console.log("ROOM STATE UPDATED FROM PHYSICS", detectedRoom?.name);
+        
         let groundY = currentRoom
           ? (currentRoom.isStaircase
             ? getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z) + PLAYER_EYE_HEIGHT
