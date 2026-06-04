@@ -6,7 +6,7 @@ import { createDoorRenderer } from './utils/DoorRenderer';
 import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
 import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
-import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
+import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
@@ -320,6 +320,7 @@ const PLAYER_RADIUS = 1.0;
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const yaw = useRef<number>(Math.PI);
   const pitch = useRef<number>(0);
   const playerPos = useRef<THREE.Vector3>(new THREE.Vector3(0, PLAYER_EYE_HEIGHT, -30));
@@ -479,7 +480,7 @@ export default function App() {
         const issue = issues[index];
         playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
         yaw.current = Math.PI;
-        noclip.current = true; // Enable noclip automatically
+        noclipRef.current = true; // Enable noclip automatically
         setCurrentConnectivityIssueIndex(index);
         setConnectivityDebugMode(true);
         console.log(`Teleported to issue #${index + 1}: ${issue.type} in ${issue.roomName}`);
@@ -512,6 +513,7 @@ export default function App() {
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
     camera.position.copy(playerPos.current);
+    cameraRef.current = camera;
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1433,11 +1435,11 @@ export default function App() {
       
       // Update debug overlay stats every frame
       const frameCount = (window as any).__debugFrameCount || 0;
-      const lastTime = (window as any).__debugLastTime || now;
+      const prevDebugTime = (window as any).__debugLastTime || now;
       (window as any).__debugFrameCount = frameCount + 1;
       
-      if (now - lastTime >= 500) {
-        const calculatedFps = Math.round((frameCount + 1) * 1000 / (now - lastTime));
+      if (now - prevDebugTime >= 500) {
+        const calculatedFps = Math.round((frameCount + 1) * 1000 / (now - prevDebugTime));
         setFps(calculatedFps);
         (window as any).__debugFrameCount = 0;
         (window as any).__debugLastTime = now;
@@ -1565,7 +1567,7 @@ export default function App() {
           meshCount,
           drawCalls,
           playerPos: playerPos.current,
-          playerRot: camera.rotation,
+          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
           currentRoom: currentRoomName,
           noclip: noclipRef.current,
           round: roundState.round,

@@ -166,7 +166,8 @@ export function createGeometryInspector(
     const rotation = new THREE.Euler();
     const scale = new THREE.Vector3();
     mesh.getWorldPosition(position);
-    mesh.getWorldRotation(rotation);
+    mesh.updateWorldMatrix(true, false);
+    rotation.setFromRotationMatrix(mesh.matrixWorld);
     mesh.getWorldScale(scale);
 
     // Get material opacity
@@ -261,7 +262,7 @@ export function createGeometryInspector(
     scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh && 
           obj !== highlightMesh && 
-          obj !== wireframeMesh &&
+          !(wireframeMesh && obj === wireframeMesh) &&
           !obj.name.includes('debug') &&
           !obj.name.includes('highlight')) {
         allMeshes.push(obj);
@@ -316,7 +317,7 @@ export function createGeometryInspector(
     scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh && 
           obj !== highlightMesh && 
-          obj !== wireframeMesh &&
+          !(wireframeMesh && obj === wireframeMesh) &&
           !obj.name.includes('debug') &&
           !obj.name.includes('highlight')) {
         
@@ -374,5 +375,7 @@ export function createGeometryInspector(
     isActive,
     getInspectedMesh,
     inspectAllMeshes,
+    inspectAtCrosshair,
+    updateHighlight,
   };
 }
