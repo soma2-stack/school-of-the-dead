@@ -51,6 +51,7 @@ export interface RuntimeDoor extends DoorConfig {
   isPurchased: boolean;
   mesh?: THREE.Mesh;
   collider?: THREE.Mesh;
+  doorManagerId?: string;  // Maps to DoorManager ID for purchase logic
 }
 
 export interface WindowConfig {
