@@ -1550,6 +1550,11 @@ export default function App() {
           }
         }
       }
+      
+      // Log every frame to verify render loop is running
+      if (frameCount % 60 === 0) {
+        console.log("[RENDER LOOP] Frame", frameCount, "Room state:", currentRoomName);
+      }
     };
     loop();
 
