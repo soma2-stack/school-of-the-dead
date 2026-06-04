@@ -873,7 +873,7 @@ export default function App() {
       if (r.isStaircase) {
         const ramp = new THREE.Mesh(
           new THREE.BoxGeometry(r.w, 0.3, r.d),
-          new THREE.MeshLambertMaterial({ color: 0x5a3020 })
+          new THREE.MeshLambertMaterial({ color: 0x5a3020, side: THREE.DoubleSide })
         );
         ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
