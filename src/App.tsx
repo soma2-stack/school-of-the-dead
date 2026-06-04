@@ -4,12 +4,12 @@ import { getDoorManager, initializeDoors, DoorEventType } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
 import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
-import { DevDebugPanel } from './utils/DevDebugPanel';
 import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
+import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -360,6 +360,18 @@ export default function App() {
   
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
+  
+  // Debug overlay state
+  const [debugOverlayOpen, setDebugOverlayOpen] = useState<boolean>(false);
+  const [fps, setFps] = useState<number>(60);
+  const [meshCount, setMeshCount] = useState<number>(0);
+  const [drawCalls, setDrawCalls] = useState<number>(0);
+  const [currentRoomName, setCurrentRoomName] = useState<string>('');
+  const [roundState, setRoundState] = useState<{ round: number; zombiesAlive: number; spawnStatus: string }>({
+    round: 1,
+    zombiesAlive: 0,
+    spawnStatus: 'idle'
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -878,6 +890,12 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
+      
+      // Debug Overlay - F1 to toggle overlay visibility
+      if (e.code === 'F1') {
+        e.preventDefault();
+        setDebugOverlayOpen(prev => !prev);
+      }
       
       // Geometry Inspector - F4 to toggle geometry inspection mode
       if (e.code === 'F4') {
@@ -1412,6 +1430,30 @@ export default function App() {
       doorManager.updateInteraction(playerPosVec, playerDirVec);
       
       renderer.render(scene, camera);
+      
+      // Update debug overlay stats every frame
+      const frameCount = (window as any).__debugFrameCount || 0;
+      const lastTime = (window as any).__debugLastTime || now;
+      (window as any).__debugFrameCount = frameCount + 1;
+      
+      if (now - lastTime >= 500) {
+        const calculatedFps = Math.round((frameCount + 1) * 1000 / (now - lastTime));
+        setFps(calculatedFps);
+        (window as any).__debugFrameCount = 0;
+        (window as any).__debugLastTime = now;
+        
+        // Count meshes and draw calls
+        let meshCnt = 0;
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) meshCnt++;
+        });
+        setMeshCount(meshCnt);
+        setDrawCalls(renderer.info.render.calls);
+        
+        // Get current room name
+        const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
+        setCurrentRoomName(currentRoom?.name || 'None');
+      }
     };
     loop();
 
@@ -1516,8 +1558,48 @@ export default function App() {
         </div>
       )}
 
-      {/* Dev Debug Panel */}
-      <DevDebugPanel playerId="player1" />
+      {/* Debug Overlay - Collapsible F1 menu */}
+      <DebugOverlay
+        data={{
+          fps,
+          meshCount,
+          drawCalls,
+          playerPos: playerPos.current,
+          playerRot: camera.rotation,
+          currentRoom: currentRoomName,
+          noclip: noclipRef.current,
+          round: roundState.round,
+          zombiesAlive: roundState.zombiesAlive,
+          spawnStatus: roundState.spawnStatus,
+          connectivityIssues: connectivityIssues.length,
+          floorIntegrityIssues: floorAuditIssues.length,
+        }}
+        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
+        onRunConnectivity={() => {
+          const auditor = connectivityAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+          const report = auditor.runAudit();
+          const issues = auditor.getIssues();
+          setConnectivityIssues(issues);
+          setConnectivityReport(report);
+          setConnectivityDebugMode(true);
+          setCurrentConnectivityIssueIndex(-1);
+        }}
+        onRunFloorAudit={() => {
+          const auditor = floorAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+          const report = auditor.runAudit();
+          setFloorAuditIssues(report.issues);
+          setFloorDebugMode(true);
+          setCurrentFloorIssueIndex(-1);
+        }}
+        onTeleportToSpawn={() => {
+          // Teleport to starter room spawn point
+          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
+          yaw.current = Math.PI;
+          console.log('[DebugOverlay] Teleported to starter room spawn');
+        }}
+      />
 
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
@@ -1540,31 +1622,6 @@ export default function App() {
             {inspectedMeshInfo.wallId && <div>Wall ID: <span className="text-blue-400">{inspectedMeshInfo.wallId}</span></div>}
             {inspectedMeshInfo.floorId && <div>Floor ID: <span className="text-purple-400">{inspectedMeshInfo.floorId}</span></div>}
             <div className="mt-2 text-yellow-500/70 text-[10px]">Press F4 to toggle · window.inspectGeometry() for details</div>
-          </div>
-        </div>
-      )}
-
-      {/* Debug Panel: Compare Geometry Inspector vs Connectivity Audit */}
-      {isPointerLocked && geometryInspectorEnabled && (
-        <div className="absolute top-4 right-4 pointer-events-none z-10">
-          <div className="bg-black/80 border border-cyan-500/50 px-4 py-3 rounded-lg text-xs font-mono text-cyan-300">
-            <div className="font-bold text-cyan-200 mb-2">DEBUG COMPARISON</div>
-            <div className="space-y-1">
-              <div>Geometry Inspector Rooms: <span className="text-white">{INITIAL_ROOMS.length}</span></div>
-              <div>Connectivity Audit Rooms: <span className="text-white">{INITIAL_ROOMS.length}</span></div>
-              <div className="pt-1 border-t border-cyan-700/50"></div>
-              <div>Geometry Inspector Issues: <span className="text-yellow-400">0</span></div>
-              <div>Connectivity Audit Issues: <span className="text-red-400">{connectivityIssues.length}</span></div>
-              {connectivityIssues.length > 0 && (
-                <>
-                  <div className="pt-1 border-t border-cyan-700/50"></div>
-                  <div className="text-[10px] text-gray-400">Void Exposures: {connectivityIssues.filter(i => i.type === 'void_exposure').length}</div>
-                  <div className="text-[10px] text-gray-400">Missing Ceilings: {connectivityIssues.filter(i => i.type === 'missing_ceiling').length}</div>
-                  <div className="text-[10px] text-gray-400">Navigation Breaks: {connectivityIssues.filter(i => i.type === 'disconnected_room' || i.type === 'no_path_to_starter').length}</div>
-                </>
-              )}
-            </div>
-            <div className="mt-2 text-cyan-600/70 text-[9px]">F6: Run Audit · F5: Teleport to Issue</div>
           </div>
         </div>
       )}

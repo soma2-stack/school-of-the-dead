@@ -1,1 +1,7 @@
-Nothing needs to be added to .gitignore since only a source file (src/App.tsx) was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+```
+# Build artifacts
+dist/
+build/
+*.js
+*.css
+```
