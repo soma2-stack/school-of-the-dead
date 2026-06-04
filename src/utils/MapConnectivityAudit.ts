@@ -12,6 +12,14 @@ export interface ConnectivityIssue {
   details: string;
   isIntentional?: boolean;
   connectedRoomId?: string;
+  
+  // Enhanced debugging fields
+  roomBounds?: { x: number; z: number; w: number; d: number; h: number; floorY: number };
+  nearestConnectedRoom?: string;
+  distanceToNearestRoom?: number;
+  reasoning?: string;
+  potentialCauses?: string[];
+  confidence?: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export interface RoomConnectivityData {
@@ -932,12 +940,216 @@ class MapConnectivityAuditor {
   }
 
   /**
-   * Add issue to list (avoiding duplicates)
+   * Calculate distance between two points (XZ plane)
+   */
+  private calculateDistance(x1: number, z1: number, x2: number, z2: number): number {
+    return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
+  }
+
+  /**
+   * Find nearest connected room to a given location
+   */
+  private findNearestConnectedRoom(excludeRoomId: string, location: [number, number, number]): { roomId: string; name: string; distance: number } | null {
+    let nearest: { roomId: string; name: string; distance: number } | null = null;
+    
+    for (const room of this.roomsData) {
+      if (room.id === excludeRoomId) continue;
+      
+      const distance = this.calculateDistance(location[0], location[2], room.cx, room.cz);
+      
+      if (!nearest || distance < nearest.distance) {
+        nearest = { roomId: room.id, name: room.name, distance };
+      }
+    }
+    
+    return nearest;
+  }
+
+  /**
+   * Generate reasoning for why an issue was detected
+   */
+  private generateReasoning(issueType: ConnectivityIssue['type'], room: RoomConnectivityData, gap?: GapData): string {
+    switch (issueType) {
+      case 'void_exposure':
+        if (gap) {
+          return `Gap on ${gap.side} wall (${gap.width.toFixed(1)}u wide) has no adjacent room within detection tolerance. Pathfinding graph cannot establish valid route across this opening.`;
+        }
+        return `Missing wall on specified side creates direct exposure to world void with no connecting geometry.`;
+      
+      case 'missing_wall':
+        return `Wall not defined in room data and no adjacent room detected within tolerance. This creates an unsealed boundary.`;
+      
+      case 'missing_ceiling':
+        return `Room lacks ceiling geometry definition or has excessive height without upper floor coverage.`;
+      
+      case 'disconnected_room':
+        return `Room has zero neighbors and zero gaps/doorways. No pathfinding connections exist to any other room.`;
+      
+      case 'hallway_dead_end':
+        return `Hallway terminates without connecting room, gap, or wall. Creates navigation dead-end into void.`;
+      
+      case 'geometry_seam':
+        return `Adjacent rooms have mismatched floor heights or room heights, creating visible seam where geometries meet.`;
+      
+      case 'no_path_to_starter':
+        return `BFS pathfinding from starter room cannot reach this room. All possible connection paths are blocked or missing.`;
+      
+      case 'z_fighting':
+        return `Room geometry overlaps significantly with another room at similar height, causing rendering artifacts.`;
+      
+      case 'missing_collision':
+        return `Geometry segment is too thin (<0.3u) to reliably generate collision mesh, or floor thickness is insufficient.`;
+      
+      default:
+        return 'Issue detected during automated connectivity scan.';
+    }
+  }
+
+  /**
+   * Generate potential causes for an issue type
+   */
+  private generatePotentialCauses(issueType: ConnectivityIssue['type']): string[] {
+    switch (issueType) {
+      case 'void_exposure':
+        return [
+          'Missing floor tile',
+          'Collision wall blocking passage',
+          'Gap between meshes not bridged',
+          'Doorway not registered in gap data',
+          'Intentional exterior opening'
+        ];
+      
+      case 'missing_wall':
+        return [
+          'Wall definition omitted in room config',
+          'Adjacent room positioned outside detection tolerance',
+          'Intentional open-air design',
+          'Exterior boundary wall missing'
+        ];
+      
+      case 'missing_ceiling':
+        return [
+          'Ceiling geometry not generated',
+          'Multi-level room design (intentional)',
+          'Trapdoor or skylight opening',
+          'Tall room without upper floor'
+        ];
+      
+      case 'disconnected_room':
+        return [
+          'Room placed in isolation',
+          'Missing gap/doorway definitions',
+          'Neighbor rooms positioned incorrectly',
+          'Standalone structure (may be intentional)'
+        ];
+      
+      case 'hallway_dead_end':
+        return [
+          'Hallway extension incomplete',
+          'Missing connecting room',
+          'Gap definition omitted',
+          'Intentional cul-de-sac design'
+        ];
+      
+      case 'geometry_seam':
+        return [
+          'Floor height mismatch between rooms',
+          'Room height difference creates step',
+          'Transition piece missing',
+          'Different architectural styles meeting'
+        ];
+      
+      case 'no_path_to_starter':
+        return [
+          'Missing intermediate connection rooms',
+          'Gap chain broken',
+          'One-way passage only',
+          'Secret or hidden room'
+        ];
+      
+      case 'z_fighting':
+        return [
+          'Rooms overlap in XZ plane',
+          'Duplicate room definitions',
+          'Positioning error in map data',
+          'Intentional multi-layer design'
+        ];
+      
+      case 'missing_collision':
+        return [
+          'Thin wall segment between gaps',
+          'Floor thickness below threshold',
+          'Narrow pillar or support',
+          'Decorative element without collision'
+        ];
+      
+      default:
+        return ['Unknown cause'];
+    }
+  }
+
+  /**
+   * Determine confidence level for an issue
+   */
+  private determineConfidence(issueType: ConnectivityIssue['type'], room: RoomConnectivityData, isIntentional?: boolean): 'LOW' | 'MEDIUM' | 'HIGH' {
+    // Lower confidence for potentially intentional designs
+    if (isIntentional) return 'LOW';
+    
+    // Higher confidence for critical navigation issues
+    if (issueType === 'disconnected_room' || issueType === 'no_path_to_starter') {
+      return 'HIGH';
+    }
+    
+    // High confidence for void exposures in non-exterior rooms
+    if (issueType === 'void_exposure' && !room.isConnector && !room.isHallway) {
+      return 'HIGH';
+    }
+    
+    // Medium confidence for most other issues
+    return 'MEDIUM';
+  }
+
+  /**
+   * Add issue to list with enhanced debugging information
    */
   private addIssue(issue: ConnectivityIssue) {
-    if (!this.issues.find(i => i.id === issue.id)) {
-      this.issues.push(issue);
+    // Avoid duplicates
+    if (this.issues.find(i => i.id === issue.id)) {
+      return;
     }
+
+    // Find the room data for this issue
+    const room = this.roomsData.find(r => r.id === issue.roomName || r.name === issue.roomName);
+    
+    if (room) {
+      // Add room bounds
+      issue.roomBounds = {
+        x: room.cx,
+        z: room.cz,
+        w: room.w,
+        d: room.d,
+        h: room.h,
+        floorY: room.floorY
+      };
+
+      // Find nearest connected room
+      const nearest = this.findNearestConnectedRoom(room.id, issue.location);
+      if (nearest) {
+        issue.nearestConnectedRoom = nearest.name;
+        issue.distanceToNearestRoom = nearest.distance;
+      }
+
+      // Generate reasoning
+      issue.reasoning = this.generateReasoning(issue.type, room);
+      
+      // Generate potential causes
+      issue.potentialCauses = this.generatePotentialCauses(issue.type);
+      
+      // Determine confidence
+      issue.confidence = this.determineConfidence(issue.type, room, issue.isIntentional);
+    }
+
+    this.issues.push(issue);
   }
 }
 
@@ -951,7 +1163,7 @@ export const getConnectivityAuditor = (): MapConnectivityAuditor => {
   return connectivityAuditorInstance;
 };
 
-// Global command for running audit
+// Global command for running audit with enhanced output
 if (typeof window !== 'undefined') {
   (window as any).runConnectivityAudit = (rooms?: any[], gaps?: Record<string, GapData[]>, starterRoomId?: string) => {
     const auditor = getConnectivityAuditor();
@@ -964,6 +1176,7 @@ if (typeof window !== 'undefined') {
 
     auditor.initialize(rooms, gaps, starterRoomId);
     const report = auditor.runAudit();
+    const issues = auditor.getIssues();
 
     console.log('=== MAP CONNECTIVITY AUDIT REPORT ===');
     console.log(`Total Rooms Scanned: ${auditor['roomsData'].length}`);
@@ -978,7 +1191,54 @@ if (typeof window !== 'undefined') {
     console.log(`Navigation Breaks: ${report.navigationBreaks.length}`);
     console.log(`Total Issues: ${report.totalIssues}`);
     console.log(`Scan Duration: ${report.scanDurationMs.toFixed(2)}ms`);
+    console.log('=====================================\n');
+
+    // Print detailed issue reports
+    if (issues.length > 0) {
+      console.log('=== DETAILED ISSUE REPORTS ===\n');
+      
+      issues.forEach((issue, idx) => {
+        console.log(`--- Issue #${idx + 1} ---`);
+        console.log(`[${issue.type.toUpperCase()}]`);
+        console.log(`Room: ${issue.roomName}`);
+        console.log(`Location: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}]`);
+        console.log(`Severity: ${issue.severity.toUpperCase()}`);
+        console.log(`Description: ${issue.description}`);
+        console.log(`Details: ${issue.details}`);
+        
+        if (issue.roomBounds) {
+          console.log(`Room Bounds: { x: ${issue.roomBounds.x}, z: ${issue.roomBounds.z}, w: ${issue.roomBounds.w}, d: ${issue.roomBounds.d}, h: ${issue.roomBounds.h}, floorY: ${issue.roomBounds.floorY} }`);
+        }
+        
+        if (issue.nearestConnectedRoom) {
+          console.log(`Nearest Room: ${issue.nearestConnectedRoom}`);
+          console.log(`Distance: ${issue.distanceToNearestRoom?.toFixed(2)} units`);
+        }
+        
+        if (issue.reasoning) {
+          console.log(`Reason: ${issue.reasoning}`);
+        }
+        
+        if (issue.potentialCauses && issue.potentialCauses.length > 0) {
+          console.log('Potential Causes:');
+          issue.potentialCauses.forEach(cause => console.log(`  • ${cause}`));
+        }
+        
+        if (issue.confidence) {
+          console.log(`Confidence: ${issue.confidence}`);
+        }
+        
+        if (issue.isIntentional !== undefined) {
+          console.log(`Intentional: ${issue.isIntentional ? 'YES' : 'NO'}`);
+        }
+        
+        console.log('');
+      });
+    }
+
     console.log('=====================================');
+    console.log('Use teleportToAuditIssue(index) to navigate to specific issues.');
+    console.log('Enable DEBUG_CONNECTIVITY visualization with: window.DEBUG_CONNECTIVITY = true');
 
     return report;
   };

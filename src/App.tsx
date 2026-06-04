@@ -399,13 +399,77 @@ export default function App() {
       console.log(`Navigation Breaks: ${report.navigationBreaks.length}`);
       console.log(`Total Issues: ${report.totalIssues}`);
       console.log(`Scan Duration: ${report.scanDurationMs.toFixed(2)}ms`);
+      console.log('=====================================\n');
+      
+      // Print detailed issue reports
+      if (issues.length > 0) {
+        console.log('=== DETAILED ISSUE REPORTS ===\n');
+        
+        issues.forEach((issue, idx) => {
+          console.log(`--- Issue #${idx + 1} ---`);
+          console.log(`[${issue.type.toUpperCase()}]`);
+          console.log(`Room: ${issue.roomName}`);
+          console.log(`Location: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}]`);
+          console.log(`Severity: ${issue.severity.toUpperCase()}`);
+          console.log(`Description: ${issue.description}`);
+          console.log(`Details: ${issue.details}`);
+          
+          if (issue.roomBounds) {
+            console.log(`Room Bounds: { x: ${issue.roomBounds.x}, z: ${issue.roomBounds.z}, w: ${issue.roomBounds.w}, d: ${issue.roomBounds.d}, h: ${issue.roomBounds.h}, floorY: ${issue.roomBounds.floorY} }`);
+          }
+          
+          if (issue.nearestConnectedRoom) {
+            console.log(`Nearest Room: ${issue.nearestConnectedRoom}`);
+            console.log(`Distance: ${issue.distanceToNearestRoom?.toFixed(2)} units`);
+          }
+          
+          if (issue.reasoning) {
+            console.log(`Reason: ${issue.reasoning}`);
+          }
+          
+          if (issue.potentialCauses && issue.potentialCauses.length > 0) {
+            console.log('Potential Causes:');
+            issue.potentialCauses.forEach(cause => console.log(`  • ${cause}`));
+          }
+          
+          if (issue.confidence) {
+            console.log(`Confidence: ${issue.confidence}`);
+          }
+          
+          if (issue.isIntentional !== undefined) {
+            console.log(`Intentional: ${issue.isIntentional ? 'YES' : 'NO'}`);
+          }
+          
+          console.log('');
+        });
+      }
+
       console.log('=====================================');
+      console.log('Use teleportToAuditIssue(index) to navigate to specific issues.');
+      console.log('Enable DEBUG_CONNECTIVITY visualization with: window.DEBUG_CONNECTIVITY = true');
       
       return report;
     };
     
+    // Add teleport function for connectivity issues
+    (window as any).teleportToAuditIssue = (index: number) => {
+      const issues = connectivityAuditorRef.current.getIssues();
+      if (issues[index]) {
+        const issue = issues[index];
+        playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+        yaw.current = Math.PI;
+        noclip.current = true; // Enable noclip automatically
+        setCurrentConnectivityIssueIndex(index);
+        setConnectivityDebugMode(true);
+        console.log(`Teleported to issue #${index + 1}: ${issue.type} in ${issue.roomName}`);
+      } else {
+        console.error(`Issue index ${index} not found. Total issues: ${issues.length}`);
+      }
+    };
+    
     return () => {
       delete (window as any).runConnectivityAudit;
+      delete (window as any).teleportToAuditIssue;
     };
   }, []);
 
