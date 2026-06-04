@@ -4,11 +4,12 @@ import { getDoorManager, initializeDoors, DoorEventType } from './utils/doors';
 import { getPointsManager } from './utils/points';
 import { createDoorRenderer } from './utils/DoorRenderer';
 import { getRoomSealValidator, ValidationIssue } from './utils/MapValidator';
-import { DevDebugPanel } from './utils/DevDebugPanel';
 import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
-import { getFloorAuditor, getDebugFloorData, FloorIssue } from './utils/FloorIntegrityAudit';
+import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
+import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
+import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================
 // ROOMS DATA SETUP (Standard Westbrook High Layout)
@@ -319,6 +320,7 @@ const PLAYER_RADIUS = 1.0;
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const yaw = useRef<number>(Math.PI);
   const pitch = useRef<number>(0);
   const playerPos = useRef<THREE.Vector3>(new THREE.Vector3(0, PLAYER_EYE_HEIGHT, -30));
@@ -349,8 +351,49 @@ export default function App() {
   const connectivityAuditorRef = useRef(getConnectivityAuditor());
   const [connectivityReport, setConnectivityReport] = useState<any>(null);
   
+  // Geometry Inspector state
+  const [geometryInspectorEnabled, setGeometryInspectorEnabled] = useState<boolean>(false);
+  const geometryInspectorRef = useRef<GeometryInspector | null>(null);
+  const [inspectedMeshInfo, setInspectedMeshInfo] = useState<{ meshName: string; roomId?: string; wallId?: string; floorId?: string } | null>(null);
+  
+  // Debug wireframe ref for DEBUG_FLOORS test
+  const debugWireframeRef = useRef<THREE.LineSegments | null>(null);
+  
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
+  
+  // Debug overlay state
+  const [debugOverlayOpen, setDebugOverlayOpen] = useState<boolean>(false);
+  const [debugLightingEnabled, setDebugLightingEnabled] = useState<boolean>(false);
+  const [debugLightingBrightness, setDebugLightingBrightness] = useState<number>(3.0);
+  const [fps, setFps] = useState<number>(60);
+  const [meshCount, setMeshCount] = useState<number>(0);
+  const [drawCalls, setDrawCalls] = useState<number>(0);
+  const [currentRoomName, setCurrentRoomName] = useState<string>('');
+  const [roundState, setRoundState] = useState<{ round: number; zombiesAlive: number; spawnStatus: string }>({
+    round: 1,
+    zombiesAlive: 0,
+    spawnStatus: 'idle'
+  });
+
+  // Debug Lighting toggle function (defined at component scope for JSX access)
+  const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+  const originalAmbientIntensityRef = useRef<number>(1.0);
+  
+  const toggleDebugLighting = () => {
+    const enabled = !debugLightingEnabled;
+    setDebugLightingEnabled(enabled);
+    if (ambientLightRef.current) {
+      if (enabled) {
+        originalAmbientIntensityRef.current = ambientLightRef.current.intensity;
+        ambientLightRef.current.intensity = debugLightingBrightness;
+        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightness);
+      } else {
+        ambientLightRef.current.intensity = originalAmbientIntensityRef.current;
+        console.log('[DEBUG LIGHTING] OFF');
+      }
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -458,7 +501,7 @@ export default function App() {
         const issue = issues[index];
         playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
         yaw.current = Math.PI;
-        noclip.current = true; // Enable noclip automatically
+        noclipRef.current = true; // Enable noclip automatically
         setCurrentConnectivityIssueIndex(index);
         setConnectivityDebugMode(true);
         console.log(`Teleported to issue #${index + 1}: ${issue.type} in ${issue.roomName}`);
@@ -491,12 +534,35 @@ export default function App() {
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
     camera.position.copy(playerPos.current);
+    cameraRef.current = camera;
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
 
+    // Initialize Geometry Inspector
+    const raycasterForInspector = new THREE.Raycaster();
+    const geometryInspector = createGeometryInspector(scene, camera, raycasterForInspector);
+    geometryInspectorRef.current = geometryInspector;
+    
+    // Expose global toggle function
+    (window as any).toggleGeometryInspector = () => {
+      geometryInspector.toggle();
+      setGeometryInspectorEnabled(geometryInspector.isActive());
+      console.log('[GeometryInspector] Toggled:', geometryInspector.isActive() ? 'ON' : 'OFF');
+    };
+    (window as any).enableGeometryInspector = () => {
+      geometryInspector.enable();
+      setGeometryInspectorEnabled(true);
+    };
+    (window as any).disableGeometryInspector = () => {
+      geometryInspector.disable();
+      setGeometryInspectorEnabled(false);
+    };
+
     // ---- LIGHTING ----
-    scene.add(new THREE.AmbientLight(0x222222, 1.0));
+    const ambientLight = new THREE.AmbientLight(0x222222, 1.0);
+    scene.add(ambientLight);
+    ambientLightRef.current = ambientLight;
 
     const roomLightColors: Record<string, number> = {
       starter: 0x3a4d2a, hallway: 0x1a1a2e, science_lab: 0x2a2010, library: 0x2a2010,
@@ -512,6 +578,16 @@ export default function App() {
       light.position.set(r.cx, r.floorY + r.h * 0.75, r.cz);
       scene.add(light);
     });
+
+    // Expose global toggle function
+    (window as any).toggleDebugLighting = toggleDebugLighting;
+    (window as any).setDebugLightingBrightness = (brightness: number) => {
+      setDebugLightingBrightness(brightness);
+      if (debugLightingEnabled && ambientLightRef.current) {
+        ambientLightRef.current.intensity = brightness;
+      }
+      console.log('[DEBUG LIGHTING] Brightness set to:', brightness);
+    };
 
     // ---- DOOR SYSTEM ----
     const doors: RuntimeDoor[] = [];
@@ -850,6 +926,29 @@ export default function App() {
       keysPressed.current[e.code] = true;
       if (e.code === 'KeyV') noclipRef.current = !noclipRef.current;
       
+      // Debug Overlay - F1 to toggle overlay visibility
+      if (e.code === 'F1') {
+        e.preventDefault();
+        setDebugOverlayOpen(prev => !prev);
+      }
+      
+      // Debug Lighting - F2 to toggle bright lighting mode
+      if (e.code === 'F2') {
+        e.preventDefault();
+        toggleDebugLighting();
+      }
+      
+      // Geometry Inspector - F4 to toggle geometry inspection mode
+      if (e.code === 'F4') {
+        e.preventDefault();
+        if (geometryInspectorRef.current) {
+          geometryInspectorRef.current.toggle();
+          setGeometryInspectorEnabled(geometryInspectorRef.current.isActive());
+          console.log('[GeometryInspector] Toggled:', geometryInspectorRef.current.isActive() ? 'ON' : 'OFF');
+          console.log('[GeometryInspector] Call window.inspectGeometry() to print all meshes within 20 units');
+        }
+      }
+      
       // Floor Debug Mode - F7 to toggle floor audit visualization
       if (e.code === 'F7') {
         e.preventDefault();
@@ -983,12 +1082,55 @@ export default function App() {
     window.addEventListener('keyup', handleKeyUp);
 
     // ---- COLLISION ----
-    const getRoomAtPos = (px: number, pz: number, py: number) =>
-      INITIAL_ROOMS.find(r => {
-        const xMin = r.cx - r.w / 2; const xMax = r.cx + r.w / 2;
-        const zMin = r.cz - r.d / 2; const zMax = r.cz + r.d / 2;
-        return px >= xMin && px <= xMax && pz >= zMin && pz <= zMax && py >= r.floorY - 1 && py <= r.floorY + r.h + 1;
-      });
+    const getRoomAtPos = (px: number, pz: number, py: number) => {
+      // Diagnostic logging
+      console.log("[ROOM DETECTOR START]");
+      console.log("Player Position:", { x: px, y: py, z: pz });
+      console.log("Room Count:", INITIAL_ROOMS.length);
+      
+      for (const room of INITIAL_ROOMS) {
+        const xMin = room.cx - room.w / 2;
+        const xMax = room.cx + room.w / 2;
+        const zMin = room.cz - room.d / 2;
+        const zMax = room.cz + room.d / 2;
+        
+        // Player Y is eye height (~1.6 units above feet)
+        // Check if player's feet are close to the room's floor level
+        const playerFeetY = py - 1.6;
+        const floorTolerance = 2.0; // Allow 2 units tolerance for slopes/stairs
+        
+        const insideX = px >= xMin && px <= xMax;
+        const insideZ = pz >= zMin && pz <= zMax;
+        const insideY = Math.abs(playerFeetY - room.floorY) < floorTolerance;
+        
+        console.log({
+          roomName: room.name,
+          roomCenter: [room.cx, room.cz],
+          roomWidth: room.w,
+          roomDepth: room.d,
+          floorY: room.floorY,
+          playerPosition: { x: px, y: py, z: pz },
+          playerFeetY,
+          bounds: {
+            x: [xMin, xMax],
+            z: [zMin, zMax],
+            floorY: room.floorY
+          },
+          insideX,
+          insideZ,
+          insideY,
+          insideRoom: insideX && insideZ && insideY
+        });
+        
+        if (insideX && insideZ && insideY) {
+          console.log("[ROOM DETECTOR] Found matching room:", room.name);
+          return room;
+        }
+      }
+      
+      console.log("[ROOM DETECTOR] No matching room found");
+      return undefined;
+    };
 
     const canPassWall = (roomId: string, side: 'N' | 'S' | 'E' | 'W', offset: number): boolean =>
       (ROOM_GAPS[roomId] || []).filter(g => g.side === side).some(g => offset >= g.center - g.width / 2 && offset <= g.center + g.width / 2);
@@ -1181,9 +1323,161 @@ export default function App() {
         mapValidatorRef.current.updateHighlights(now / 1000);
       }
       
+      // DEBUG_FLOORS: Render test wireframe box if enabled
+      // This reads window.DEBUG_FLOORS every frame to verify connection to render loop
+      if ((window as any).DEBUG_FLOORS === true) {
+        console.log('DEBUG WIREFRAMES ACTIVE');
+        
+        // LOG ROOM COUNT AND DETAILS
+        console.log("ROOM COUNT", INITIAL_ROOMS.length);
+        INITIAL_ROOMS.forEach((room, idx) => {
+          if (idx < 5) { // Log first 5 rooms to avoid spam
+            console.log(
+              "WIREFRAME ROOM",
+              room.id,
+              room.name,
+              room.cx,
+              room.cz,
+              room.w,
+              room.d,
+              room.floorY
+            );
+          }
+        });
+        
+        // Create or update test wireframe box at world position 0,5,0
+        if (!debugWireframeRef.current) {
+          const geometry = new THREE.BoxGeometry(4, 4, 4);
+          const edges = new THREE.EdgesGeometry(geometry);
+          const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+          const wireframe = new THREE.LineSegments(edges, material);
+          wireframe.position.set(0, 5, 0);
+          wireframe.renderOrder = 999;
+          wireframe.frustumCulled = false;
+          scene.add(wireframe);
+          debugWireframeRef.current = wireframe;
+          console.log('[DEBUG] Red wireframe box created at (0, 5, 0)');
+        }
+        
+        // TEMPORARY TEST: Render every room as a solid magenta wireframe box
+        // This verifies that room data is reaching the renderer
+        const globalKey = '__ROOM_DEBUG_WIREFRAMES__';
+        let roomWireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
+        
+        // Clear existing room wireframes
+        roomWireframes.forEach(w => {
+          scene.remove(w);
+          w.geometry.dispose();
+          (w.material as THREE.Material).dispose();
+        });
+        roomWireframes = [];
+        
+        // Create magenta wireframe for each room
+        INITIAL_ROOMS.forEach(room => {
+          const roomGeometry = new THREE.BoxGeometry(room.w, 1, room.d);
+          const roomEdges = new THREE.EdgesGeometry(roomGeometry);
+          const roomMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
+          const roomWireframe = new THREE.LineSegments(roomEdges, roomMaterial);
+          roomWireframe.position.set(room.cx, room.floorY + 0.5, room.cz);
+          roomWireframe.renderOrder = 998;
+          roomWireframe.frustumCulled = false;
+          scene.add(roomWireframe);
+          roomWireframes.push(roomWireframe);
+        });
+        
+        (window as any)[globalKey] = roomWireframes;
+        console.log("WIREFRAMES CREATED", roomWireframes.length);
+      } else {
+        // Cleanup wireframe when disabled
+        if (debugWireframeRef.current) {
+          debugWireframeRef.current.geometry.dispose();
+          (debugWireframeRef.current.material as THREE.Material).dispose();
+          scene.remove(debugWireframeRef.current);
+          debugWireframeRef.current = null;
+          console.log('[DEBUG] Red wireframe box removed');
+        }
+        
+        // Cleanup room wireframes when disabled
+        const globalKey = '__ROOM_DEBUG_WIREFRAMES__';
+        let roomWireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
+        roomWireframes.forEach(w => {
+          scene.remove(w);
+          w.geometry.dispose();
+          (w.material as THREE.Material).dispose();
+        });
+        (window as any)[globalKey] = [];
+      }
+      
       // Render floor debug visualization if enabled
       if (floorDebugMode) {
         renderFloorDebug(scene, now / 1000);
+      }
+      
+      // Geometry Inspector - highlight mesh under crosshair
+      if (geometryInspectorEnabled && geometryInspectorRef.current) {
+        const inspector = geometryInspectorRef.current;
+        const hitMesh = inspector.inspectAtCrosshair();
+        
+        // DIAGNOSTIC LOGGING: Compare room counts between systems
+        const allSceneMeshes: THREE.Mesh[] = [];
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && 
+              obj !== (inspector as any).highlightMesh && 
+              obj !== (inspector as any).wireframeMesh &&
+              !obj.name.includes('debug') &&
+              !obj.name.includes('highlight')) {
+            allSceneMeshes.push(obj);
+          }
+        });
+        
+        console.log('[DIAGNOSTIC] Geometry Inspector Scene Mesh Count:', allSceneMeshes.length);
+        console.log('[DIAGNOSTIC] Connectivity Audit Room Count:', INITIAL_ROOMS.length);
+        console.log('[DIAGNOSTIC] Connectivity Issues Array Length:', connectivityIssues.length);
+        
+        // Print room IDs scanned by each system
+        const sceneMeshIds = allSceneMeshes.map(m => m.name || m.uuid).slice(0, 10);
+        const roomIds = INITIAL_ROOMS.map(r => r.id);
+        console.log('[DIAGNOSTIC] Sample Scene Mesh Names:', sceneMeshIds);
+        console.log('[DIAGNOSTIC] Room IDs from INITIAL_ROOMS:', roomIds.slice(0, 10));
+        console.log('[DIAGNOSTIC] Total Issues Before Rendering:', connectivityIssues.length);
+        
+        // Print issue marker coordinates
+        if (connectivityIssues.length > 0) {
+          console.log('[DIAGNOSTIC] Issue Marker Coordinates:');
+          connectivityIssues.forEach((issue, idx) => {
+            if (idx < 5) {
+              console.log(`  #${idx + 1} ${issue.type}: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}] in ${issue.roomName}`);
+            }
+          });
+        }
+        
+        if (hitMesh) {
+          const bounds = new THREE.Box3().setFromObject(hitMesh);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          bounds.getSize(size);
+          bounds.getCenter(center);
+          
+          // Calculate distance from camera to hit mesh
+          const distance = camera.position.distanceTo(center);
+          
+          // Update highlight visual
+          inspector.updateHighlight(hitMesh, distance);
+          
+          // Get mesh info for display
+          const info = inspector.getInspectedMesh();
+          if (info) {
+            setInspectedMeshInfo({
+              meshName: info.meshName,
+              roomId: info.roomId,
+              wallId: info.wallId,
+              floorId: info.floorId,
+            });
+          }
+        } else {
+          inspector.updateHighlight(null, 0);
+          setInspectedMeshInfo(null);
+        }
       }
       
       // Door interaction raycast
@@ -1223,6 +1517,40 @@ export default function App() {
       doorManager.updateInteraction(playerPosVec, playerDirVec);
       
       renderer.render(scene, camera);
+      
+      // Update debug overlay stats every frame
+      const frameCount = (window as any).__debugFrameCount || 0;
+      const prevDebugTime = (window as any).__debugLastTime || now;
+      (window as any).__debugFrameCount = frameCount + 1;
+      
+      if (now - prevDebugTime >= 500) {
+        const calculatedFps = Math.round((frameCount + 1) * 1000 / (now - prevDebugTime));
+        setFps(calculatedFps);
+        (window as any).__debugFrameCount = 0;
+        (window as any).__debugLastTime = now;
+        
+        // Count meshes and draw calls
+        let meshCnt = 0;
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) meshCnt++;
+        });
+        setMeshCount(meshCnt);
+        setDrawCalls(renderer.info.render.calls);
+        
+        // Get current room name
+        const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
+        const newRoomName = currentRoom?.name || 'None';
+        setCurrentRoomName(newRoomName);
+        
+        // Debug logging every 60 frames (~1 second)
+        if ((window as any).__debugFrameCount % 60 === 0) {
+          console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
+          if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
+            const firstRoom = INITIAL_ROOMS[0];
+            console.log(`[ROOM DEBUG] First room '${firstRoom.name}' bounds: X[${firstRoom.cx - firstRoom.w/2}, ${firstRoom.cx + firstRoom.w/2}] Z[${firstRoom.cz - firstRoom.d/2}, ${firstRoom.cz + firstRoom.d/2}]`);
+          }
+        }
+      }
     };
     loop();
 
@@ -1299,6 +1627,14 @@ export default function App() {
       // Cleanup door renderer
       doorRenderer.destroy();
       
+      // Cleanup debug wireframe if exists
+      if (debugWireframeRef.current) {
+        debugWireframeRef.current.geometry.dispose();
+        (debugWireframeRef.current.material as THREE.Material).dispose();
+        scene.remove(debugWireframeRef.current);
+        debugWireframeRef.current = null;
+      }
+      
       renderer.dispose();
     };
   }, []);
@@ -1319,8 +1655,71 @@ export default function App() {
         </div>
       )}
 
-      {/* Dev Debug Panel */}
-      <DevDebugPanel playerId="player1" />
+      {/* Debug Overlay - Collapsible F1 menu */}
+      <DebugOverlay
+        data={{
+          fps,
+          meshCount,
+          drawCalls,
+          playerPos: playerPos.current,
+          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
+          currentRoom: currentRoomName,
+          noclip: noclipRef.current,
+          round: roundState.round,
+          zombiesAlive: roundState.zombiesAlive,
+          spawnStatus: roundState.spawnStatus,
+          connectivityIssues: connectivityIssues,
+          floorIntegrityIssues: floorAuditIssues,
+          debugLightingEnabled,
+          debugLightingBrightness,
+          roomDetectorStatus: {
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            roomCount: INITIAL_ROOMS.length,
+            closestRoom: null,
+            closestDistance: 0,
+            currentRoom: currentRoomName,
+            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
+          },
+        }}
+        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
+        onRunConnectivity={() => {
+          const auditor = connectivityAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+          const report = auditor.runAudit();
+          const issues = auditor.getIssues();
+          setConnectivityIssues(issues);
+          setConnectivityReport(report);
+          setConnectivityDebugMode(true);
+          setCurrentConnectivityIssueIndex(-1);
+        }}
+        onRunFloorAudit={() => {
+          const auditor = floorAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+          const report = auditor.runAudit();
+          setFloorAuditIssues(report.issues);
+          setFloorDebugMode(true);
+          setCurrentFloorIssueIndex(-1);
+        }}
+        onTeleportToSpawn={() => {
+          // Teleport to starter room spawn point
+          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
+          yaw.current = Math.PI;
+          console.log('[DebugOverlay] Teleported to starter room spawn');
+        }}
+        onTeleportToIssue={(issue) => {
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI;
+          noclipRef.current = true;
+          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
+        }}
+        onToggleDebugLighting={toggleDebugLighting}
+        onSetDebugLightingBrightness={(brightness: number) => {
+          setDebugLightingBrightness(brightness);
+          if (debugLightingEnabled && ambientLightRef.current) {
+            ambientLightRef.current.intensity = brightness;
+          }
+        }}
+      />
 
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
@@ -1329,7 +1728,21 @@ export default function App() {
       {/* Crosshair */}
       {isPointerLocked && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 border border-white/60" />
+          <div className={`w-1.5 h-1.5 rounded-full border border-white/60 ${geometryInspectorEnabled ? 'bg-yellow-400' : 'bg-emerald-400'}`} />
+        </div>
+      )}
+
+      {/* Geometry Inspector Info Display */}
+      {isPointerLocked && geometryInspectorEnabled && inspectedMeshInfo && (
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+          <div className="bg-black/80 border border-yellow-500/70 px-4 py-3 rounded-lg text-xs font-mono tracking-wide text-yellow-300 whitespace-nowrap">
+            <div className="font-bold text-yellow-200 mb-1">GEOMETRY INSPECTOR</div>
+            <div>Mesh: <span className="text-white">{inspectedMeshInfo.meshName}</span></div>
+            {inspectedMeshInfo.roomId && <div>Room ID: <span className="text-emerald-400">{inspectedMeshInfo.roomId}</span></div>}
+            {inspectedMeshInfo.wallId && <div>Wall ID: <span className="text-blue-400">{inspectedMeshInfo.wallId}</span></div>}
+            {inspectedMeshInfo.floorId && <div>Floor ID: <span className="text-purple-400">{inspectedMeshInfo.floorId}</span></div>}
+            <div className="mt-2 text-yellow-500/70 text-[10px]">Press F4 to toggle · window.inspectGeometry() for details</div>
+          </div>
         </div>
       )}
 
@@ -1346,7 +1759,7 @@ export default function App() {
       {!isPointerLocked && (
         <div className="absolute inset-x-0 bottom-8 flex justify-center pointer-events-none z-10">
           <div className="bg-black/70 border border-white/10 px-5 py-2 rounded-full text-[11px] font-mono tracking-widest text-white/50 uppercase">
-            Click to Play · WASD Move · Mouse Look · V Noclip · ESC Free Cursor
+            Click to Play · WASD Move · Mouse Look · V Noclip · F4 Geometry Inspector · ESC Free Cursor
           </div>
         </div>
       )}
