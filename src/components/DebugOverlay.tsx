@@ -15,6 +15,8 @@ export interface DebugData {
   spawnStatus: string;
   connectivityIssues: ConnectivityIssue[];
   floorIntegrityIssues: FloorIssue[];
+  debugLightingEnabled?: boolean;
+  debugLightingBrightness?: number;
 }
 
 interface Props {
@@ -24,6 +26,8 @@ interface Props {
   onRunFloorAudit: () => void;
   onTeleportToSpawn: () => void;
   onTeleportToIssue?: (issue: ConnectivityIssue | FloorIssue) => void;
+  onToggleDebugLighting?: () => void;
+  onSetDebugLightingBrightness?: (brightness: number) => void;
 }
 
 const DebugOverlay: React.FC<Props> = ({
@@ -33,6 +37,8 @@ const DebugOverlay: React.FC<Props> = ({
   onRunFloorAudit,
   onTeleportToSpawn,
   onTeleportToIssue,
+  onToggleDebugLighting,
+  onSetDebugLightingBrightness,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'audit' | 'player' | 'rounds' | 'perf'>('audit');
@@ -44,10 +50,13 @@ const DebugOverlay: React.FC<Props> = ({
       if (e.key === 'F1') {
         setIsOpen((prev) => !prev);
       }
+      if (e.key === 'F2') {
+        onToggleDebugLighting?.();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [onToggleDebugLighting]);
 
   // Combine all issues with source tracking
   const allIssues = [
@@ -185,8 +194,29 @@ const DebugOverlay: React.FC<Props> = ({
     pointerEvents: 'none',
   };
 
+  const debugLightingIndicatorStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    zIndex: 998,
+    fontFamily: 'monospace',
+    fontSize: '12px',
+    color: data.debugLightingEnabled ? '#ff0' : '#666',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    pointerEvents: 'none',
+  };
+
   return (
     <>
+      {/* Debug Lighting Indicator */}
+      {data.debugLightingEnabled && (
+        <div style={debugLightingIndicatorStyle}>
+          DEBUG LIGHTING: ON ({data.debugLightingBrightness?.toFixed(1)}x)
+        </div>
+      )}
+
       {/* Mini HUD (Always Visible) */}
       <div style={miniHudStyle}>
         <span>FPS: {Math.round(data.fps)}</span>
@@ -413,6 +443,37 @@ const DebugOverlay: React.FC<Props> = ({
                   {data.noclip ? 'ON' : 'OFF'} (Click)
                 </span>
               </div>
+              <div style={{ ...rowStyle, marginTop: '8px', borderTop: '1px dashed #333', paddingTop: '8px' }}>
+                <span>Debug Lighting:</span>
+                <span
+                  style={{
+                    color: data.debugLightingEnabled ? '#ff0' : '#f00',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                  onClick={onToggleDebugLighting}
+                >
+                  {data.debugLightingEnabled ? 'ON' : 'OFF'} (Click)
+                </span>
+              </div>
+              {onSetDebugLightingBrightness && (
+                <div style={{ marginTop: '8px' }}>
+                  <div style={rowStyle}>
+                    <span>Brightness:</span>
+                    <span>{data.debugLightingBrightness?.toFixed(1)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="5.0"
+                    step="0.1"
+                    value={data.debugLightingBrightness || 3.0}
+                    onChange={(e) => onSetDebugLightingBrightness?.(parseFloat(e.target.value))}
+                    style={{ width: '100%', marginTop: '4px', cursor: 'pointer' }}
+                  />
+                  <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>Range: 1.0x - 5.0x</div>
+                </div>
+              )}
             </div>
           )}
 

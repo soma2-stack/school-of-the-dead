@@ -364,6 +364,8 @@ export default function App() {
   
   // Debug overlay state
   const [debugOverlayOpen, setDebugOverlayOpen] = useState<boolean>(false);
+  const [debugLightingEnabled, setDebugLightingEnabled] = useState<boolean>(false);
+  const [debugLightingBrightness, setDebugLightingBrightness] = useState<number>(3.0);
   const [fps, setFps] = useState<number>(60);
   const [meshCount, setMeshCount] = useState<number>(0);
   const [drawCalls, setDrawCalls] = useState<number>(0);
@@ -539,7 +541,8 @@ export default function App() {
     };
 
     // ---- LIGHTING ----
-    scene.add(new THREE.AmbientLight(0x222222, 1.0));
+    const ambientLight = new THREE.AmbientLight(0x222222, 1.0);
+    scene.add(ambientLight);
 
     const roomLightColors: Record<string, number> = {
       starter: 0x3a4d2a, hallway: 0x1a1a2e, science_lab: 0x2a2010, library: 0x2a2010,
@@ -555,6 +558,29 @@ export default function App() {
       light.position.set(r.cx, r.floorY + r.h * 0.75, r.cz);
       scene.add(light);
     });
+
+    // Debug Lighting toggle (F2)
+    let originalAmbientIntensity = 1.0;
+    const toggleDebugLighting = () => {
+      const enabled = !debugLightingEnabled;
+      setDebugLightingEnabled(enabled);
+      if (enabled) {
+        originalAmbientIntensity = ambientLight.intensity;
+        ambientLight.intensity = debugLightingBrightness;
+        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightness);
+      } else {
+        ambientLight.intensity = originalAmbientIntensity;
+        console.log('[DEBUG LIGHTING] OFF');
+      }
+    };
+    (window as any).toggleDebugLighting = toggleDebugLighting;
+    (window as any).setDebugLightingBrightness = (brightness: number) => {
+      setDebugLightingBrightness(brightness);
+      if (debugLightingEnabled) {
+        ambientLight.intensity = brightness;
+      }
+      console.log('[DEBUG LIGHTING] Brightness set to:', brightness);
+    };
 
     // ---- DOOR SYSTEM ----
     const doors: RuntimeDoor[] = [];
@@ -897,6 +923,12 @@ export default function App() {
       if (e.code === 'F1') {
         e.preventDefault();
         setDebugOverlayOpen(prev => !prev);
+      }
+      
+      // Debug Lighting - F2 to toggle bright lighting mode
+      if (e.code === 'F2') {
+        e.preventDefault();
+        toggleDebugLighting();
       }
       
       // Geometry Inspector - F4 to toggle geometry inspection mode
@@ -1578,6 +1610,8 @@ export default function App() {
           spawnStatus: roundState.spawnStatus,
           connectivityIssues: connectivityIssues,
           floorIntegrityIssues: floorAuditIssues,
+          debugLightingEnabled,
+          debugLightingBrightness,
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
@@ -1609,6 +1643,13 @@ export default function App() {
           yaw.current = Math.PI;
           noclipRef.current = true;
           console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
+        }}
+        onToggleDebugLighting={toggleDebugLighting}
+        onSetDebugLightingBrightness={(brightness: number) => {
+          setDebugLightingBrightness(brightness);
+          if (debugLightingEnabled) {
+            ambientLight.intensity = brightness;
+          }
         }}
       />
 
