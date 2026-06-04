@@ -889,12 +889,21 @@ export default function App() {
           console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
         
+        // Calculate offsets for proper pivot positioning
+        // When rotating a box around its center, we need to offset position so the ramp sits correctly
+        const hypotenuse = dir === 'W_E' || dir === 'E_W' 
+          ? Math.sqrt(r.w * r.w + climb * climb) 
+          : Math.sqrt(r.d * r.d + climb * climb);
+        const yOffset = (hypotenuse - (dir === 'W_E' || dir === 'E_W' ? r.w : r.d)) / 2;
+        
+        console.log(`[STAIR DEBUG] Calculated hypotenuse: ${hypotenuse.toFixed(4)}, yOffset adjustment: ${yOffset.toFixed(4)}`);
+        
         // VISUAL stair mesh - bright BLUE
         const visualRamp = new THREE.Mesh(
           new THREE.BoxGeometry(r.w, 0.3, r.d),
           new THREE.MeshLambertMaterial({ color: 0x0000ff, side: THREE.DoubleSide })
         );
-        visualRamp.position.set(r.cx, r.floorY + climb / 2, r.cz);
+        visualRamp.position.set(r.cx, r.floorY + climb / 2 + yOffset, r.cz);
         
         if (dir === 'W_E' || dir === 'E_W') {
           visualRamp.rotation.z = angle;
@@ -912,7 +921,7 @@ export default function App() {
           new THREE.BoxGeometry(r.w, 0.3, r.d),
           new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
         );
-        collisionRamp.position.set(r.cx, r.floorY + climb / 2, r.cz);
+        collisionRamp.position.set(r.cx, r.floorY + climb / 2 + yOffset, r.cz);
         
         if (dir === 'W_E' || dir === 'E_W') {
           collisionRamp.rotation.z = angle;
@@ -924,6 +933,12 @@ export default function App() {
         console.log(`[STAIR COLLISION] ${r.name} rotation:`, collisionRamp.rotation.clone());
         console.log(`[STAIR COLLISION] ${r.name} scale:`, collisionRamp.scale.clone());
         scene.add(collisionRamp);
+        
+        // Calculate and log offsets between visual and collision
+        const offsetX = visualRamp.position.x - collisionRamp.position.x;
+        const offsetY = visualRamp.position.y - collisionRamp.position.y;
+        const offsetZ = visualRamp.position.z - collisionRamp.position.z;
+        console.log(`[STAIR OFFSET] Visual - Collision: X=${offsetX.toFixed(4)}, Y=${offsetY.toFixed(4)}, Z=${offsetZ.toFixed(4)}`);
         
         // Add wireframe overlay to visualize actual ramp orientation
         const wireframe = new THREE.LineSegments(
