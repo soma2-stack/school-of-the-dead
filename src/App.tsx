@@ -147,10 +147,12 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
     const t = Math.max(0, Math.min(1, (px - xMin) / r.w));
     return r.floorY + (1 - t) * climb;
   } else if (dir === 'S_N') {
+    // S_N: south (negative Z) is bottom (height=0), north (positive Z) is top (height=climb)
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + t * climb;
   } else if (dir === 'N_S') {
+    // N_S: north (positive Z) is bottom (height=0), south (negative Z) is top (height=climb)
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + (1 - t) * climb;
@@ -891,7 +893,9 @@ export default function App() {
           console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         } else {
           // N_S or S_N
-          angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
+          // For S_N: south (negative Z) is bottom, north (positive Z) is top → need negative rotation.x
+          // For N_S: north (positive Z) is bottom, south (negative Z) is top → need positive rotation.x
+          angle = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
           console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
         
