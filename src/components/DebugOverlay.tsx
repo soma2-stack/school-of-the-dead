@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { ConnectivityIssue, FloorIssue } from '../utils/MapConnectivityAudit';
+import { DoorAuditReport, RoomDoorData, MissingDoorRecommendation } from '../utils/DoorConnectivityAudit';
 
 export interface StairDebugData {
   id: string;
@@ -74,6 +75,8 @@ export interface DebugData {
   // Stair debugging data
   stairDebugData?: StairDebugData[];
   playerStairAnalysis?: PlayerStairAnalysis;
+  // Door audit data
+  doorAuditReport?: DoorAuditReport | null;
 }
 
 interface Props {
@@ -308,6 +311,9 @@ const DebugOverlay: React.FC<Props> = ({
           <div style={tabsStyle}>
             <div style={tabStyle(activeTab === 'audit')} onClick={() => setActiveTab('audit')}>
               AUDIT
+            </div>
+            <div style={tabStyle(activeTab === 'doors')} onClick={() => setActiveTab('doors')}>
+              DOORS
             </div>
             <div style={tabStyle(activeTab === 'player')} onClick={() => setActiveTab('player')}>
               PLAYER
@@ -872,6 +878,200 @@ const DebugOverlay: React.FC<Props> = ({
             </div>
           )}
         </div>
+
+        {/* DOORS Tab */}
+        {activeTab === 'doors' && data.doorAuditReport && (
+          <div>
+            {/* Summary Stats */}
+            <div style={{ 
+              border: '1px solid #ff0', 
+              backgroundColor: 'rgba(255, 255, 0, 0.1)', 
+              padding: '8px', 
+              marginBottom: '10px',
+              borderRadius: '4px'
+            }}>
+              <strong style={{ color: '#ff0', display: 'block', marginBottom: '6px' }}>
+                DOOR CONNECTIVITY SUMMARY
+              </strong>
+              <div style={{ fontSize: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                <span>Total Rooms:</span>
+                <span>{data.doorAuditReport.totalRooms}</span>
+                
+                <span>Rooms With Doors:</span>
+                <span style={{ color: '#0f0' }}>{data.doorAuditReport.roomsWithDoors}</span>
+                
+                <span>Rooms Missing Doors:</span>
+                <span style={{ color: data.doorAuditReport.roomsMissingDoors > 0 ? '#f00' : '#0f0' }}>
+                  {data.doorAuditReport.roomsMissingDoors}
+                </span>
+                
+                <span>Reachable Without Purchase:</span>
+                <span style={{ color: data.doorAuditReport.reachableWithoutPurchase.length > 0 ? '#ff0' : '#0f0' }}>
+                  {data.doorAuditReport.reachableWithoutPurchase.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Reachable Without Purchase Warning */}
+            {data.doorAuditReport.reachableWithoutPurchase.length > 0 && (
+              <div style={{ 
+                border: '1px solid #f00', 
+                backgroundColor: 'rgba(255, 0, 0, 0.15)', 
+                padding: '8px', 
+                marginBottom: '10px',
+                borderRadius: '4px'
+              }}>
+                <strong style={{ color: '#f00', display: 'block', marginBottom: '4px' }}>
+                  ⚠️ ROOMS REACHABLE WITHOUT PURCHASE
+                </strong>
+                <div style={{ fontSize: '9px', color: '#f88' }}>
+                  These rooms can be reached from starter without buying any doors:
+                </div>
+                <ul style={{ fontSize: '9px', color: '#faa', margin: '4px 0', paddingLeft: '16px' }}>
+                  {data.doorAuditReport.reachableWithoutPurchase.map(room => (
+                    <li key={room}>{room}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Progression Breaks */}
+            {data.doorAuditReport.progressionBreaks.length > 0 && (
+              <div style={{ 
+                border: '1px solid #ff0', 
+                backgroundColor: 'rgba(255, 255, 0, 0.1)', 
+                padding: '8px', 
+                marginBottom: '10px',
+                borderRadius: '4px'
+              }}>
+                <strong style={{ color: '#ff0', display: 'block', marginBottom: '4px' }}>
+                  🔗 PROGRESSION BREAKS DETECTED
+                </strong>
+                <div style={{ fontSize: '9px', color: '#ff8' }}>
+                  Rooms that should be reachable but have no free path:
+                </div>
+                <ul style={{ fontSize: '9px', color: '#ffa', margin: '4px 0', paddingLeft: '16px' }}>
+                  {data.doorAuditReport.progressionBreaks.map(room => (
+                    <li key={room}>{room}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Room Connections */}
+            <div style={{ 
+              border: '1px solid #0ff', 
+              backgroundColor: 'rgba(0, 255, 255, 0.1)', 
+              padding: '8px', 
+              marginBottom: '10px',
+              borderRadius: '4px',
+              maxHeight: '400px',
+              overflowY: 'auto'
+            }}>
+              <strong style={{ color: '#0ff', display: 'block', marginBottom: '6px' }}>
+                ROOM CONNECTIONS GRAPH
+              </strong>
+              {data.doorAuditReport.roomData.map(room => (
+                <div 
+                  key={room.id}
+                  style={{
+                    border: '1px solid #333',
+                    backgroundColor: room.reachableWithoutPurchase ? 'rgba(0, 255, 0, 0.1)' : 'transparent',
+                    borderRadius: '3px',
+                    padding: '6px',
+                    marginBottom: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <strong style={{ color: room.reachableWithoutPurchase ? '#0f0' : '#888' }}>
+                      {room.name}
+                    </strong>
+                    {room.isStaircase && <span style={{ fontSize: '8px', color: '#0af' }}>🪜 STAIR</span>}
+                    {room.isHallway && <span style={{ fontSize: '8px', color: '#a0f' }}> corridor</span>}
+                  </div>
+                  
+                  {room.doors.filter(d => d.gapWidth > 0).length > 0 ? (
+                    <div style={{ fontSize: '9px' }}>
+                      {room.doors.filter(d => d.gapWidth > 0).map((door, idx) => (
+                        <div 
+                          key={idx}
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between',
+                            paddingLeft: '8px',
+                            borderLeft: door.isPurchasable ? '2px solid #ff0' : '2px solid #0f0',
+                            marginBottom: '2px',
+                          }}
+                        >
+                          <span>
+                            {door.side} → {door.toRoomName || 'VOID'}
+                          </span>
+                          <span style={{ color: door.isPurchasable ? '#ff0' : '#0f0' }}>
+                            {door.connectionType} {door.isPurchasable ? `$${door.cost}` : 'FREE'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '9px', color: '#666', fontStyle: 'italic' }}>
+                      No door connections
+                    </div>
+                  )}
+                  
+                  {room.missingDoors.length > 0 && (
+                    <div style={{ 
+                      marginTop: '4px', 
+                      padding: '4px', 
+                      backgroundColor: 'rgba(255, 100, 0, 0.2)',
+                      borderLeft: '2px solid #f80',
+                      fontSize: '9px'
+                    }}>
+                      <strong style={{ color: '#f80' }}>Missing Doors:</strong>
+                      {room.missingDoors.map((m, idx) => (
+                        <div key={idx} style={{ marginLeft: '8px', color: '#fa8' }}>
+                          {m.side}: {m.recommendedType} (${m.recommendedPrice}) - {m.reason}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Copy Report Button */}
+            <button
+              onClick={() => {
+                const report = JSON.stringify({
+                  summary: {
+                    totalRooms: data.doorAuditReport!.totalRooms,
+                    roomsWithDoors: data.doorAuditReport!.roomsWithDoors,
+                    roomsMissingDoors: data.doorAuditReport!.roomsMissingDoors,
+                    reachableWithoutPurchase: data.doorAuditReport!.reachableWithoutPurchase,
+                    progressionBreaks: data.doorAuditReport!.progressionBreaks,
+                  },
+                  connections: data.doorAuditReport!.allConnections,
+                  recommendations: data.doorAuditReport!.recommendations,
+                }, null, 2);
+                navigator.clipboard.writeText(report);
+                alert('Door audit report copied to clipboard!');
+              }}
+              style={{
+                ...buttonStyle,
+                marginTop: '10px',
+                backgroundColor: '#004400',
+                borderColor: '#0f0',
+              }}
+            >
+              📋 COPY DOOR AUDIT REPORT
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'doors' && !data.doorAuditReport && (
+          <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
+            Run door audit from console with: window.runDoorAudit()
+          </div>
+        )}
       </div>
     </>
   );

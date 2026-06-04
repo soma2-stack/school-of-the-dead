@@ -8,6 +8,7 @@ import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
+import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
@@ -352,6 +353,10 @@ export default function App() {
   const [currentConnectivityIssueIndex, setCurrentConnectivityIssueIndex] = useState<number>(-1);
   const connectivityAuditorRef = useRef(getConnectivityAuditor());
   const [connectivityReport, setConnectivityReport] = useState<any>(null);
+  
+  // Door Connectivity Audit state
+  const doorAuditorRef = useRef(getDoorAuditor());
+  const [doorAuditReport, setDoorAuditReport] = useState<DoorAuditReport | null>(null);
   
   // Geometry Inspector state
   const [geometryInspectorEnabled, setGeometryInspectorEnabled] = useState<boolean>(false);
