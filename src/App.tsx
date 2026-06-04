@@ -375,6 +375,12 @@ export default function App() {
     zombiesAlive: 0,
     spawnStatus: 'idle'
   });
+  
+  // Stair debug state
+  const [stairVisualDebugEnabled, setStairVisualDebugEnabled] = useState<boolean>(false);
+  const [stairCollisionDebugEnabled, setStairCollisionDebugEnabled] = useState<boolean>(false);
+  const [stairDebugData, setStairDebugData] = useState<any[]>([]);
+  const [playerStairAnalysis, setPlayerStairAnalysis] = useState<any>(null);
 
   // Debug Lighting toggle function (defined at component scope for JSX access)
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -949,6 +955,39 @@ export default function App() {
         wireframe.rotation.copy(visualRamp.rotation);
         scene.add(wireframe);
         console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
+        
+        // Store stair debug data for the STAIRS tab
+        const rotationDiffX = Math.abs(visualRamp.rotation.x - collisionRamp.rotation.x);
+        const rotationDiffY = Math.abs(visualRamp.rotation.y - collisionRamp.rotation.y);
+        const rotationDiffZ = Math.abs(visualRamp.rotation.z - collisionRamp.rotation.z);
+        const isMisaligned = Math.abs(offsetX) > 0.01 || Math.abs(offsetY) > 0.01 || Math.abs(offsetZ) > 0.01 ||
+                             rotationDiffX > 0.001 || rotationDiffY > 0.001 || rotationDiffZ > 0.001;
+        
+        setStairDebugData((prev) => [
+          ...prev,
+          {
+            id: r.id,
+            name: r.name,
+            direction: dir,
+            visualPosition: { x: visualRamp.position.x, y: visualRamp.position.y, z: visualRamp.position.z },
+            visualRotation: { x: visualRamp.rotation.x, y: visualRamp.rotation.y, z: visualRamp.rotation.z },
+            visualScale: { x: visualRamp.scale.x, y: visualRamp.scale.y, z: visualRamp.scale.z },
+            collisionPosition: { x: collisionRamp.position.x, y: collisionRamp.position.y, z: collisionRamp.position.z },
+            collisionRotation: { x: collisionRamp.rotation.x, y: collisionRamp.rotation.y, z: collisionRamp.rotation.z },
+            collisionScale: { x: collisionRamp.scale.x, y: collisionRamp.scale.y, z: collisionRamp.scale.z },
+            offsetX,
+            offsetY,
+            offsetZ,
+            rotationDiffX,
+            rotationDiffY,
+            rotationDiffZ,
+            width: r.w,
+            depth: r.d,
+            climbHeight: climb,
+            isMisaligned,
+            misalignmentWarning: isMisaligned ? `MISALIGNED STAIR DETECTED - Offset: (${offsetX.toFixed(4)}, ${offsetY.toFixed(4)}, ${offsetZ.toFixed(4)})` : undefined,
+          },
+        ]);
       }
     };
 
@@ -1377,6 +1416,26 @@ export default function App() {
           const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
           console.log(`[STAIR COLLISION] Room: ${currentRoom.name}, Player: (${playerPos.current.x.toFixed(2)}, ${playerPos.current.z.toFixed(2)}), StairHeight: ${stairHeight.toFixed(2)}, groundY: ${groundY.toFixed(2)}`);
           console.log(`[STAIR COLLISION] Room bounds: cx=${currentRoom.cx}, cz=${currentRoom.cz}, w=${currentRoom.w}, d=${currentRoom.d}, dir=${currentRoom.stairDirection}`);
+          
+          // Update player stair analysis for the STAIRS tab
+          setPlayerStairAnalysis({
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            currentRoomId: currentRoom.id,
+            expectedRampHeight: stairHeight,
+            actualPlayerHeight: playerPos.current.y,
+            heightDifference: playerPos.current.y - stairHeight,
+            isInStairwell: true,
+          });
+        } else {
+          // Not in a stairwell - clear or update player stair analysis
+          setPlayerStairAnalysis({
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            currentRoomId: currentRoom?.id || null,
+            expectedRampHeight: null,
+            actualPlayerHeight: playerPos.current.y,
+            heightDifference: 0,
+            isInStairwell: false,
+          });
         }
         playerPos.current.y += velocityY.current * dt;
         if (playerPos.current.y <= groundY) {
@@ -1769,6 +1828,8 @@ export default function App() {
             currentRoom: currentRoomName,
             rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
           },
+          stairDebugData,
+          playerStairAnalysis,
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
@@ -1807,6 +1868,12 @@ export default function App() {
           if (debugLightingEnabled && ambientLightRef.current) {
             ambientLightRef.current.intensity = brightness;
           }
+        }}
+        onStairVisualToggle={(enabled: boolean) => {
+          setStairVisualDebugEnabled(enabled);
+        }}
+        onStairCollisionToggle={(enabled: boolean) => {
+          setStairCollisionDebugEnabled(enabled);
         }}
       />
 

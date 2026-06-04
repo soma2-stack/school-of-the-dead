@@ -2,6 +2,38 @@ import React, { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { ConnectivityIssue, FloorIssue } from '../utils/MapConnectivityAudit';
 
+export interface StairDebugData {
+  id: string;
+  name: string;
+  direction: string;
+  visualPosition: { x: number; y: number; z: number };
+  visualRotation: { x: number; y: number; z: number };
+  visualScale: { x: number; y: number; z: number };
+  collisionPosition: { x: number; y: number; z: number };
+  collisionRotation: { x: number; y: number; z: number };
+  collisionScale: { x: number; y: number; z: number };
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  rotationDiffX: number;
+  rotationDiffY: number;
+  rotationDiffZ: number;
+  width: number;
+  depth: number;
+  climbHeight: number;
+  isMisaligned: boolean;
+  misalignmentWarning?: string;
+}
+
+export interface PlayerStairAnalysis {
+  playerPosition: { x: number; y: number; z: number };
+  currentRoomId: string | null;
+  expectedRampHeight: number | null;
+  actualPlayerHeight: number;
+  heightDifference: number;
+  isInStairwell: boolean;
+}
+
 export interface DebugData {
   fps: number;
   meshCount: number;
@@ -34,6 +66,9 @@ export interface DebugData {
       insideRoom: boolean;
     }>;
   };
+  // Stair debugging data
+  stairDebugData?: StairDebugData[];
+  playerStairAnalysis?: PlayerStairAnalysis;
 }
 
 interface Props {
@@ -45,6 +80,8 @@ interface Props {
   onTeleportToIssue?: (issue: ConnectivityIssue | FloorIssue) => void;
   onToggleDebugLighting?: () => void;
   onSetDebugLightingBrightness?: (brightness: number) => void;
+  onStairVisualToggle?: (enabled: boolean) => void;
+  onStairCollisionToggle?: (enabled: boolean) => void;
 }
 
 const DebugOverlay: React.FC<Props> = ({
@@ -56,11 +93,24 @@ const DebugOverlay: React.FC<Props> = ({
   onTeleportToIssue,
   onToggleDebugLighting,
   onSetDebugLightingBrightness,
+  onStairVisualToggle,
+  onStairCollisionToggle,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'audit' | 'player' | 'rounds' | 'perf'>('audit');
+  const [activeTab, setActiveTab] = useState<'audit' | 'player' | 'rounds' | 'perf' | 'stairs'>('audit');
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<'all' | 'connectivity' | 'floor' | 'open'>('all');
+  const [stairVisualEnabled, setStairVisualEnabled] = useState(false);
+  const [stairCollisionEnabled, setStairCollisionEnabled] = useState(false);
+
+  // Notify parent when toggles change
+  useEffect(() => {
+    onStairVisualToggle?.(stairVisualEnabled);
+  }, [stairVisualEnabled, onStairVisualToggle]);
+
+  useEffect(() => {
+    onStairCollisionToggle?.(stairCollisionEnabled);
+  }, [stairCollisionEnabled, onStairCollisionToggle]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -262,6 +312,9 @@ const DebugOverlay: React.FC<Props> = ({
             </div>
             <div style={tabStyle(activeTab === 'perf')} onClick={() => setActiveTab('perf')}>
               PERF
+            </div>
+            <div style={tabStyle(activeTab === 'stairs')} onClick={() => setActiveTab('stairs')}>
+              STAIRS
             </div>
           </div>
         )}
@@ -577,6 +630,228 @@ const DebugOverlay: React.FC<Props> = ({
                 <span>Mesh Count:</span>
                 <span>{data.meshCount}</span>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'stairs' && (
+            <div>
+              {/* Stair Debug Toggles */}
+              <div style={{ 
+                border: '1px solid #0ff', 
+                backgroundColor: 'rgba(0, 255, 255, 0.1)', 
+                padding: '8px', 
+                marginBottom: '10px',
+                borderRadius: '4px'
+              }}>
+                <strong style={{ color: '#0ff', display: 'block', marginBottom: '6px' }}>
+                  STAIR VISUALIZATION TOGGLES
+                </strong>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => setStairVisualEnabled(!stairVisualEnabled)}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: stairVisualEnabled ? '#00ffff' : '#003333',
+                      color: stairVisualEnabled ? '#000' : '#0ff',
+                      flex: 1,
+                      fontSize: '9px',
+                      padding: '4px 2px',
+                    }}
+                  >
+                    VISUAL MESH (BLUE): {stairVisualEnabled ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    onClick={() => setStairCollisionEnabled(!stairCollisionEnabled)}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: stairCollisionEnabled ? '#ff0000' : '#330000',
+                      color: stairCollisionEnabled ? '#000' : '#f00',
+                      flex: 1,
+                      fontSize: '9px',
+                      padding: '4px 2px',
+                    }}
+                  >
+                    COLLISION (RED): {stairCollisionEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <div style={{ fontSize: '9px', color: '#888' }}>
+                  Note: Enable toggles above to see wireframe overlays in the 3D scene.
+                </div>
+              </div>
+
+              {/* Stair Alignment Analysis */}
+              {data.stairDebugData && data.stairDebugData.length > 0 && (
+                <div style={{ 
+                  border: '1px solid #ff0', 
+                  backgroundColor: 'rgba(255, 255, 0, 0.1)', 
+                  padding: '8px', 
+                  marginBottom: '10px',
+                  borderRadius: '4px'
+                }}>
+                  <strong style={{ color: '#ff0', display: 'block', marginBottom: '6px' }}>
+                    STAIR ALIGNMENT ANALYSIS
+                  </strong>
+                  {data.stairDebugData.map((stair, idx) => (
+                    <div 
+                      key={stair.id}
+                      style={{
+                        border: stair.isMisaligned ? '1px solid #f00' : '1px solid #333',
+                        backgroundColor: stair.isMisaligned ? 'rgba(255, 0, 0, 0.15)' : 'transparent',
+                        borderRadius: '3px',
+                        padding: '6px',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <strong style={{ color: stair.isMisaligned ? '#f00' : '#0f0' }}>
+                          [{stair.id}] {stair.name}
+                        </strong>
+                        {stair.isMisaligned && (
+                          <span style={{ color: '#f00', fontSize: '9px', fontWeight: 'bold' }}>
+                            ⚠️ MISALIGNED
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div style={{ fontSize: '9px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+                        <span style={{ color: '#888' }}>Direction:</span>
+                        <span>{stair.direction}</span>
+                        
+                        <span style={{ color: '#888' }}>Dimensions:</span>
+                        <span>{stair.width} x {stair.depth} (climb: {stair.climbHeight})</span>
+                        
+                        <span style={{ color: '#0af' }}>Visual Pos:</span>
+                        <span>[{stair.visualPosition.x.toFixed(2)}, {stair.visualPosition.y.toFixed(2)}, {stair.visualPosition.z.toFixed(2)}]</span>
+                        
+                        <span style={{ color: '#f00' }}>Collision Pos:</span>
+                        <span>[{stair.collisionPosition.x.toFixed(2)}, {stair.collisionPosition.y.toFixed(2)}, {stair.collisionPosition.z.toFixed(2)}]</span>
+                        
+                        <span style={{ color: '#0af' }}>Visual Rot:</span>
+                        <span>[{stair.visualRotation.x.toFixed(3)}, {stair.visualRotation.y.toFixed(3)}, {stair.visualRotation.z.toFixed(3)}]</span>
+                        
+                        <span style={{ color: '#f00' }}>Collision Rot:</span>
+                        <span>[{stair.collisionRotation.x.toFixed(3)}, {stair.collisionRotation.y.toFixed(3)}, {stair.collisionRotation.z.toFixed(3)}]</span>
+                        
+                        <span style={{ color: '#ff0' }}>Offset (V-C):</span>
+                        <span style={{ color: Math.abs(stair.offsetX) > 0.01 || Math.abs(stair.offsetY) > 0.01 || Math.abs(stair.offsetZ) > 0.01 ? '#f00' : '#0f0' }}>
+                          X:{stair.offsetX.toFixed(4)} Y:{stair.offsetY.toFixed(4)} Z:{stair.offsetZ.toFixed(4)}
+                        </span>
+                        
+                        <span style={{ color: '#ff0' }}>Rot Diff:</span>
+                        <span style={{ color: Math.abs(stair.rotationDiffX) > 0.001 || Math.abs(stair.rotationDiffY) > 0.001 || Math.abs(stair.rotationDiffZ) > 0.001 ? '#f00' : '#0f0' }}>
+                          X:{stair.rotationDiffX.toFixed(4)} Y:{stair.rotationDiffY.toFixed(4)} Z:{stair.rotationDiffZ.toFixed(4)}
+                        </span>
+                      </div>
+                      
+                      {stair.isMisaligned && stair.misalignmentWarning && (
+                        <div style={{
+                          marginTop: '4px',
+                          padding: '4px',
+                          backgroundColor: 'rgba(255, 0, 0, 0.3)',
+                          borderLeft: '2px solid #f00',
+                          fontSize: '9px',
+                          color: '#f00',
+                          fontWeight: 'bold',
+                        }}>
+                          {stair.misalignmentWarning}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Player Stair Analysis */}
+              {data.playerStairAnalysis && (
+                <div style={{ 
+                  border: data.playerStairAnalysis.isInStairwell ? '1px solid #0f0' : '1px solid #333', 
+                  backgroundColor: data.playerStairAnalysis.isInStairwell ? 'rgba(0, 255, 0, 0.1)' : 'transparent', 
+                  padding: '8px', 
+                  marginBottom: '10px',
+                  borderRadius: '4px'
+                }}>
+                  <strong style={{ color: data.playerStairAnalysis.isInStairwell ? '#0f0' : '#888', display: 'block', marginBottom: '6px' }}>
+                    PLAYER STAIR ANALYSIS {data.playerStairAnalysis.isInStairwell ? '✓ IN STAIRWELL' : '(not in stairwell)'}
+                  </strong>
+                  
+                  <div style={{ fontSize: '10px' }}>
+                    <div style={rowStyle}>
+                      <span>Player Position:</span>
+                      <span>[{data.playerStairAnalysis.playerPosition.x.toFixed(2)}, {data.playerStairAnalysis.playerPosition.y.toFixed(2)}, {data.playerStairAnalysis.playerPosition.z.toFixed(2)}]</span>
+                    </div>
+                    <div style={rowStyle}>
+                      <span>Current Room:</span>
+                      <span>{data.playerStairAnalysis.currentRoomId || 'None'}</span>
+                    </div>
+                    
+                    {data.playerStairAnalysis.isInStairwell && (
+                      <>
+                        <div style={rowStyle}>
+                          <span>Expected Ramp Height:</span>
+                          <span>{data.playerStairAnalysis.expectedRampHeight?.toFixed(2) ?? 'N/A'}</span>
+                        </div>
+                        <div style={rowStyle}>
+                          <span>Actual Player Height (Y):</span>
+                          <span>{data.playerStairAnalysis.actualPlayerHeight.toFixed(2)}</span>
+                        </div>
+                        <div style={{
+                          ...rowStyle,
+                          marginTop: '4px',
+                          paddingTop: '4px',
+                          borderTop: '1px dashed #555',
+                        }}>
+                          <span>Height Difference:</span>
+                          <span style={{ 
+                            color: Math.abs(data.playerStairAnalysis.heightDifference) > 0.5 ? '#f00' : '#0f0',
+                            fontWeight: 'bold',
+                          }}>
+                            {data.playerStairAnalysis.heightDifference.toFixed(2)} 
+                            {Math.abs(data.playerStairAnalysis.heightDifference) > 0.5 ? ' ⚠️ FLOATING/FALLING' : ' ✓ ALIGNED'}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Copy Report Button */}
+              <button
+                onClick={() => {
+                  const report = {
+                    timestamp: new Date().toISOString(),
+                    stairs: data.stairDebugData?.map(s => ({
+                      id: s.id,
+                      name: s.name,
+                      direction: s.direction,
+                      dimensions: `${s.width}x${s.depth} (climb: ${s.climbHeight})`,
+                      visualPos: s.visualPosition,
+                      collisionPos: s.collisionPosition,
+                      offset: { x: s.offsetX, y: s.offsetY, z: s.offsetZ },
+                      rotationDiff: { x: s.rotationDiffX, y: s.rotationDiffY, z: s.rotationDiffZ },
+                      isMisaligned: s.isMisaligned,
+                      warning: s.misalignmentWarning,
+                    })),
+                    playerAnalysis: data.playerStairAnalysis,
+                    toggles: {
+                      visualEnabled: stairVisualEnabled,
+                      collisionEnabled: stairCollisionEnabled,
+                    },
+                  };
+                  navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+                  alert('Stair debug report copied to clipboard!');
+                }}
+                style={{
+                  ...buttonStyle,
+                  marginTop: '10px',
+                  backgroundColor: '#004400',
+                  borderColor: '#0f0',
+                }}
+              >
+                📋 COPY STAIR DEBUG REPORT
+              </button>
             </div>
           )}
         </div>
