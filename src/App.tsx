@@ -1376,8 +1376,11 @@ export default function App() {
           bounds.getSize(size);
           bounds.getCenter(center);
           
+          // Calculate distance from camera to hit mesh
+          const distance = camera.position.distanceTo(center);
+          
           // Update highlight visual
-          inspector.updateHighlight(hitMesh);
+          inspector.updateHighlight(hitMesh, distance);
           
           // Get mesh info for display
           const info = inspector.getInspectedMesh();
@@ -1390,7 +1393,7 @@ export default function App() {
             });
           }
         } else {
-          inspector.updateHighlight(null);
+          inspector.updateHighlight(null, 0);
           setInspectedMeshInfo(null);
         }
       }

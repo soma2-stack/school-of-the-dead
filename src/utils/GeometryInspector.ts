@@ -20,7 +20,7 @@ export interface GeometryInspector {
   /** Cast ray and return hit mesh (internal use) */
   inspectAtCrosshair(): THREE.Mesh | null;
   /** Update highlight visual (internal use) */
-  updateHighlight(mesh: THREE.Mesh | null): void;
+  updateHighlight(mesh: THREE.Mesh | null, distance: number): void;
 }
 
 export interface InspectedMeshInfo {
@@ -262,7 +262,6 @@ export function createGeometryInspector(
     scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh && 
           obj !== highlightMesh && 
-          !(wireframeMesh && obj === wireframeMesh) &&
           !obj.name.includes('debug') &&
           !obj.name.includes('highlight')) {
         allMeshes.push(obj);
@@ -317,7 +316,6 @@ export function createGeometryInspector(
     scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh && 
           obj !== highlightMesh && 
-          !(wireframeMesh && obj === wireframeMesh) &&
           !obj.name.includes('debug') &&
           !obj.name.includes('highlight')) {
         
