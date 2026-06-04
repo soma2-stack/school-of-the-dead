@@ -1,6 +1,3 @@
-// src/utils/MapConnectivityAudit.ts - Map Connectivity Audit System
-// Detects void exposures, missing walls/ceilings, disconnected rooms, and navigation breaks
-
 export interface ConnectivityIssue {
   id: string;
   type: 'void_exposure' | 'missing_wall' | 'missing_ceiling' | 'disconnected_room' | 
@@ -20,6 +17,18 @@ export interface ConnectivityIssue {
   reasoning?: string;
   potentialCauses?: string[];
   confidence?: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface FloorIssue {
+  id: string;
+  type: 'missing_tile' | 'gap' | 'height_mismatch' | 'crack' | 'hole' | 'void_exposure' | 'overlap' | 'wall_gap';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  roomName: string;
+  location: [number, number, number];
+  gapSize?: number;
+  heightDifference?: number;
+  cause: string;
+  repaired: boolean;
 }
 
 export interface RoomConnectivityData {

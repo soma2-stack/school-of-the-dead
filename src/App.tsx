@@ -1576,8 +1576,8 @@ export default function App() {
           round: roundState.round,
           zombiesAlive: roundState.zombiesAlive,
           spawnStatus: roundState.spawnStatus,
-          connectivityIssues: connectivityIssues.length,
-          floorIntegrityIssues: floorAuditIssues.length,
+          connectivityIssues: connectivityIssues,
+          floorIntegrityIssues: floorAuditIssues,
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
@@ -1603,6 +1603,12 @@ export default function App() {
           playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
           yaw.current = Math.PI;
           console.log('[DebugOverlay] Teleported to starter room spawn');
+        }}
+        onTeleportToIssue={(issue) => {
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI;
+          noclipRef.current = true;
+          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
         }}
       />
 
