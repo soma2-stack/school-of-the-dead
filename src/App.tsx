@@ -1226,6 +1226,23 @@ export default function App() {
       if ((window as any).DEBUG_FLOORS === true) {
         console.log('DEBUG WIREFRAMES ACTIVE');
         
+        // LOG ROOM COUNT AND DETAILS
+        console.log("ROOM COUNT", INITIAL_ROOMS.length);
+        INITIAL_ROOMS.forEach((room, idx) => {
+          if (idx < 5) { // Log first 5 rooms to avoid spam
+            console.log(
+              "WIREFRAME ROOM",
+              room.id,
+              room.name,
+              room.cx,
+              room.cz,
+              room.w,
+              room.d,
+              room.floorY
+            );
+          }
+        });
+        
         // Create or update test wireframe box at world position 0,5,0
         if (!debugWireframeRef.current) {
           const geometry = new THREE.BoxGeometry(4, 4, 4);
@@ -1239,6 +1256,35 @@ export default function App() {
           debugWireframeRef.current = wireframe;
           console.log('[DEBUG] Red wireframe box created at (0, 5, 0)');
         }
+        
+        // TEMPORARY TEST: Render every room as a solid magenta wireframe box
+        // This verifies that room data is reaching the renderer
+        const globalKey = '__ROOM_DEBUG_WIREFRAMES__';
+        let roomWireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
+        
+        // Clear existing room wireframes
+        roomWireframes.forEach(w => {
+          scene.remove(w);
+          w.geometry.dispose();
+          (w.material as THREE.Material).dispose();
+        });
+        roomWireframes = [];
+        
+        // Create magenta wireframe for each room
+        INITIAL_ROOMS.forEach(room => {
+          const roomGeometry = new THREE.BoxGeometry(room.w, 1, room.d);
+          const roomEdges = new THREE.EdgesGeometry(roomGeometry);
+          const roomMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
+          const roomWireframe = new THREE.LineSegments(roomEdges, roomMaterial);
+          roomWireframe.position.set(room.cx, room.floorY + 0.5, room.cz);
+          roomWireframe.renderOrder = 998;
+          roomWireframe.frustumCulled = false;
+          scene.add(roomWireframe);
+          roomWireframes.push(roomWireframe);
+        });
+        
+        (window as any)[globalKey] = roomWireframes;
+        console.log("WIREFRAMES CREATED", roomWireframes.length);
       } else {
         // Cleanup wireframe when disabled
         if (debugWireframeRef.current) {
@@ -1248,6 +1294,16 @@ export default function App() {
           debugWireframeRef.current = null;
           console.log('[DEBUG] Red wireframe box removed');
         }
+        
+        // Cleanup room wireframes when disabled
+        const globalKey = '__ROOM_DEBUG_WIREFRAMES__';
+        let roomWireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
+        roomWireframes.forEach(w => {
+          scene.remove(w);
+          w.geometry.dispose();
+          (w.material as THREE.Material).dispose();
+        });
+        (window as any)[globalKey] = [];
       }
       
       // Render floor debug visualization if enabled
