@@ -1,6 +1,8 @@
 // src/utils/FloorIntegrityAudit.ts - Floor Integrity Audit System
 // Scans floor geometry for gaps, height mismatches, cracks, holes, and overlaps
 
+import * as THREE from 'three';
+
 export interface FloorIssue {
   id: string;
   type: 'missing_tile' | 'gap' | 'height_mismatch' | 'crack' | 'hole' | 'void_exposure' | 'overlap' | 'wall_gap';
@@ -893,6 +895,57 @@ export function getDebugFloorData(): DebugFloorData | null {
     gaps: auditor.roomGapsData || {},
     issues: auditor.issues || [],
   };
+}
+
+/**
+ * Render debug wireframes for floor audit visualization
+ * Called every frame when floorDebugMode is enabled
+ */
+export function renderFloorDebug(scene: THREE.Scene, time: number) {
+  const data = getDebugFloorData();
+  if (!data) return;
+  
+  // Store wireframes in a global ref for cleanup
+  const globalKey = '__FLOOR_DEBUG_WIREFRAMES__';
+  let wireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
+  
+  // Clear existing wireframes
+  wireframes.forEach(w => {
+    scene.remove(w);
+    w.geometry.dispose();
+    (w.material as THREE.Material).dispose();
+  });
+  wireframes = [];
+  
+  // Create wireframe for each room
+  data.rooms.forEach(room => {
+    const geometry = new THREE.BoxGeometry(room.width, 0.1, room.depth);
+    const edges = new THREE.EdgesGeometry(geometry);
+    const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+    const wireframe = new THREE.LineSegments(edges, material);
+    wireframe.position.set(room.x, room.floorY + 0.05, room.z);
+    wireframe.renderOrder = 998;
+    wireframe.frustumCulled = false;
+    scene.add(wireframe);
+    wireframes.push(wireframe);
+  });
+  
+  // Highlight current issue if any
+  if (data.issues.length > 0) {
+    const issueIndex = Math.floor(time * 2) % data.issues.length;
+    const issue = data.issues[issueIndex];
+    const issueGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const issueEdges = new THREE.EdgesGeometry(issueGeometry);
+    const issueMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+    const issueWireframe = new THREE.LineSegments(issueEdges, issueMaterial);
+    issueWireframe.position.set(issue.location[0], issue.location[1], issue.location[2]);
+    issueWireframe.renderOrder = 999;
+    issueWireframe.frustumCulled = false;
+    scene.add(issueWireframe);
+    wireframes.push(issueWireframe);
+  }
+  
+  (window as any)[globalKey] = wireframes;
 }
 
 export default getFloorAuditor;

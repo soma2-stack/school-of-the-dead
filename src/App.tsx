@@ -355,6 +355,9 @@ export default function App() {
   const geometryInspectorRef = useRef<GeometryInspector | null>(null);
   const [inspectedMeshInfo, setInspectedMeshInfo] = useState<{ meshName: string; roomId?: string; wallId?: string; floorId?: string } | null>(null);
   
+  // Debug wireframe ref for DEBUG_FLOORS test
+  const debugWireframeRef = useRef<THREE.LineSegments | null>(null);
+  
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
 
@@ -1218,6 +1221,35 @@ export default function App() {
         mapValidatorRef.current.updateHighlights(now / 1000);
       }
       
+      // DEBUG_FLOORS: Render test wireframe box if enabled
+      // This reads window.DEBUG_FLOORS every frame to verify connection to render loop
+      if ((window as any).DEBUG_FLOORS === true) {
+        console.log('DEBUG WIREFRAMES ACTIVE');
+        
+        // Create or update test wireframe box at world position 0,5,0
+        if (!debugWireframeRef.current) {
+          const geometry = new THREE.BoxGeometry(4, 4, 4);
+          const edges = new THREE.EdgesGeometry(geometry);
+          const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+          const wireframe = new THREE.LineSegments(edges, material);
+          wireframe.position.set(0, 5, 0);
+          wireframe.renderOrder = 999;
+          wireframe.frustumCulled = false;
+          scene.add(wireframe);
+          debugWireframeRef.current = wireframe;
+          console.log('[DEBUG] Red wireframe box created at (0, 5, 0)');
+        }
+      } else {
+        // Cleanup wireframe when disabled
+        if (debugWireframeRef.current) {
+          debugWireframeRef.current.geometry.dispose();
+          (debugWireframeRef.current.material as THREE.Material).dispose();
+          scene.remove(debugWireframeRef.current);
+          debugWireframeRef.current = null;
+          console.log('[DEBUG] Red wireframe box removed');
+        }
+      }
+      
       // Render floor debug visualization if enabled
       if (floorDebugMode) {
         renderFloorDebug(scene, now / 1000);
@@ -1366,6 +1398,14 @@ export default function App() {
       
       // Cleanup door renderer
       doorRenderer.destroy();
+      
+      // Cleanup debug wireframe if exists
+      if (debugWireframeRef.current) {
+        debugWireframeRef.current.geometry.dispose();
+        (debugWireframeRef.current.material as THREE.Material).dispose();
+        scene.remove(debugWireframeRef.current);
+        debugWireframeRef.current = null;
+      }
       
       renderer.dispose();
     };
