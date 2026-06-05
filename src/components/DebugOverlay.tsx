@@ -664,7 +664,7 @@ const DebugOverlay: React.FC<Props> = ({
                     <button
                       key={r}
                       onClick={() => { 
-                        console.log("[ROUND TRACE] R{r} button clicked in DebugOverlay");
+                        console.log(`[ROUND TRACE] R${r} button clicked in DebugOverlay`);
                         console.log("[ROUND TRACE] Calling onStartRound with round:", r);
                         onStartRound?.(r); 
                       }}

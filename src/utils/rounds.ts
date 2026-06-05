@@ -131,7 +131,17 @@ export class RoundManager {
   }
 
   private notifyRoundStart(roundNumber: number): void {
-    this.roundStartCallbacks.forEach(cb => cb(roundNumber));
+    console.log('[ROUND TRACE] notifyRoundStart called with round:', roundNumber);
+    console.log('[ROUND TRACE] Number of callbacks to notify:', this.roundStartCallbacks.length);
+    this.roundStartCallbacks.forEach((cb, index) => {
+      console.log('[ROUND TRACE] Calling roundStartCallbacks[', index, ']');
+      try {
+        cb(roundNumber);
+        console.log('[ROUND TRACE] roundStartCallbacks[', index, '] completed successfully');
+      } catch (error) {
+        console.error('[ROUND TRACE] roundStartCallbacks[', index, '] threw error:', error);
+      }
+    });
   }
 
   private notifyRoundEnd(roundNumber: number): void {
@@ -162,6 +172,8 @@ export class RoundManager {
     console.log('[ROUND TRACE] ENTER startRound');
     console.log('[ROUND TRACE] startRound invoked from:', new Error().stack);
     console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    console.log('[ROUND TRACE] Current round before update:', this.roundData.currentRound);
+    console.log('[ROUND TRACE] totalZombies parameter:', totalZombies);
     
     if (this.roundData.state === 'active') {
       console.warn('[ROUND] Round already active');
@@ -173,10 +185,20 @@ export class RoundManager {
     this.roundData.state = 'active';
     console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
     
-    this.roundData.currentRound = Math.max(this.config.startingRound, this.roundData.currentRound);
+    // Update current round - use provided totalZombies as round number if it's a number
+    if (typeof totalZombies === 'number' && totalZombies > 0) {
+      this.roundData.currentRound = Math.max(this.config.startingRound, totalZombies);
+      console.log('[ROUND TRACE] Updated currentRound to:', this.roundData.currentRound, '(from totalZombies param)');
+    } else {
+      this.roundData.currentRound = Math.max(this.config.startingRound, this.roundData.currentRound);
+      console.log('[ROUND TRACE] Updated currentRound to:', this.roundData.currentRound, '(existing value)');
+    }
     
     // Use provided count or calculate based on round number
-    const zombieCount = totalZombies ?? RoundManager.calculateZombieCount(this.roundData.currentRound);
+    const zombieCount = typeof totalZombies === 'number' && totalZombies > 0 
+      ? RoundManager.calculateZombieCount(this.roundData.currentRound)
+      : RoundManager.calculateZombieCount(this.roundData.currentRound);
+    console.log('[ROUND TRACE] Calculated zombieCount:', zombieCount, 'for round:', this.roundData.currentRound);
     this.roundData.zombiesRemaining = zombieCount;
     this.roundData.zombiesKilled = 0;
     this.roundData.totalZombiesSpawned = zombieCount;
@@ -188,9 +210,13 @@ export class RoundManager {
       totalZombies: zombieCount,
     });
 
+    console.log('[ROUND TRACE] About to notifyRoundStart with round:', this.roundData.currentRound);
     this.notifyRoundStart(this.roundData.currentRound);
+    console.log('[ROUND TRACE] About to notifyStateChange');
     this.notifyStateChange();
+    console.log('[ROUND TRACE] About to notifyZombiesRemaining');
     this.notifyZombiesRemaining();
+    console.log('[ROUND TRACE] startRound complete - final state:', this.roundData.state);
   }
 
   /**

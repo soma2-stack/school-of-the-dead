@@ -872,8 +872,10 @@ export default function App() {
 
     // Subscribe to round start events for automatic zombie spawning
     const roundManager = getRoundManager();
+    console.log('[ROUND TRACE] Subscribing to onRoundStart in App.tsx');
     roundManager.onRoundStart((roundNumber) => {
       console.log('[ROUND TRACE] Round start event received in App.tsx for round', roundNumber);
+      console.log('[ROUND TRACE] zombieManagerRef.current:', zombieManagerRef.current);
       const zombieManager = zombieManagerRef.current;
       if (zombieManager) {
         const totalZombies = RoundManager.calculateZombieCount(roundNumber);
@@ -887,6 +889,7 @@ export default function App() {
           zombiesAlive: totalZombies,
           spawnStatus: roundManager.getState(),
         }));
+        console.log('[ROUND TRACE] Auto-spawn complete, setRoundState called');
       } else {
         console.warn('[ROUND TRACE] ZombieManager not available for auto-spawn');
       }
@@ -2466,8 +2469,9 @@ export default function App() {
           console.log('[ROUND TRACE] ENTER onStartRound handler in App.tsx');
           console.log('[ROUND TRACE] onStartRound called with round:', round);
           const roundManager = getRoundManager();
-          console.log('[ROUND TRACE] Calling roundManager.startRound()');
+          console.log('[ROUND TRACE] RoundManager instance:', roundManager);
           console.log('[ROUND TRACE] RoundManager state before start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
+          console.log('[ROUND TRACE] Calling roundManager.startRound() with:', round);
           roundManager.startRound(round);
           console.log('[ROUND TRACE] RoundManager state after start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           // Update React state to reflect changes
