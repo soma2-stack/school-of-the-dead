@@ -160,6 +160,7 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + (1 - t) * climb;
   }
+  return r.floorY;
 };
 
 const INITIAL_ROOMS: Room[] = [
