@@ -265,7 +265,7 @@ export class RoundManager {
 
   /**
    * Internal handler called when intermission completes
-   * Automatically advances to the next round
+   * Automatically advances to the next round and starts it
    */
   private onIntermissionComplete(): void {
     console.log('[ROUND] onIntermissionComplete() called', {
@@ -275,17 +275,11 @@ export class RoundManager {
     // Advance round number
     this.roundData.currentRound += 1;
     
-    // Reset state to idle (ready for startRound to be called by spawn system)
-    this.roundData.state = 'idle';
-    this.roundData.zombiesRemaining = 0;
-    this.roundData.zombiesKilled = 0;
-    this.roundData.totalZombiesSpawned = 0;
-    this.roundData.intermissionStartTime = null;
-    this.intermissionTimerId = null;
-
-    console.log('[ROUND] Advanced to round', this.roundData.currentRound, ', state set to idle');
-
-    this.notifyStateChange();
+    console.log('[ROUND] Starting round', this.roundData.currentRound, 'automatically');
+    
+    // AUTOMATIC ROUND PROGRESSION:
+    // Start the new round immediately (this will spawn zombies via callbacks)
+    this.startRound();
   }
 
   /**

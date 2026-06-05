@@ -870,6 +870,26 @@ export default function App() {
       // Could add player health system here
     });
 
+    // Subscribe to round start events for automatic zombie spawning
+    const roundManager = getRoundManager();
+    roundManager.onRoundStart((roundNumber) => {
+      console.log('[APP] Round', roundNumber, 'started, auto-spawning zombies');
+      const zombieManager = zombieManagerRef.current;
+      if (zombieManager) {
+        const totalZombies = RoundManager.calculateZombieCount(roundNumber);
+        console.log('[APP] Auto-spawning', totalZombies, 'zombies for round', roundNumber);
+        for (let i = 0; i < totalZombies; i++) {
+          zombieManager.spawnZombie();
+          roundManager.registerZombieSpawn();
+        }
+        setRoundState(prev => ({
+          round: roundNumber,
+          zombiesAlive: totalZombies,
+          spawnStatus: roundManager.getState(),
+        }));
+      }
+    });
+
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
     console.log('[WEAPON] WeaponManager initialized:', weaponManagerRef.current !== null);
