@@ -20,6 +20,8 @@ export const ZOMBIE_STUCK_RECOVERY_DISTANCE = 0.5;
 export const ZOMBIE_COLLISION_RADIUS = 1.2; // Radius for collision checks
 export const ZOMBIE_RAYCAST_DISTANCE = 2.0; // How far ahead to raycast
 export const ZOMBIE_SLIDE_FACTOR = 0.6; // How much to slide along walls
+export const ZOMBIE_MAX_CLIMB_HEIGHT = 0.3; // Maximum step-up height allowed
+export const ZOMBIE_GROUND_Y = 0; // Ground level Y position
 
 export interface ZombieConfig {
   health: number;
@@ -454,6 +456,10 @@ export class ZombieManager {
    * Check for wall collisions and resolve them by sliding along walls.
    * Returns true if collision occurred, false otherwise.
    * If collision occurs, newPosition is set to the resolved position.
+   * 
+   * IMPORTANT: Collision resolution only happens on XZ plane.
+   * Y position is never modified by collision response to prevent
+   * zombies from climbing over walls.
    */
   private checkWallCollision(
     zombie: Zombie,
@@ -467,8 +473,14 @@ export class ZombieManager {
   ): boolean {
     let hasCollision = false;
     
-    // Calculate proposed new position
-    newPosition.copy(zombie.position).add(moveStep);
+    // Store Y position before collision - this must never change
+    const yPositionBefore = zombie.position.y;
+    
+    // Calculate proposed new position (XZ only for movement, Y stays same)
+    newPosition.copy(zombie.position);
+    newPosition.x += moveStep.x;
+    newPosition.z += moveStep.z;
+    // IMPORTANT: Do NOT add moveStep.y - zombies stay grounded
     
     // Raycast in the direction of movement from multiple points around the zombie
     // to detect walls more reliably
@@ -486,10 +498,19 @@ export class ZombieManager {
     );
     
     for (const rayDir of rayDirections) {
+      // Raycast from zombie center height, but keep ray horizontal (no Y component)
       rayOrigin.copy(zombie.position);
       rayOrigin.y += 1; // Raycast from center height
       
-      raycaster.set(rayOrigin, rayDir);
+      // Ensure ray direction is purely horizontal (XZ plane only)
+      const horizontalRayDir = rayDir.clone();
+      horizontalRayDir.y = 0;
+      if (horizontalRayDir.lengthSq() < 0.001) {
+        continue; // Skip if no horizontal movement
+      }
+      horizontalRayDir.normalize();
+      
+      raycaster.set(rayOrigin, horizontalRayDir);
       raycaster.far = moveStep.length() + ZOMBIE_COLLISION_RADIUS;
       
       const intersects = raycaster.intersectObjects(mapObjects, true);
@@ -497,6 +518,12 @@ export class ZombieManager {
       if (intersects.length > 0) {
         const hit = intersects[0];
         const distanceToHit = hit.distance;
+        
+        // Log collision attempt details
+        logger.zombies.debug(`[WALL COLLISION] Zombie ${zombie.id}:`);
+        logger.zombies.debug(`  Position: (${zombie.position.x.toFixed(2)}, ${zombie.position.y.toFixed(2)}, ${zombie.position.z.toFixed(2)})`);
+        logger.zombies.debug(`  Attempted Position: (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)}, ${newPosition.z.toFixed(2)})`);
+        logger.zombies.debug(`  Wall Hit at distance: ${distanceToHit.toFixed(2)}`);
         
         // Check if we would hit the wall during this movement
         if (distanceToHit < moveStep.length()) {
@@ -508,33 +535,67 @@ export class ZombieManager {
             wallNormal.transformDirection(hit.object.matrixWorld).normalize();
           }
           
-          // Calculate slide direction: project movement onto the wall plane
-          const dot = moveStep.dot(wallNormal);
+          // CRITICAL: Zero out Y component of wall normal - we only care about XZ collision
+          wallNormal.y = 0;
+          if (wallNormal.lengthSq() > 0.001) {
+            wallNormal.normalize();
+          } else {
+            // If normal becomes zero after removing Y, use a default horizontal normal
+            wallNormal.set(horizontalRayDir.z, 0, -horizontalRayDir.x);
+          }
+          
+          // Calculate penetration depth into the wall
+          const penetrationDepth = (ZOMBIE_COLLISION_RADIUS - distanceToHit);
+          logger.zombies.debug(`  Penetration Depth: ${penetrationDepth.toFixed(2)}`);
+          logger.zombies.debug(`  Y Position Before: ${yPositionBefore.toFixed(2)}`);
+          
+          // Calculate slide direction: project movement onto the wall plane (XZ only)
+          // First, get the horizontal movement vector
+          const horizontalMove = new THREE.Vector3(moveStep.x, 0, moveStep.z);
+          const dot = horizontalMove.dot(wallNormal);
           
           // Only slide if moving towards the wall
           if (dot < 0) {
             // Remove the component of movement that goes into the wall
-            slideDirection.copy(moveStep).sub(wallNormal.clone().multiplyScalar(dot));
+            slideDirection.copy(horizontalMove).sub(wallNormal.clone().multiplyScalar(dot));
             
-            // Normalize and scale to original speed (preserves momentum along wall)
+            // Normalize and scale to original horizontal speed
             if (slideDirection.lengthSq() > 0.001) {
-              slideDirection.normalize().multiplyScalar(moveStep.length());
+              slideDirection.normalize().multiplyScalar(horizontalMove.length());
+            } else {
+              // No valid slide direction - wall is perpendicular to movement
+              slideDirection.set(0, 0, 0);
             }
             
             // Move the zombie to just before the wall, then slide
-            const safeDistance = distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5;
+            const safeDistance = Math.max(0, distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5);
             if (safeDistance > 0) {
-              newPosition.copy(zombie.position).add(rayDir.clone().multiplyScalar(safeDistance));
-              newPosition.add(slideDirection);
+              newPosition.copy(zombie.position);
+              newPosition.add(horizontalRayDir.clone().multiplyScalar(safeDistance));
+              newPosition.x += slideDirection.x;
+              newPosition.z += slideDirection.z;
             } else {
-              // Very close to wall, just slide along it
-              newPosition.copy(zombie.position).add(slideDirection);
+              // Very close to wall, just slide along it (or stop if no slide possible)
+              newPosition.copy(zombie.position);
+              newPosition.x += slideDirection.x;
+              newPosition.z += slideDirection.z;
             }
             
-            logger.zombies.debug(`[COLLISION] Zombie ${zombie.id} hit wall at distance ${distanceToHit.toFixed(2)}, sliding along normal`);
+            logger.zombies.debug(`  [COLLISION] Zombie ${zombie.id} hit wall, sliding along normal`);
           } else {
-            // Moving away from wall, just stop before it
-            newPosition.copy(zombie.position).add(rayDir.clone().multiplyScalar(distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5));
+            // Moving away from wall or parallel, just stop before it
+            newPosition.copy(zombie.position);
+            newPosition.add(horizontalRayDir.clone().multiplyScalar(Math.max(0, distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5)));
+          }
+          
+          // CRITICAL: Ensure Y position never changes - zombies must remain grounded
+          newPosition.y = yPositionBefore;
+          logger.zombies.debug(`  Y Position After: ${newPosition.y.toFixed(2)}`);
+          
+          // Check if zombie is attempting vertical movement (should be rejected)
+          if (Math.abs(newPosition.y - yPositionBefore) > 0.001) {
+            logger.zombies.warn(`[REJECTED] Zombie ${zombie.id} attempted vertical movement from ${yPositionBefore.toFixed(2)} to ${newPosition.y.toFixed(2)}`);
+            newPosition.y = yPositionBefore;
           }
           
           break; // Handle first collision only
