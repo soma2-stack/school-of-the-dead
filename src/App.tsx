@@ -2312,6 +2312,7 @@ export default function App() {
           },
           stairDebugData,
           playerStairAnalysis,
+          zombieDebugData,
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
@@ -2467,7 +2468,7 @@ export default function App() {
             const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
             console.log('[APP] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
             for (let i = 0; i < totalZombies; i++) {
-              zombieManager.spawnZombie('player1');
+              zombieManager.spawnZombie();
               roundManager.registerZombieSpawn();
             }
             setRoundState({
@@ -2482,7 +2483,7 @@ export default function App() {
           const zombieManager = zombieManagerRef.current;
           const roundManager = getRoundManager();
           if (zombieManager) {
-            zombieManager.killAllZombies();
+            zombieManager.clearAllZombies();
             // Kill all remaining zombies in round manager
             const remaining = roundManager.getZombiesRemaining();
             for (let i = 0; i < remaining; i++) {
@@ -2501,7 +2502,7 @@ export default function App() {
           const roundManager = getRoundManager();
           if (zombieManager) {
             for (let i = 0; i < count; i++) {
-              zombieManager.spawnZombie('player1');
+              zombieManager.spawnZombie();
               roundManager.registerZombieSpawn();
             }
             setRoundState({
