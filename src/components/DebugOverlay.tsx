@@ -247,7 +247,7 @@ const DebugOverlay: React.FC<Props> = ({
     position: 'absolute',
     top: 10,
     left: 10,
-    zIndex: 1000,
+    zIndex: 999999,
     fontFamily: 'monospace',
     fontSize: '12px',
     color: '#0f0',
@@ -258,6 +258,7 @@ const DebugOverlay: React.FC<Props> = ({
     minWidth: '280px',
     maxWidth: '450px',
     userSelect: 'none',
+    pointerEvents: 'auto',
   };
 
   const headerStyle: React.CSSProperties = {
@@ -365,14 +366,42 @@ const DebugOverlay: React.FC<Props> = ({
         </div>
 
         {isOpen && (
-          <div style={tabsStyle}>
-            <div style={tabStyle(activeTab === 'audit')} onClick={() => setActiveTab('audit')}>AUDIT</div>
-            <div style={tabStyle(activeTab === 'doors')} onClick={() => setActiveTab('doors')}>DOORS</div>
-            <div style={tabStyle(activeTab === 'player')} onClick={() => setActiveTab('player')}>PLAYER</div>
-            <div style={tabStyle(activeTab === 'rounds')} onClick={() => setActiveTab('rounds')}>ROUNDS</div>
-            <div style={tabStyle(activeTab === 'zombies')} onClick={() => setActiveTab('zombies')}>ZOMBIES</div>
-            <div style={tabStyle(activeTab === 'perf')} onClick={() => setActiveTab('perf')}>PERF</div>
-            <div style={tabStyle(activeTab === 'stairs')} onClick={() => setActiveTab('stairs')}>STAIRS</div>
+          <div style={tabsStyle} data-testid="debug-tabs">
+            <div 
+              style={tabStyle(activeTab === 'audit')} 
+              onClick={() => { console.log("CLICK TEST - AUDIT TAB"); setActiveTab('audit'); }}
+              data-testid="tab-audit"
+            >AUDIT</div>
+            <div 
+              style={tabStyle(activeTab === 'doors')} 
+              onClick={() => { console.log("CLICK TEST - DOORS TAB"); setActiveTab('doors'); }}
+              data-testid="tab-doors"
+            >DOORS</div>
+            <div 
+              style={tabStyle(activeTab === 'player')} 
+              onClick={() => { console.log("CLICK TEST - PLAYER TAB"); setActiveTab('player'); }}
+              data-testid="tab-player"
+            >PLAYER</div>
+            <div 
+              style={tabStyle(activeTab === 'rounds')} 
+              onClick={() => { console.log("CLICK TEST - ROUNDS TAB"); setActiveTab('rounds'); }}
+              data-testid="tab-rounds"
+            >ROUNDS</div>
+            <div 
+              style={tabStyle(activeTab === 'zombies')} 
+              onClick={() => { console.log("CLICK TEST - ZOMBIES TAB"); setActiveTab('zombies'); }}
+              data-testid="tab-zombies"
+            >ZOMBIES</div>
+            <div 
+              style={tabStyle(activeTab === 'perf')} 
+              onClick={() => { console.log("CLICK TEST - PERF TAB"); setActiveTab('perf'); }}
+              data-testid="tab-perf"
+            >PERF</div>
+            <div 
+              style={tabStyle(activeTab === 'stairs')} 
+              onClick={() => { console.log("CLICK TEST - STAIRS TAB"); setActiveTab('stairs'); }}
+              data-testid="tab-stairs"
+            >STAIRS</div>
           </div>
         )}
 
@@ -516,7 +545,7 @@ const DebugOverlay: React.FC<Props> = ({
                     {[500, 1000, 5000, 10000].map(amt => (
                       <button
                         key={amt}
-                        onClick={() => onAddPoints?.(amt)}
+                        onClick={() => { console.log("PLAYER BUTTON CLICKED - ADD POINTS:", amt); onAddPoints?.(amt); }}
                         style={{
                           ...buttonStyle,
                           marginTop: 0,
@@ -525,6 +554,7 @@ const DebugOverlay: React.FC<Props> = ({
                           padding: '4px 8px',
                           fontSize: '9px',
                         }}
+                        data-testid={`add-points-${amt}`}
                       >
                         +{amt.toLocaleString()}
                       </button>
@@ -716,13 +746,14 @@ const DebugOverlay: React.FC<Props> = ({
               {/* Action Buttons */}
               <div style={{ marginBottom: '10px' }}>
                 <button
-                  onClick={() => onKillAllZombies?.()}
+                  onClick={() => { console.log("KILL BUTTON CLICKED"); onKillAllZombies?.(); }}
                   style={{
                     ...buttonStyle,
                     backgroundColor: '#991b1b',
                     borderColor: '#f00',
                     marginBottom: '4px',
                   }}
+                  data-testid="kill-all-zombies-button"
                 >
                   💀 KILL ALL ZOMBIES
                 </button>

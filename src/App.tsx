@@ -2155,12 +2155,12 @@ export default function App() {
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden select-none">
       {/* Points Display */}
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-[999998]" style={{ pointerEvents: 'none' }}>
         <PointsDisplay playerId="player1" />
       </div>
 
-      <div ref={mountRef} className="absolute inset-0">
-        <canvas ref={canvasRef} className="block w-full h-full" />
+      <div ref={mountRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+        <canvas ref={canvasRef} className="block w-full h-full" style={{ pointerEvents: 'auto' }} />
       </div>
 
       {/* Crosshair */}
@@ -2221,7 +2221,7 @@ export default function App() {
 
           {/* Issues list */}
           {validationIssues.length > 0 && (
-            <div className="absolute top-4 right-4 max-w-md max-h-96 overflow-y-auto pointer-events-auto z-10">
+            <div className="absolute top-4 right-4 max-w-md max-h-96 overflow-y-auto pointer-events-auto z-[999997]">
               <div className="bg-black/80 border border-red-500/50 rounded-lg p-3">
                 <div className="text-xs font-mono text-red-300 font-bold mb-2">DETECTED ISSUES</div>
                 <div className="space-y-1">
