@@ -10,7 +10,8 @@ import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
-import { getZombieManager, ZombieManager } from './utils/zombies';
+import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
+import { getRoundManager, RoundManager } from './utils/rounds';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================

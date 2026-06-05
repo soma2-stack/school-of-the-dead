@@ -77,6 +77,26 @@ export interface DebugData {
   playerStairAnalysis?: PlayerStairAnalysis;
   // Door audit data
   doorAuditReport?: DoorAuditReport | null;
+  // Zombie debug data
+  zombieDebugData?: ZombieDebugData;
+}
+
+export interface ZombieDebugData {
+  aliveCount: number;
+  deadCount: number;
+  currentRound: number;
+  expectedZombiesThisRound: number;
+  killsThisRound: number;
+  zombies: ZombieDebugEntry[];
+}
+
+export interface ZombieDebugEntry {
+  id: string;
+  health: number;
+  maxHealth: number;
+  position: { x: number; y: number; z: number };
+  distanceToPlayer: number;
+  state: 'alive' | 'dying' | 'dead';
 }
 
 interface Props {
@@ -320,6 +340,9 @@ const DebugOverlay: React.FC<Props> = ({
             </div>
             <div style={tabStyle(activeTab === 'rounds')} onClick={() => setActiveTab('rounds')}>
               ROUNDS
+            </div>
+            <div style={tabStyle(activeTab === 'zombies')} onClick={() => setActiveTab('zombies')}>
+              ZOMBIES
             </div>
             <div style={tabStyle(activeTab === 'perf')} onClick={() => setActiveTab('perf')}>
               PERF
@@ -622,6 +645,138 @@ const DebugOverlay: React.FC<Props> = ({
                 <span>Spawn Status:</span>
                 <span>{data.spawnStatus}</span>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'zombies' && data.zombieDebugData && (
+            <div>
+              {/* Summary Stats */}
+              <div style={{
+                border: '1px solid #f00',
+                backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                padding: '8px',
+                marginBottom: '10px',
+                borderRadius: '4px'
+              }}>
+                <strong style={{ color: '#f00', display: 'block', marginBottom: '6px' }}>
+                  ZOMBIE STATUS
+                </strong>
+                <div style={{ fontSize: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                  <span>Alive Zombies:</span>
+                  <span style={{ color: '#0f0' }}>{data.zombieDebugData.aliveCount}</span>
+
+                  <span>Dead Zombies:</span>
+                  <span style={{ color: '#888' }}>{data.zombieDebugData.deadCount}</span>
+
+                  <span>Current Round:</span>
+                  <span style={{ color: '#ff0' }}>{data.zombieDebugData.currentRound}</span>
+
+                  <span>Expected This Round:</span>
+                  <span>{data.zombieDebugData.expectedZombiesThisRound}</span>
+
+                  <span>Kills This Round:</span>
+                  <span style={{ color: '#0ff' }}>{data.zombieDebugData.killsThisRound}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent('zombie-debug-kill-all'))}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: '#991b1b',
+                    borderColor: '#f00',
+                    marginBottom: '4px',
+                  }}
+                >
+                  💀 KILL ALL ZOMBIES
+                </button>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('zombie-debug-spawn-1'))}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: '#166534',
+                      borderColor: '#0f0',
+                      flex: 1,
+                    }}
+                  >
+                    🧟 SPAWN 1 ZOMBIE
+                  </button>
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('zombie-debug-spawn-10'))}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: '#166534',
+                      borderColor: '#0f0',
+                      flex: 1,
+                    }}
+                  >
+                    🧟🧟 SPAWN 10 ZOMBIES
+                  </button>
+                </div>
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent('zombie-debug-next-round'))}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: '#1e3a8a',
+                    borderColor: '#00f',
+                    marginTop: '4px',
+                  }}
+                >
+                  🔄 START NEXT ROUND
+                </button>
+              </div>
+
+              {/* Zombie List */}
+              <div style={{
+                border: '1px solid #333',
+                borderRadius: '4px',
+                maxHeight: '300px',
+                overflowY: 'auto',
+              }}>
+                <strong style={{ color: '#f88', display: 'block', padding: '6px', borderBottom: '1px solid #333' }}>
+                  ZOMBIE DETAILS ({data.zombieDebugData.zombies.length})
+                </strong>
+                {data.zombieDebugData.zombies.map((zombie, idx) => (
+                  <div
+                    key={zombie.id}
+                    style={{
+                      padding: '6px',
+                      borderBottom: '1px solid #222',
+                      backgroundColor: zombie.state === 'alive' ? 'rgba(0, 255, 0, 0.05)' : 'rgba(255, 0, 0, 0.05)',
+                      fontSize: '9px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <strong style={{ color: zombie.state === 'alive' ? '#0f0' : '#f00' }}>
+                        #{idx + 1} - {zombie.id.slice(-8)}
+                      </strong>
+                      <span style={{ 
+                        color: zombie.state === 'alive' ? '#0f0' : zombie.state === 'dying' ? '#ff0' : '#f00',
+                        fontWeight: 'bold',
+                      }}>
+                        [{zombie.state.toUpperCase()}]
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+                      <span>Health: {zombie.health}/{zombie.maxHealth}</span>
+                      <span>Dist: {zombie.distanceToPlayer.toFixed(1)}</span>
+                      <span>X: {zombie.position.x.toFixed(1)}</span>
+                      <span>Z: {zombie.position.z.toFixed(1)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'zombies' && !data.zombieDebugData && (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
+              No zombie data available. Start a round to see zombie debug info.
             </div>
           )}
 
