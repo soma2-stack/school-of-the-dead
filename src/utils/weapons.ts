@@ -94,8 +94,10 @@ export class WeaponManager {
     playerId: string
   ): FireResult {
     console.log('[WEAPON] Fire input received');
+    console.log('[WEAPON] weaponManager !== null:', this !== null);
 
     if (!this.canFire()) {
+      console.log('[WEAPON] canFire() returned false');
       return { success: false, reason: 'cannot_fire' };
     }
 

@@ -872,6 +872,7 @@ export default function App() {
 
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
+    console.log('[WEAPON] WeaponManager initialized:', weaponManagerRef.current !== null);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1350,35 +1351,62 @@ export default function App() {
       pitch.current -= e.movementY * 0.002;
       pitch.current = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch.current));
     };
-    const handleClick = () => { 
+    const handleClick = (e: MouseEvent) => { 
+      console.log('[INPUT] Mouse click received', e.button);
+      
       if (document.pointerLockElement !== canvas) {
+        console.log('[INPUT] Pointer not locked, requesting pointer lock');
         canvas?.requestPointerLock();
         return;
       }
       
+      console.log('[INPUT] Pointer is locked, proceeding to fire');
+      
       // Shooting - hitscan on left click when pointer locked
       if (zombieManagerRef.current && weaponManagerRef.current && isPointerLocked) {
+        console.log('[INPUT] All conditions met, calling shootZombie');
         shootZombie();
+      } else {
+        console.log('[INPUT] Conditions not met:', {
+          hasZombieManager: !!zombieManagerRef.current,
+          hasWeaponManager: !!weaponManagerRef.current,
+          isPointerLocked
+        });
       }
     };
     
     const shootZombie = () => {
+      console.log('[INPUT] shootZombie called');
       const zombieManager = zombieManagerRef.current;
       const weaponManager = weaponManagerRef.current;
-      if (!zombieManager || !weaponManager || !cameraRef.current) return;
+      if (!zombieManager || !weaponManager || !cameraRef.current) {
+        console.log('[INPUT] shootZombie aborted: missing dependencies', {
+          hasZombieManager: !!zombieManager,
+          hasWeaponManager: !!weaponManager,
+          hasCamera: !!cameraRef.current
+        });
+        return;
+      }
+      console.log('[INPUT] Attempting weapon fire');
       
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
       // Use weapon manager to fire
+      console.log('[INPUT] Calling weaponManager.fire()');
       const result = weaponManager.fire(raycaster, zombieManager, 'player');
       
       if (result.success && result.hitZombieId) {
         console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);
       }
     };
-    const handleLockChange = () => { setIsPointerLocked(document.pointerLockElement === canvas); };
+    const handleLockChange = () => { 
+      const locked = document.pointerLockElement === canvas;
+      console.log('[INPUT] Pointer lock changed:', locked);
+      setIsPointerLocked(locked);
+    };
+    console.log('[INPUT] Registering click event listener on canvas');
     canvas.addEventListener('click', handleClick);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('pointerlockchange', handleLockChange);
