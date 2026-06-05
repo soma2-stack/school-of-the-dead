@@ -8,6 +8,7 @@ import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
+import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
@@ -147,10 +148,12 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
     const t = Math.max(0, Math.min(1, (px - xMin) / r.w));
     return r.floorY + (1 - t) * climb;
   } else if (dir === 'S_N') {
+    // S_N: south (negative Z) is bottom (height=0), north (positive Z) is top (height=climb)
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + t * climb;
   } else if (dir === 'N_S') {
+    // N_S: north (positive Z) is bottom (height=0), south (negative Z) is top (height=climb)
     const zMin = r.cz - r.d / 2;
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + (1 - t) * climb;
@@ -351,6 +354,10 @@ export default function App() {
   const connectivityAuditorRef = useRef(getConnectivityAuditor());
   const [connectivityReport, setConnectivityReport] = useState<any>(null);
   
+  // Door Connectivity Audit state
+  const doorAuditorRef = useRef(getDoorAuditor());
+  const [doorAuditReport, setDoorAuditReport] = useState<DoorAuditReport | null>(null);
+  
   // Geometry Inspector state
   const [geometryInspectorEnabled, setGeometryInspectorEnabled] = useState<boolean>(false);
   const geometryInspectorRef = useRef<GeometryInspector | null>(null);
@@ -375,6 +382,12 @@ export default function App() {
     zombiesAlive: 0,
     spawnStatus: 'idle'
   });
+  
+  // Stair debug state
+  const [stairVisualDebugEnabled, setStairVisualDebugEnabled] = useState<boolean>(false);
+  const [stairCollisionDebugEnabled, setStairCollisionDebugEnabled] = useState<boolean>(false);
+  const [stairDebugData, setStairDebugData] = useState<any[]>([]);
+  const [playerStairAnalysis, setPlayerStairAnalysis] = useState<any>(null);
 
   // Debug Lighting toggle function (defined at component scope for JSX access)
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -871,42 +884,119 @@ export default function App() {
 
       // Staircase ramp
       if (r.isStaircase) {
-        const ramp = new THREE.Mesh(
-          new THREE.BoxGeometry(r.w, 0.3, r.d),
-          new THREE.MeshLambertMaterial({ color: 0x5a3020 })
-        );
-        ramp.position.set(r.cx, r.floorY + (r.climbHeight ?? r.h) / 2, r.cz);
         const climb = r.climbHeight ?? r.h;
         const dir = r.stairDirection || (r.w > r.d ? 'W_E' : 'N_S');
         
-        // DEBUG: Log stairwell transforms
-        console.log(`[STAIR DEBUG] Room: ${r.id}, dir: ${dir}, w: ${r.w}, d: ${r.d}, climb: ${climb}`);
-        
+        // Calculate angle first
+        let angle = 0;
         if (dir === 'W_E' || dir === 'E_W') {
-          const angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
-          ramp.rotation.z = angle;
-          console.log(`[STAIR DEBUG] X-axis stair, rotation.z = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+          angle = (dir === 'W_E' ? 1 : -1) * Math.atan2(climb, r.w);
         } else {
           // N_S or S_N
-          const angle = (dir === 'S_N' ? 1 : -1) * Math.atan2(climb, r.d);
-          ramp.rotation.x = angle;
-          console.log(`[STAIR DEBUG] Z-axis stair, dir=${dir}, rotation.x = ${angle.toFixed(4)} rad (${(angle * 180 / Math.PI).toFixed(2)}°)`);
+          // For S_N: south (negative Z) is bottom, north (positive Z) is top → need negative rotation.x
+          // For N_S: north (positive Z) is bottom, south (negative Z) is top → need positive rotation.x
+          angle = (dir === 'N_S' ? 1 : -1) * Math.atan2(climb, r.d);
         }
         
-        // DEBUG: Add wireframe overlay to visualize actual ramp orientation
+        // Calculate offsets for proper pivot positioning
+        // When rotating a box around its center, we need to offset position so the ramp sits correctly
+        const hypotenuse = dir === 'W_E' || dir === 'E_W' 
+          ? Math.sqrt(r.w * r.w + climb * climb) 
+          : Math.sqrt(r.d * r.d + climb * climb);
+        const yOffset = (hypotenuse - (dir === 'W_E' || dir === 'E_W' ? r.w : r.d)) / 2;
+        
+        // VISUAL stair mesh - bright BLUE
+        const visualRamp = new THREE.Mesh(
+          new THREE.BoxGeometry(r.w, 0.3, r.d),
+          new THREE.MeshLambertMaterial({ color: 0x0000ff, side: THREE.DoubleSide })
+        );
+        visualRamp.position.set(r.cx, r.floorY + climb / 2 + yOffset, r.cz);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          visualRamp.rotation.z = angle;
+        } else {
+          visualRamp.rotation.x = angle;
+        }
+        
+        scene.add(visualRamp);
+        
+        // COLLISION ramp - bright RED (invisible physics representation)
+        const collisionRamp = new THREE.Mesh(
+          new THREE.BoxGeometry(r.w, 0.3, r.d),
+          new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+        );
+        collisionRamp.position.set(r.cx, r.floorY + climb / 2 + yOffset, r.cz);
+        
+        if (dir === 'W_E' || dir === 'E_W') {
+          collisionRamp.rotation.z = angle;
+        } else {
+          collisionRamp.rotation.x = angle;
+        }
+        
+        scene.add(collisionRamp);
+        
+        // Calculate and log offsets between visual and collision
+        const offsetX = visualRamp.position.x - collisionRamp.position.x;
+        const offsetY = visualRamp.position.y - collisionRamp.position.y;
+        const offsetZ = visualRamp.position.z - collisionRamp.position.z;
+        
+        // Add wireframe overlay to visualize actual ramp orientation
         const wireframe = new THREE.LineSegments(
           new THREE.WireframeGeometry(new THREE.BoxGeometry(r.w, 0.3, r.d)),
           new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 })
         );
-        wireframe.position.copy(ramp.position);
-        wireframe.rotation.copy(ramp.rotation);
+        wireframe.position.copy(visualRamp.position);
+        wireframe.rotation.copy(visualRamp.rotation);
         scene.add(wireframe);
-        console.log(`[STAIR DEBUG] ${r.name} visual center: (${r.cx}, ${r.floorY + climb/2}, ${r.cz})`);
         
-        scene.add(ramp);
+        // Store stair debug data for the STAIRS tab
+        const rotationDiffX = Math.abs(visualRamp.rotation.x - collisionRamp.rotation.x);
+        const rotationDiffY = Math.abs(visualRamp.rotation.y - collisionRamp.rotation.y);
+        const rotationDiffZ = Math.abs(visualRamp.rotation.z - collisionRamp.rotation.z);
+        const isMisaligned = Math.abs(offsetX) > 0.01 || Math.abs(offsetY) > 0.01 || Math.abs(offsetZ) > 0.01 ||
+                             rotationDiffX > 0.001 || rotationDiffY > 0.001 || rotationDiffZ > 0.001;
+        
+        // Calculate validation deltas
+        const positionDelta = Math.sqrt(offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ);
+        const rotationDelta = Math.sqrt(rotationDiffX * rotationDiffX + rotationDiffY * rotationDiffY + rotationDiffZ * rotationDiffZ);
+        const heightDelta = Math.abs((visualRamp.position.y - r.floorY) - (collisionRamp.position.y - r.floorY));
+        const validationPass = positionDelta < 0.01 && rotationDelta < 0.001 && heightDelta < 0.01;
+        
+        setStairDebugData((prev) => [
+          ...prev,
+          {
+            id: r.id,
+            name: r.name,
+            direction: dir,
+            visualPosition: { x: visualRamp.position.x, y: visualRamp.position.y, z: visualRamp.position.z },
+            visualRotation: { x: visualRamp.rotation.x, y: visualRamp.rotation.y, z: visualRamp.rotation.z },
+            visualScale: { x: visualRamp.scale.x, y: visualRamp.scale.y, z: visualRamp.scale.z },
+            collisionPosition: { x: collisionRamp.position.x, y: collisionRamp.position.y, z: collisionRamp.position.z },
+            collisionRotation: { x: collisionRamp.rotation.x, y: collisionRamp.rotation.y, z: collisionRamp.rotation.z },
+            collisionScale: { x: collisionRamp.scale.x, y: collisionRamp.scale.y, z: collisionRamp.scale.z },
+            offsetX,
+            offsetY,
+            offsetZ,
+            rotationDiffX,
+            rotationDiffY,
+            rotationDiffZ,
+            width: r.w,
+            depth: r.d,
+            climbHeight: climb,
+            isMisaligned,
+            misalignmentWarning: isMisaligned ? `MISALIGNED STAIR DETECTED - Offset: (${offsetX.toFixed(4)}, ${offsetY.toFixed(4)}, ${offsetZ.toFixed(4)})` : undefined,
+            // Validation data
+            positionDelta,
+            rotationDelta,
+            heightDelta,
+            validationPass,
+          },
+        ]);
       }
     };
 
+    // Reset stair debug data before building rooms
+    setStairDebugData([]);
     INITIAL_ROOMS.forEach(r => buildRoom(r));
 
     // Props
@@ -1125,21 +1215,7 @@ export default function App() {
           playerFeetY >= roomMinY &&
           playerFeetY <= roomMaxY;
         
-        console.log(`ROOM CHECK: ${room.name}`);
-        console.log(`Player: ${px} ${pz} ${py}`);
-        console.log("Bounds:");
-        console.log(`xMin=${xMin}`);
-        console.log(`xMax=${xMax}`);
-        console.log(`zMin=${zMin}`);
-        console.log(`zMax=${zMax}`);
-        console.log("");
-        console.log(`insideX=${insideX}`);
-        console.log(`insideZ=${insideZ}`);
-        console.log(`insideY=${insideY}`);
-        console.log("");
-        
         if (insideX && insideZ && insideY) {
-          console.log("RETURNING ROOM", room.name);
           return room;
         }
       }
@@ -1162,7 +1238,6 @@ export default function App() {
     const tryMove = (pos: THREE.Vector3, delta: THREE.Vector3): THREE.Vector3 => {
       const next = pos.clone().add(delta);
       const currentRoom = getRoomAtPos(pos.x, pos.z, pos.y);
-      console.log("tryMove ROOM RETURNED", currentRoom?.name);
       if (!currentRoom) return next;
       const xMin = currentRoom.cx - currentRoom.w / 2; const xMax = currentRoom.cx + currentRoom.w / 2;
       const zMin = currentRoom.cz - currentRoom.d / 2; const zMax = currentRoom.cz + currentRoom.d / 2;
@@ -1310,7 +1385,6 @@ export default function App() {
       } else {
         velocityY.current -= 30 * dt;
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
-        console.log("physics ROOM RETURNED", currentRoom?.name);
         
         // TEMPORARY: Update room state directly from physics loop
         const detectedRoom = getRoomAtPos(
@@ -1319,7 +1393,6 @@ export default function App() {
           playerPos.current.y
         );
         setCurrentRoomName(detectedRoom?.name || "None");
-        console.log("ROOM STATE UPDATED FROM PHYSICS", detectedRoom?.name);
         
         let groundY = currentRoom
           ? (currentRoom.isStaircase
@@ -1330,8 +1403,26 @@ export default function App() {
         // DEBUG: Log stair collision detection
         if (currentRoom?.isStaircase) {
           const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
-          console.log(`[STAIR COLLISION] Room: ${currentRoom.name}, Player: (${playerPos.current.x.toFixed(2)}, ${playerPos.current.z.toFixed(2)}), StairHeight: ${stairHeight.toFixed(2)}, groundY: ${groundY.toFixed(2)}`);
-          console.log(`[STAIR COLLISION] Room bounds: cx=${currentRoom.cx}, cz=${currentRoom.cz}, w=${currentRoom.w}, d=${currentRoom.d}, dir=${currentRoom.stairDirection}`);
+          
+          // Update player stair analysis for the STAIRS tab
+          setPlayerStairAnalysis({
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            currentRoomId: currentRoom.id,
+            expectedRampHeight: stairHeight,
+            actualPlayerHeight: playerPos.current.y,
+            heightDifference: playerPos.current.y - stairHeight,
+            isInStairwell: true,
+          });
+        } else {
+          // Not in a stairwell - clear or update player stair analysis
+          setPlayerStairAnalysis({
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            currentRoomId: currentRoom?.id || null,
+            expectedRampHeight: null,
+            actualPlayerHeight: playerPos.current.y,
+            heightDifference: 0,
+            isInStairwell: false,
+          });
         }
         playerPos.current.y += velocityY.current * dt;
         if (playerPos.current.y <= groundY) {
@@ -1573,17 +1664,12 @@ export default function App() {
         
         // Get current room name
         const currentRoom = getRoomAtPos(playerPos.current.x, playerPos.current.z, playerPos.current.y);
-        console.log("RENDER ROOM RETURNED", currentRoom?.name);
         const newRoomName = currentRoom?.name || 'None';
-        console.log("SETTING ROOM STATE", newRoomName);
-        console.log("CURRENT ROOM STATE BEFORE", currentRoomName);
         setCurrentRoomName(newRoomName);
-        console.log("CURRENT ROOM STATE AFTER SET", newRoomName);
         
         // Debug logging every 60 frames (~1 second)
         if ((window as any).__debugFrameCount % 60 === 0) {
           console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
-          console.log(`[ROOM DEBUG] State check - currentRoomName will be: ${newRoomName}`);
           if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
             const firstRoom = INITIAL_ROOMS[0];
             console.log(`[ROOM DEBUG] First room '${firstRoom.name}' bounds: X[${firstRoom.cx - firstRoom.w/2}, ${firstRoom.cx + firstRoom.w/2}] Z[${firstRoom.cz - firstRoom.d/2}, ${firstRoom.cz + firstRoom.d/2}]`);
@@ -1724,6 +1810,8 @@ export default function App() {
             currentRoom: currentRoomName,
             rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
           },
+          stairDebugData,
+          playerStairAnalysis,
         }}
         onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
         onRunConnectivity={() => {
@@ -1762,6 +1850,12 @@ export default function App() {
           if (debugLightingEnabled && ambientLightRef.current) {
             ambientLightRef.current.intensity = brightness;
           }
+        }}
+        onStairVisualToggle={(enabled: boolean) => {
+          setStairVisualDebugEnabled(enabled);
+        }}
+        onStairCollisionToggle={(enabled: boolean) => {
+          setStairCollisionDebugEnabled(enabled);
         }}
       />
 
