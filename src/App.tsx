@@ -2415,8 +2415,8 @@ export default function App() {
           // Update React state to reflect changes
           setRoundState({
             round: roundManager.getCurrentRound(),
-            zombiesAlive: roundManager.getZombiesAlive(),
-            spawnStatus: roundManager.getSpawnStatus(),
+            zombiesAlive: roundManager.getZombiesRemaining(),
+            spawnStatus: roundManager.getState(),
           });
         }}
         onNextRound={() => {
@@ -2424,34 +2424,38 @@ export default function App() {
           const roundManager = getRoundManager();
           const currentRound = roundManager.getCurrentRound();
           console.log('[APP] Current round before next:', currentRound);
-          roundManager.nextRound();
+          roundManager.forceNextRound();
           console.log('[APP] Current round after next:', roundManager.getCurrentRound());
           setRoundState({
             round: roundManager.getCurrentRound(),
-            zombiesAlive: roundManager.getZombiesAlive(),
-            spawnStatus: roundManager.getSpawnStatus(),
+            zombiesAlive: roundManager.getZombiesRemaining(),
+            spawnStatus: roundManager.getState(),
           });
         }}
         onPreviousRound={() => {
           console.log('[APP] onPreviousRound called');
           const roundManager = getRoundManager();
-          console.log('[APP] Current round before prev:', roundManager.getCurrentRound());
-          roundManager.previousRound();
-          console.log('[APP] Current round after prev:', roundManager.getCurrentRound());
+          const currentRound = roundManager.getCurrentRound();
+          console.log('[APP] Current round before prev:', currentRound);
+          // No previousRound method exists - manually decrement if possible
+          const newRound = Math.max(1, currentRound - 1);
+          // We can't directly set the round, so we just update React state for display
+          // The actual round manager doesn't support going backwards
+          console.log('[APP] Cannot go to previous round via RoundManager (not supported). Display only:', newRound);
           setRoundState({
-            round: roundManager.getCurrentRound(),
-            zombiesAlive: roundManager.getZombiesAlive(),
-            spawnStatus: roundManager.getSpawnStatus(),
+            round: newRound,
+            zombiesAlive: roundManager.getZombiesRemaining(),
+            spawnStatus: roundManager.getState(),
           });
         }}
         onForceEndRound={() => {
           console.log('[APP] onForceEndRound called');
           const roundManager = getRoundManager();
-          roundManager.forceEndRound();
+          roundManager.endRound();
           setRoundState({
             round: roundManager.getCurrentRound(),
-            zombiesAlive: roundManager.getZombiesAlive(),
-            spawnStatus: roundManager.getSpawnStatus(),
+            zombiesAlive: roundManager.getZombiesRemaining(),
+            spawnStatus: roundManager.getState(),
           });
         }}
         onSpawnCurrentWave={() => {
@@ -2459,37 +2463,51 @@ export default function App() {
           const roundManager = getRoundManager();
           const zombieManager = zombieManagerRef.current;
           if (zombieManager) {
-            roundManager.spawnCurrentWave(zombieManager);
+            // spawnCurrentWave doesn't exist on RoundManager - spawn based on round config
+            const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
+            console.log('[APP] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
+            for (let i = 0; i < totalZombies; i++) {
+              zombieManager.spawnZombie('player1');
+              roundManager.registerZombieSpawn();
+            }
             setRoundState({
               round: roundManager.getCurrentRound(),
-              zombiesAlive: roundManager.getZombiesAlive(),
-              spawnStatus: roundManager.getSpawnStatus(),
+              zombiesAlive: roundManager.getZombiesRemaining(),
+              spawnStatus: roundManager.getState(),
             });
           }
         }}
         onKillAllZombies={() => {
           console.log('[APP] onKillAllZombies called');
           const zombieManager = zombieManagerRef.current;
+          const roundManager = getRoundManager();
           if (zombieManager) {
             zombieManager.killAllZombies();
+            // Kill all remaining zombies in round manager
+            const remaining = roundManager.getZombiesRemaining();
+            for (let i = 0; i < remaining; i++) {
+              roundManager.registerZombieKill();
+            }
             setRoundState({
               round: roundState.round,
-              zombiesAlive: roundManager.getZombiesAlive(),
-              spawnStatus: roundManager.getSpawnStatus(),
+              zombiesAlive: roundManager.getZombiesRemaining(),
+              spawnStatus: roundManager.getState(),
             });
           }
         }}
         onSpawnZombie={(count: number) => {
           console.log('[APP] onSpawnZombie called with count:', count);
           const zombieManager = zombieManagerRef.current;
+          const roundManager = getRoundManager();
           if (zombieManager) {
             for (let i = 0; i < count; i++) {
               zombieManager.spawnZombie('player1');
+              roundManager.registerZombieSpawn();
             }
             setRoundState({
               round: roundState.round,
-              zombiesAlive: roundManager.getZombiesAlive(),
-              spawnStatus: roundManager.getSpawnStatus(),
+              zombiesAlive: roundManager.getZombiesRemaining(),
+              spawnStatus: roundManager.getState(),
             });
           }
         }}
