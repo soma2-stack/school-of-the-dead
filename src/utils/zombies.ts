@@ -432,6 +432,67 @@ export class ZombieManager {
     this.clearAllZombies();
     this.scene = null;
   }
+
+  // ==========================================================================
+  // Debug Data
+  // ==========================================================================
+
+  getDebugData(playerPosition: THREE.Vector3): {
+    aliveCount: number;
+    deadCount: number;
+    currentRound: number;
+    expectedZombiesThisRound: number;
+    killsThisRound: number;
+    zombies: Array<{
+      id: string;
+      health: number;
+      maxHealth: number;
+      position: { x: number; y: number; z: number };
+      distanceToPlayer: number;
+      state: 'alive' | 'dying' | 'dead';
+    }>;
+  } {
+    const roundManager = getRoundManager();
+    const roundState = roundManager.getRoundState();
+    
+    let aliveCount = 0;
+    let deadCount = 0;
+    const zombiesList: Array<{
+      id: string;
+      health: number;
+      maxHealth: number;
+      position: { x: number; y: number; z: number };
+      distanceToPlayer: number;
+      state: 'alive' | 'dying' | 'dead';
+    }> = [];
+
+    this.zombies.forEach(zombie => {
+      if (zombie.state === 'alive') {
+        aliveCount++;
+      } else {
+        deadCount++;
+      }
+
+      const distance = zombie.position.distanceTo(playerPosition);
+      zombiesList.push({
+        id: zombie.id,
+        health: zombie.health,
+        maxHealth: zombie.maxHealth,
+        position: { x: zombie.position.x, y: zombie.position.y, z: zombie.position.z },
+        distanceToPlayer: distance,
+        state: zombie.state,
+      });
+    });
+
+    return {
+      aliveCount,
+      deadCount,
+      currentRound: roundState.round,
+      expectedZombiesThisRound: roundState.expectedZombies,
+      killsThisRound: roundState.killsThisRound,
+      zombies: zombiesList,
+    };
+  }
 }
 
 // ============================================================================

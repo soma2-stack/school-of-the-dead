@@ -407,6 +407,17 @@ export class RoundManager {
   }
 
   /**
+   * Get round state for debug UI
+   */
+  getDebugState(): { round: number; expectedZombies: number; killsThisRound: number } {
+    return {
+      round: this.roundData.currentRound,
+      expectedZombies: this.roundData.totalZombiesSpawned,
+      killsThisRound: this.roundData.zombiesKilled,
+    };
+  }
+
+  /**
    * Get complete system snapshot for save/load
    */
   getSnapshot(): RoundSnapshot {

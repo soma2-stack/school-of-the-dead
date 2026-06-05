@@ -391,9 +391,13 @@ export default function App() {
   const [stairDebugData, setStairDebugData] = useState<any[]>([]);
   const [playerStairAnalysis, setPlayerStairAnalysis] = useState<any>(null);
 
+  // Zombie debug state (throttled)
+  const [zombieDebugData, setZombieDebugData] = useState<any>(null);
+
   // Refs for per-frame debug data to avoid re-renders
   const currentRoomNameRef = useRef<string>('');
   const playerStairAnalysisRef = useRef<any>(null);
+  const lastZombieDebugUpdate = useRef<number>(0);
 
   // Zombie manager ref
   const zombieManagerRef = useRef<ZombieManager | null>(null);
@@ -1807,6 +1811,13 @@ export default function App() {
       // Update zombies AI
       if (zombieManagerRef.current) {
         zombieManagerRef.current.update(dt, playerPos.current);
+        
+        // Throttled zombie debug data update (4 times per second = 250ms)
+        if (now - lastZombieDebugUpdate.current > 250) {
+          lastZombieDebugUpdate.current = now;
+          const debugData = zombieManagerRef.current.getDebugData(playerPos.current);
+          setZombieDebugData(debugData);
+        }
       }
 
       camera.position.copy(playerPos.current);
