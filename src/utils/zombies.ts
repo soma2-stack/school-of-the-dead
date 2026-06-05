@@ -453,7 +453,20 @@ export class ZombieManager {
     }>;
   } {
     const roundManager = getRoundManager();
-    const roundState = roundManager.getRoundState();
+    
+    // Defensive guard - return safe defaults if round manager not available
+    if (!roundManager) {
+      return {
+        aliveCount: 0,
+        deadCount: 0,
+        currentRound: 0,
+        expectedZombiesThisRound: 0,
+        killsThisRound: 0,
+        zombies: [],
+      };
+    }
+    
+    const roundDebug = roundManager.getDebugState();
     
     let aliveCount = 0;
     let deadCount = 0;
@@ -487,9 +500,9 @@ export class ZombieManager {
     return {
       aliveCount,
       deadCount,
-      currentRound: roundState.round,
-      expectedZombiesThisRound: roundState.expectedZombies,
-      killsThisRound: roundState.killsThisRound,
+      currentRound: roundDebug.round,
+      expectedZombiesThisRound: roundDebug.expectedZombies,
+      killsThisRound: roundDebug.killsThisRound,
       zombies: zombiesList,
     };
   }
