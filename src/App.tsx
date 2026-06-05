@@ -2357,6 +2357,142 @@ export default function App() {
         onStairCollisionToggle={(enabled: boolean) => {
           setStairCollisionDebugEnabled(enabled);
         }}
+        onAddPoints={(amount: number) => {
+          console.log('[APP] onAddPoints called with amount:', amount);
+          const pointsManager = getPointsManager();
+          const playerId = 'player1';
+          
+          // Ensure player is registered
+          if (!pointsManager.hasPlayer(playerId)) {
+            console.log('[APP] Registering player:', playerId);
+            pointsManager.registerPlayer(playerId);
+          }
+          
+          const currentState = pointsManager.getPlayerState(playerId);
+          console.log('[APP] Points BEFORE add:', currentState?.currentPoints ?? 0);
+          
+          const result = pointsManager.adjustPoints(playerId, amount, 'manual_adjustment');
+          console.log('[APP] adjustPoints result:', result);
+          
+          const newState = pointsManager.getPlayerState(playerId);
+          console.log('[APP] Points AFTER add:', newState?.currentPoints ?? 0);
+        }}
+        onSetPoints={(amount: number) => {
+          console.log('[APP] onSetPoints called with amount:', amount);
+          const pointsManager = getPointsManager();
+          const playerId = 'player1';
+          
+          if (!pointsManager.hasPlayer(playerId)) {
+            pointsManager.registerPlayer(playerId);
+          }
+          
+          const currentState = pointsManager.getPlayerState(playerId);
+          const currentPoints = currentState?.currentPoints ?? 0;
+          const delta = amount - currentPoints;
+          
+          console.log('[APP] Setting points from', currentPoints, 'to', amount, '(delta:', delta, ')');
+          const result = pointsManager.adjustPoints(playerId, delta, 'manual_adjustment');
+          console.log('[APP] adjustPoints result:', result);
+        }}
+        onRestoreHealth={() => {
+          console.log('[APP] onRestoreHealth called - Health restoration not yet implemented');
+        }}
+        onToggleGodMode={() => {
+          console.log('[APP] onToggleGodMode called - God mode not yet implemented');
+        }}
+        onTeleportToCurrentRoomSpawn={() => {
+          console.log('[APP] onTeleportToCurrentRoomSpawn called - Room spawn teleport not yet implemented');
+        }}
+        onToggleInfiniteAmmo={() => {
+          console.log('[APP] onToggleInfiniteAmmo called - Infinite ammo not yet implemented');
+        }}
+        onStartRound={(round: number) => {
+          console.log('[APP] onStartRound called with round:', round);
+          const roundManager = getRoundManager();
+          console.log('[APP] RoundManager state before start:', roundManager.getCurrentRound());
+          roundManager.startRound(round);
+          console.log('[APP] RoundManager state after start:', roundManager.getCurrentRound());
+          // Update React state to reflect changes
+          setRoundState({
+            round: roundManager.getCurrentRound(),
+            zombiesAlive: roundManager.getZombiesAlive(),
+            spawnStatus: roundManager.getSpawnStatus(),
+          });
+        }}
+        onNextRound={() => {
+          console.log('[APP] onNextRound called');
+          const roundManager = getRoundManager();
+          const currentRound = roundManager.getCurrentRound();
+          console.log('[APP] Current round before next:', currentRound);
+          roundManager.nextRound();
+          console.log('[APP] Current round after next:', roundManager.getCurrentRound());
+          setRoundState({
+            round: roundManager.getCurrentRound(),
+            zombiesAlive: roundManager.getZombiesAlive(),
+            spawnStatus: roundManager.getSpawnStatus(),
+          });
+        }}
+        onPreviousRound={() => {
+          console.log('[APP] onPreviousRound called');
+          const roundManager = getRoundManager();
+          console.log('[APP] Current round before prev:', roundManager.getCurrentRound());
+          roundManager.previousRound();
+          console.log('[APP] Current round after prev:', roundManager.getCurrentRound());
+          setRoundState({
+            round: roundManager.getCurrentRound(),
+            zombiesAlive: roundManager.getZombiesAlive(),
+            spawnStatus: roundManager.getSpawnStatus(),
+          });
+        }}
+        onForceEndRound={() => {
+          console.log('[APP] onForceEndRound called');
+          const roundManager = getRoundManager();
+          roundManager.forceEndRound();
+          setRoundState({
+            round: roundManager.getCurrentRound(),
+            zombiesAlive: roundManager.getZombiesAlive(),
+            spawnStatus: roundManager.getSpawnStatus(),
+          });
+        }}
+        onSpawnCurrentWave={() => {
+          console.log('[APP] onSpawnCurrentWave called');
+          const roundManager = getRoundManager();
+          const zombieManager = zombieManagerRef.current;
+          if (zombieManager) {
+            roundManager.spawnCurrentWave(zombieManager);
+            setRoundState({
+              round: roundManager.getCurrentRound(),
+              zombiesAlive: roundManager.getZombiesAlive(),
+              spawnStatus: roundManager.getSpawnStatus(),
+            });
+          }
+        }}
+        onKillAllZombies={() => {
+          console.log('[APP] onKillAllZombies called');
+          const zombieManager = zombieManagerRef.current;
+          if (zombieManager) {
+            zombieManager.killAllZombies();
+            setRoundState({
+              round: roundState.round,
+              zombiesAlive: roundManager.getZombiesAlive(),
+              spawnStatus: roundManager.getSpawnStatus(),
+            });
+          }
+        }}
+        onSpawnZombie={(count: number) => {
+          console.log('[APP] onSpawnZombie called with count:', count);
+          const zombieManager = zombieManagerRef.current;
+          if (zombieManager) {
+            for (let i = 0; i < count; i++) {
+              zombieManager.spawnZombie('player1');
+            }
+            setRoundState({
+              round: roundState.round,
+              zombiesAlive: roundManager.getZombiesAlive(),
+              spawnStatus: roundManager.getSpawnStatus(),
+            });
+          }
+        }}
       />
     </div>
   );

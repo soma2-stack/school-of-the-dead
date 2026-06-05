@@ -663,7 +663,7 @@ const DebugOverlay: React.FC<Props> = ({
                   {[1, 5, 10, 20, 50].map(r => (
                     <button
                       key={r}
-                      onClick={() => onStartRound?.(r)}
+                      onClick={() => { console.log("ROUND BUTTON CLICKED", r); onStartRound?.(r); }}
                       style={{
                         ...buttonStyle,
                         marginTop: 0,
@@ -684,13 +684,13 @@ const DebugOverlay: React.FC<Props> = ({
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button
-                    onClick={() => onPreviousRound?.()}
+                    onClick={() => { console.log("ROUND BUTTON CLICKED - Previous Round"); onPreviousRound?.(); }}
                     style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#4b5563' }}
                   >
                     ◀ Previous
                   </button>
                   <button
-                    onClick={() => onNextRound?.()}
+                    onClick={() => { console.log("ROUND BUTTON CLICKED - Next Round"); onNextRound?.(); }}
                     style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#1e3a8a' }}
                   >
                     Next ▶
