@@ -17,6 +17,9 @@ export const ZOMBIE_SEPARATION_RADIUS = 1.5;
 export const ZOMBIE_COLLISION_DISTANCE = 1.0;
 export const ZOMBIE_STUCK_THRESHOLD = 2.0; // seconds
 export const ZOMBIE_STUCK_RECOVERY_DISTANCE = 0.5;
+export const ZOMBIE_COLLISION_RADIUS = 1.2; // Radius for collision checks
+export const ZOMBIE_RAYCAST_DISTANCE = 2.0; // How far ahead to raycast
+export const ZOMBIE_SLIDE_FACTOR = 0.6; // How much to slide along walls
 
 export interface ZombieConfig {
   health: number;
@@ -68,6 +71,8 @@ export interface Zombie {
   // Collision and tracking fields
   stuckTimer?: number;
   lastPosition?: THREE.Vector3;
+  // Debug visualization
+  collisionHelper?: THREE.Mesh;
 }
 
 export interface ZombieSpawnPoint {
@@ -268,6 +273,45 @@ export class ZombieManager {
 
     this.scene.add(mesh);
     zombie.mesh = mesh;
+
+    // Create collision helper for debug visualization
+    this.createCollisionHelper(zombie);
+  }
+
+  private createCollisionHelper(zombie: Zombie): void {
+    if (!this.scene) return;
+
+    // Create a wireframe sphere to visualize collision bounds
+    const geometry = new THREE.SphereGeometry(ZOMBIE_COLLISION_RADIUS, 8, 8);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.5,
+    });
+
+    const helper = new THREE.Mesh(geometry, material);
+    helper.position.copy(zombie.position);
+    helper.position.y += zombie.config.height / 2;
+    
+    this.scene.add(helper);
+    zombie.collisionHelper = helper;
+  }
+
+  private removeCollisionHelper(zombie: Zombie): void {
+    if (!zombie.collisionHelper || !this.scene) return;
+
+    this.scene.remove(zombie.collisionHelper);
+    zombie.collisionHelper.geometry.dispose();
+    zombie.collisionHelper.material.dispose();
+    zombie.collisionHelper = undefined;
+  }
+
+  private updateCollisionHelper(zombie: Zombie): void {
+    if (!zombie.collisionHelper || !this.scene) return;
+
+    zombie.collisionHelper.position.copy(zombie.position);
+    zombie.collisionHelper.position.y += zombie.config.height / 2;
   }
 
   // ==========================================================================
@@ -287,6 +331,8 @@ export class ZombieManager {
     const moveStep = new THREE.Vector3();
     const wallNormal = new THREE.Vector3();
     const rayOrigin = new THREE.Vector3();
+    const slideDirection = new THREE.Vector3();
+    const newPosition = new THREE.Vector3();
     
     const raycaster = new THREE.Raycaster();
 
@@ -355,38 +401,33 @@ export class ZombieManager {
           direction.add(repulsion.multiplyScalar(0.8)).normalize();
         }
 
-        // 3. Wall Collision (Raycast ahead)
-        if (mapObjects.length > 0) {
-          rayOrigin.copy(zombie.position);
-          rayOrigin.y += 1; // Raycast from center of zombie
-          raycaster.set(rayOrigin, direction);
-          raycaster.far = ZOMBIE_COLLISION_DISTANCE;
-          
-          const intersects = raycaster.intersectObjects(mapObjects, true);
-          
-          if (intersects.length > 0) {
-            // Hit a wall. Slide along it.
-            const hit = intersects[0];
-            wallNormal.copy(hit.face?.normal || new THREE.Vector3(0, 1, 0));
-            
-            // Transform normal to world space
-            if (hit.object.matrixWorld) {
-              wallNormal.transformDirection(hit.object.matrixWorld).normalize();
-            }
-            
-            // Remove component of movement that goes INTO the wall
-            const dot = direction.dot(wallNormal);
-            if (dot < 0) {
-              direction.add(wallNormal.multiplyScalar(-dot));
-              direction.normalize();
-              logger.zombies.debug(`[PATH DEBUG] Zombie ${zombie.id} blocked by wall, sliding.`);
-            }
-          }
-        }
-
-        // Apply Movement
+        // Calculate movement step
         moveStep.copy(direction).multiplyScalar(zombie.config.speed * deltaTime);
-        zombie.position.add(moveStep);
+        
+        // 3. Wall Collision Detection and Resolution
+        if (mapObjects.length > 0) {
+          const collided = this.checkWallCollision(
+            zombie,
+            moveStep,
+            mapObjects,
+            raycaster,
+            rayOrigin,
+            wallNormal,
+            slideDirection,
+            newPosition
+          );
+          
+          if (collided) {
+            // Apply the collision-resolved position
+            zombie.position.copy(newPosition);
+          } else {
+            // No collision, apply normal movement
+            zombie.position.add(moveStep);
+          }
+        } else {
+          // No map objects, just move normally
+          zombie.position.add(moveStep);
+        }
 
         // Update mesh
         if (zombie.mesh) {
@@ -394,6 +435,9 @@ export class ZombieManager {
           zombie.mesh.position.y += zombie.config.height / 2;
           zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
         }
+        
+        // Update collision helper visualization
+        this.updateCollisionHelper(zombie);
       }
 
       // Check collision with player
@@ -404,6 +448,101 @@ export class ZombieManager {
 
     // Clean up dead zombies
     deadZombies.forEach(id => this.removeZombie(id));
+  }
+
+  /**
+   * Check for wall collisions and resolve them by sliding along walls.
+   * Returns true if collision occurred, false otherwise.
+   * If collision occurs, newPosition is set to the resolved position.
+   */
+  private checkWallCollision(
+    zombie: Zombie,
+    moveStep: THREE.Vector3,
+    mapObjects: THREE.Object3D[],
+    raycaster: THREE.Raycaster,
+    rayOrigin: THREE.Vector3,
+    wallNormal: THREE.Vector3,
+    slideDirection: THREE.Vector3,
+    newPosition: THREE.Vector3
+  ): boolean {
+    let hasCollision = false;
+    
+    // Calculate proposed new position
+    newPosition.copy(zombie.position).add(moveStep);
+    
+    // Raycast in the direction of movement from multiple points around the zombie
+    // to detect walls more reliably
+    const rayDirections = [
+      moveStep.clone().normalize(), // Forward
+    ];
+    
+    // Add side rays for better coverage
+    const sideOffset = new THREE.Vector3(-moveStep.z, 0, moveStep.x).normalize();
+    rayDirections.push(
+      sideOffset.clone().multiplyScalar(ZOMBIE_SLIDE_FACTOR).add(moveStep.clone().normalize()).normalize()
+    );
+    rayDirections.push(
+      sideOffset.clone().multiplyScalar(-ZOMBIE_SLIDE_FACTOR).add(moveStep.clone().normalize()).normalize()
+    );
+    
+    for (const rayDir of rayDirections) {
+      rayOrigin.copy(zombie.position);
+      rayOrigin.y += 1; // Raycast from center height
+      
+      raycaster.set(rayOrigin, rayDir);
+      raycaster.far = moveStep.length() + ZOMBIE_COLLISION_RADIUS;
+      
+      const intersects = raycaster.intersectObjects(mapObjects, true);
+      
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        const distanceToHit = hit.distance;
+        
+        // Check if we would hit the wall during this movement
+        if (distanceToHit < moveStep.length()) {
+          hasCollision = true;
+          
+          // Get wall normal in world space
+          wallNormal.copy(hit.face?.normal || new THREE.Vector3(0, 1, 0));
+          if (hit.object.matrixWorld) {
+            wallNormal.transformDirection(hit.object.matrixWorld).normalize();
+          }
+          
+          // Calculate slide direction: project movement onto the wall plane
+          const dot = moveStep.dot(wallNormal);
+          
+          // Only slide if moving towards the wall
+          if (dot < 0) {
+            // Remove the component of movement that goes into the wall
+            slideDirection.copy(moveStep).sub(wallNormal.clone().multiplyScalar(dot));
+            
+            // Normalize and scale to original speed (preserves momentum along wall)
+            if (slideDirection.lengthSq() > 0.001) {
+              slideDirection.normalize().multiplyScalar(moveStep.length());
+            }
+            
+            // Move the zombie to just before the wall, then slide
+            const safeDistance = distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5;
+            if (safeDistance > 0) {
+              newPosition.copy(zombie.position).add(rayDir.clone().multiplyScalar(safeDistance));
+              newPosition.add(slideDirection);
+            } else {
+              // Very close to wall, just slide along it
+              newPosition.copy(zombie.position).add(slideDirection);
+            }
+            
+            logger.zombies.debug(`[COLLISION] Zombie ${zombie.id} hit wall at distance ${distanceToHit.toFixed(2)}, sliding along normal`);
+          } else {
+            // Moving away from wall, just stop before it
+            newPosition.copy(zombie.position).add(rayDir.clone().multiplyScalar(distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5));
+          }
+          
+          break; // Handle first collision only
+        }
+      }
+    }
+    
+    return hasCollision;
   }
 
   private checkPlayerCollision(zombie: Zombie, playerPosition: THREE.Vector3): boolean {
@@ -484,6 +623,9 @@ export class ZombieManager {
         zombie.mesh.material.dispose();
       }
     }
+
+    // Remove collision helper from scene
+    this.removeCollisionHelper(zombie);
 
     this.zombies.delete(zombieId);
   }
