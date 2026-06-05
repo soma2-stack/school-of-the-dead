@@ -10,6 +10,7 @@ import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
+import { getZombieManager, ZombieManager } from './utils/zombies';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================
@@ -388,6 +389,9 @@ export default function App() {
   const [stairCollisionDebugEnabled, setStairCollisionDebugEnabled] = useState<boolean>(false);
   const [stairDebugData, setStairDebugData] = useState<any[]>([]);
   const [playerStairAnalysis, setPlayerStairAnalysis] = useState<any>(null);
+
+  // Zombie manager ref
+  const zombieManagerRef = useRef<ZombieManager | null>(null);
 
   // Debug Lighting toggle function (defined at component scope for JSX access)
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -821,6 +825,34 @@ export default function App() {
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
     camera.position.copy(playerPos.current);
     cameraRef.current = camera;
+
+    // Initialize Zombie Manager
+    zombieManagerRef.current = getZombieManager(scene);
+    
+    // Set up spawn points (starter room area)
+    zombieManagerRef.current.setSpawnPoints([
+      { x: 20, y: 0, z: -40, roomId: 'starter' },
+      { x: -20, y: 0, z: -40, roomId: 'starter' },
+      { x: 0, y: 0, z: -60, roomId: 'starter' },
+    ]);
+
+    // Handle zombie spawn events
+    zombieManagerRef.current.onSpawn((zombie) => {
+      console.log('Zombie spawned:', zombie.id);
+      setRoundState(prev => ({ ...prev, zombiesAlive: prev.zombiesAlive + 1 }));
+    });
+
+    // Handle zombie death events
+    zombieManagerRef.current.onDeath((zombie, playerId) => {
+      console.log('Zombie killed:', zombie.id, 'by player:', playerId);
+      setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
+    });
+
+    // Handle player damage events
+    zombieManagerRef.current.onPlayerDamage((damage, zombie) => {
+      console.log('Player damaged:', damage, 'by zombie:', zombie.id);
+      // Could add player health system here
+    });
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1301,7 +1333,46 @@ export default function App() {
       pitch.current -= e.movementY * 0.002;
       pitch.current = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch.current));
     };
-    const handleClick = () => { if (document.pointerLockElement !== canvas) canvas?.requestPointerLock(); };
+    const handleClick = () => { 
+      if (document.pointerLockElement !== canvas) {
+        canvas?.requestPointerLock();
+        return;
+      }
+      
+      // Shooting - hitscan on left click when pointer locked
+      if (zombieManagerRef.current && isPointerLocked) {
+        shootZombie();
+      }
+    };
+    
+    const shootZombie = () => {
+      const zombieManager = zombieManagerRef.current;
+      if (!zombieManager || !cameraRef.current) return;
+      
+      // Raycast from camera center
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
+      
+      // Check intersection with zombie meshes
+      const aliveZombies = zombieManager.getAliveZombies();
+      const zombieMeshes = aliveZombies
+        .map(z => z.mesh)
+        .filter((mesh): mesh is THREE.Mesh => mesh !== undefined);
+      
+      const intersects = raycaster.intersectObjects(zombieMeshes);
+      
+      if (intersects.length > 0) {
+        const hitObject = intersects[0].object;
+        // Find the zombie that owns this mesh
+        const hitZombie = aliveZombies.find(z => z.mesh === hitObject || z.mesh === hitObject.parent);
+        
+        if (hitZombie) {
+          // Deal damage (instant kill for simplicity - could add weapon system later)
+          zombieManager.damageZombie(hitZombie.id, 100, 'player');
+          console.log('Hit zombie:', hitZombie.id, 'Health:', hitZombie.health);
+        }
+      }
+    };
     const handleLockChange = () => { setIsPointerLocked(document.pointerLockElement === canvas); };
     canvas.addEventListener('click', handleClick);
     document.addEventListener('mousemove', handleMouseMove);
@@ -1709,6 +1780,11 @@ export default function App() {
         const moved = tryMove(playerPos.current, moveDir);
         playerPos.current.x = moved.x;
         playerPos.current.z = moved.z;
+      }
+
+      // Update zombies AI
+      if (zombieManagerRef.current) {
+        zombieManagerRef.current.update(dt, playerPos.current);
       }
 
       camera.position.copy(playerPos.current);
