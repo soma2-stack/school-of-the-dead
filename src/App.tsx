@@ -680,8 +680,119 @@ export default function App() {
       
       console.log('=========================');
       
+      // ========================================================================
+      // CONNECTION VALIDATION - Check for bidirectional consistency
+      // ========================================================================
+      console.log('\\n========================================');
+      console.log('         CONNECTION VALIDATION');
+      console.log('========================================\\n');
+      
+      const validationErrors: string[] = [];
+      const processedPairs = new Set<string>();
+      
+      for (const conn of report.allConnections) {
+        if (!conn.toRoomId) {
+          // Connection to VOID (exterior)
+          validationErrors.push(`[INVALID] ${conn.fromRoomName} -> VOID (Connection leads to exterior)`);
+          continue;
+        }
+        
+        // Create a unique key for this room pair (sorted to avoid duplicates)
+        const pairKey = [conn.fromRoomId, conn.toRoomId].sort().join('|');
+        if (processedPairs.has(pairKey)) continue;
+        processedPairs.add(pairKey);
+        
+        // Find the reverse connection
+        const reverseConn = report.allConnections.find(
+          c => c.fromRoomId === conn.toRoomId && c.toRoomId === conn.fromRoomId && c.side !== conn.side
+        );
+        
+        if (!reverseConn) {
+          validationErrors.push(`[INVALID] Missing reverse connection:`);
+          validationErrors.push(`  ${conn.fromRoomName} (${conn.side}) -> ${conn.toRoomName}`);
+          validationErrors.push(`  No corresponding ${getOppositeSide(conn.side)} connection from ${conn.toRoomName}`);
+          continue;
+        }
+        
+        // Check for type mismatches
+        const typeMismatch = conn.connectionType !== reverseConn.connectionType;
+        const costMismatch = conn.cost !== reverseConn.cost;
+        const purchasableMismatch = conn.isPurchasable !== reverseConn.isPurchasable;
+        
+        if (typeMismatch || costMismatch || purchasableMismatch) {
+          validationErrors.push(`[INVALID] Bidirectional mismatch:`);
+          validationErrors.push(`  ${conn.fromRoomName} <-> ${conn.toRoomName}`);
+          validationErrors.push(`  Side A (${conn.side}): Type=${conn.connectionType}, Cost=${conn.isPurchasable ? `$${conn.cost}` : 'FREE'}, Gap=${conn.gapWidth}`);
+          validationErrors.push(`  Side B (${reverseConn.side}): Type=${reverseConn.connectionType}, Cost=${reverseConn.isPurchasable ? `$${reverseConn.cost}` : 'FREE'}, Gap=${reverseConn.gapWidth}`);
+          
+          if (typeMismatch) {
+            const typePair = `${conn.connectionType}/${reverseConn.connectionType}`;
+            if ((conn.connectionType === 'Door' && reverseConn.connectionType === 'Open Passage') ||
+                (conn.connectionType === 'Open Passage' && reverseConn.connectionType === 'Door')) {
+              validationErrors.push(`  >> MISMATCH: Door vs Open Passage`);
+            } else if ((conn.connectionType === 'Door' && reverseConn.connectionType === 'Connector') ||
+                       (conn.connectionType === 'Connector' && reverseConn.connectionType === 'Door')) {
+              validationErrors.push(`  >> MISMATCH: Door vs Connector`);
+            } else if ((conn.connectionType === 'Door' && reverseConn.connectionType === 'Stairwell') ||
+                       (conn.connectionType === 'Stairwell' && reverseConn.connectionType === 'Door')) {
+              validationErrors.push(`  >> MISMATCH: Door vs Stairwell`);
+            } else {
+              validationErrors.push(`  >> MISMATCH: ${typePair}`);
+            }
+          }
+          if (costMismatch) {
+            validationErrors.push(`  >> MISMATCH: Cost differs ($${conn.cost} vs $${reverseConn.cost})`);
+          }
+          if (purchasableMismatch) {
+            validationErrors.push(`  >> MISMATCH: One side purchasable, other is not`);
+          }
+        }
+      }
+      
+      // Check for duplicate connections
+      const connectionSignatures = new Map<string, DoorConnection[]>();
+      for (const conn of report.allConnections) {
+        const sig = `${conn.fromRoomId}|${conn.toRoomId}|${conn.side}`;
+        if (!connectionSignatures.has(sig)) {
+          connectionSignatures.set(sig, []);
+        }
+        connectionSignatures.get(sig)!.push(conn);
+      }
+      
+      for (const [sig, connections] of connectionSignatures.entries()) {
+        if (connections.length > 1) {
+          const [fromId, toId, side] = sig.split('|');
+          const fromRoom = report.roomData.find(r => r.id === fromId);
+          const toRoom = report.roomData.find(r => r.id === toId);
+          validationErrors.push(`[DUPLICATE] Multiple connections on ${side} side:`);
+          validationErrors.push(`  ${fromRoom?.name} -> ${toRoom?.name} (${connections.length} entries)`);
+        }
+      }
+      
+      if (validationErrors.length === 0) {
+        console.log('All connections are valid and bidirectionally consistent.');
+      } else {
+        console.log(`Found ${validationErrors.length} validation issues:\\n`);
+        validationErrors.forEach(err => console.log(err));
+      }
+      
+      console.log('\\n========================================');
+      console.log('           END OF VALIDATION');
+      console.log('========================================\\n');
+      
+      console.log('=========================');
+      
       return report;
     };
+    
+    function getOppositeSide(side: 'N' | 'S' | 'E' | 'W'): 'N' | 'S' | 'E' | 'W' {
+      switch (side) {
+        case 'N': return 'S';
+        case 'S': return 'N';
+        case 'E': return 'W';
+        case 'W': return 'E';
+      }
+    }
     
     console.log("[DOOR AUDIT] Registered");
     console.log(typeof (window as any).runDoorAudit);
