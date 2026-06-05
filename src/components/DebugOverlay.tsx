@@ -703,7 +703,10 @@ const DebugOverlay: React.FC<Props> = ({
                   ⚠ FORCE END ROUND
                 </button>
                 <button
-                  onClick={() => onSpawnCurrentWave?.()}
+                  onClick={() => { 
+                    console.log('[ROUND FLOW] SPAWN CURRENT WAVE button clicked');
+                    onSpawnCurrentWave?.();
+                  }}
                   style={{ ...buttonStyle, marginTop: '4px', backgroundColor: '#166534', borderColor: '#0f0' }}
                 >
                   🧟 SPAWN CURRENT WAVE

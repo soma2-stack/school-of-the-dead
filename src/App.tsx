@@ -2463,11 +2463,13 @@ export default function App() {
           console.log('[APP] onToggleInfiniteAmmo called - Infinite ammo not yet implemented');
         }}
         onStartRound={(round: number) => {
+          console.log('[ROUND FLOW] Start Current Wave button clicked');
           console.log('[APP] onStartRound called with round:', round);
           const roundManager = getRoundManager();
-          console.log('[APP] RoundManager state before start:', roundManager.getCurrentRound());
+          console.log('[ROUND FLOW] Calling roundManager.startRound()');
+          console.log('[APP] RoundManager state before start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           roundManager.startRound(round);
-          console.log('[APP] RoundManager state after start:', roundManager.getCurrentRound());
+          console.log('[APP] RoundManager state after start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           // Update React state to reflect changes
           setRoundState({
             round: roundManager.getCurrentRound(),
@@ -2476,12 +2478,14 @@ export default function App() {
           });
         }}
         onNextRound={() => {
+          console.log('[ROUND FLOW] NEXT ROUND button clicked');
           console.log('[APP] onNextRound called');
           const roundManager = getRoundManager();
           const currentRound = roundManager.getCurrentRound();
-          console.log('[APP] Current round before next:', currentRound);
+          console.log('[APP] Current round before next:', currentRound, 'state:', roundManager.getState());
+          console.log('[ROUND FLOW] Calling roundManager.forceNextRound()');
           roundManager.forceNextRound();
-          console.log('[APP] Current round after next:', roundManager.getCurrentRound());
+          console.log('[APP] Current round after next:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           setRoundState({
             round: roundManager.getCurrentRound(),
             zombiesAlive: roundManager.getZombiesRemaining(),
@@ -2505,8 +2509,10 @@ export default function App() {
           });
         }}
         onForceEndRound={() => {
+          console.log('[ROUND FLOW] FORCE END ROUND button clicked');
           console.log('[APP] onForceEndRound called');
           const roundManager = getRoundManager();
+          console.log('[ROUND FLOW] Calling roundManager.endRound()');
           roundManager.endRound();
           setRoundState({
             round: roundManager.getCurrentRound(),
@@ -2515,13 +2521,14 @@ export default function App() {
           });
         }}
         onSpawnCurrentWave={() => {
+          console.log('[ROUND FLOW] SPAWN CURRENT WAVE button clicked (handler)');
           console.log('[APP] onSpawnCurrentWave called');
           const roundManager = getRoundManager();
           const zombieManager = zombieManagerRef.current;
           if (zombieManager) {
             // spawnCurrentWave doesn't exist on RoundManager - spawn based on round config
             const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
-            console.log('[APP] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
+            console.log('[ROUND FLOW] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
             for (let i = 0; i < totalZombies; i++) {
               zombieManager.spawnZombie();
               roundManager.registerZombieSpawn();
