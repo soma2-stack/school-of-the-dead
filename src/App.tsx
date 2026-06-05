@@ -1404,7 +1404,7 @@ export default function App() {
       
       // Use weapon manager to fire
       console.log('[INPUT] Calling weaponManager.fire()');
-      const result = weaponManager.fire(raycaster, zombieManager, 'player');
+      const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
       if (result.success && result.hitZombieId) {
         console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);

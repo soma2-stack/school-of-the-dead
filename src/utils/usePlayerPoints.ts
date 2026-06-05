@@ -40,13 +40,16 @@ export function usePlayerPoints(
 
   // Subscribe to points changes
   useEffect(() => {
+    console.log('[UI DEBUG] usePlayerPoints useEffect - playerId:', playerId);
     // Ensure player is registered
     if (!pointsManager.hasPlayer(playerId)) {
+      console.log('[UI DEBUG] Registering player:', playerId);
       pointsManager.registerPlayer(playerId);
     }
 
     // Update initial state
     const state = pointsManager.getPlayerState(playerId);
+    console.log('[UI DEBUG] Initial player state:', state);
     if (state) {
       setCurrentPoints(state.currentPoints);
       setTotalEarned(state.totalEarned);
@@ -55,10 +58,14 @@ export function usePlayerPoints(
 
     // Subscribe to changes
     const unsubscribe = pointsManager.subscribe((changedPlayerId, result) => {
+      console.log('[UI DEBUG] Points change event:', { changedPlayerId, playerId, result });
       if (changedPlayerId === playerId) {
+        console.log('[UI DEBUG] Updating React state from', currentPoints, 'to', result.newPoints);
         setCurrentPoints(result.newPoints);
         setTotalEarned((prev) => prev + Math.max(0, result.amountChanged));
         setTotalSpent((prev) => prev + Math.max(0, -result.amountChanged));
+      } else {
+        console.log('[UI DEBUG] Player ID mismatch, ignoring event');
       }
     });
 

@@ -257,6 +257,7 @@ export class PlayerPointsManager {
     reason: PointsEvent
   ): PointsOperationResult | null {
     const player = this.players.get(playerId);
+    console.log('[POINTS_MANAGER] addPoints called:', { playerId, amount, reason, playerExists: !!player });
     if (!player) return null;
 
     if (amount <= 0) {
@@ -273,6 +274,7 @@ export class PlayerPointsManager {
     player.currentPoints += amount;
     player.totalEarned += amount;
     player.lastUpdated = Date.now();
+    console.log('[POINTS_MANAGER] Points updated:', { previousPoints, newPoints: player.currentPoints });
 
     const result: PointsOperationResult = {
       success: true,
@@ -282,6 +284,7 @@ export class PlayerPointsManager {
       reason,
     };
 
+    console.log('[POINTS_MANAGER] Notifying listeners, listener count:', this.listeners.size);
     this.notifyListeners(playerId, result);
     return result;
   }
@@ -406,9 +409,12 @@ export class PlayerPointsManager {
    * Notify all listeners of a points change
    */
   private notifyListeners(playerId: string, result: PointsOperationResult): void {
-    this.listeners.forEach((listener) => {
+    console.log('[POINTS_MANAGER] notifyListeners called:', { playerId, result, listenerCount: this.listeners.size });
+    this.listeners.forEach((listener, index) => {
+      console.log(`[POINTS_MANAGER] Calling listener ${index}`);
       try {
         listener(playerId, result);
+        console.log(`[POINTS_MANAGER] Listener ${index} completed`);
       } catch (error) {
         console.error('Error in points change listener:', error);
       }
