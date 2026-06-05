@@ -1354,6 +1354,12 @@ export default function App() {
     const handleClick = (e: MouseEvent) => { 
       console.log('[INPUT] Mouse click received', e.button);
       
+      // Debug: Check actual pointer lock state at click time
+      console.log('[INPUT DEBUG] document.pointerLockElement:', document.pointerLockElement);
+      console.log('[INPUT DEBUG] canvas:', canvas);
+      console.log('[INPUT DEBUG] isPointerLocked (state):', isPointerLocked);
+      console.log('[INPUT DEBUG] Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
+      
       if (document.pointerLockElement !== canvas) {
         console.log('[INPUT] Pointer not locked, requesting pointer lock');
         canvas?.requestPointerLock();
@@ -1363,14 +1369,17 @@ export default function App() {
       console.log('[INPUT] Pointer is locked, proceeding to fire');
       
       // Shooting - hitscan on left click when pointer locked
-      if (zombieManagerRef.current && weaponManagerRef.current && isPointerLocked) {
+      // Use actual DOM check instead of stale state
+      const isActuallyLocked = document.pointerLockElement === canvas;
+      if (zombieManagerRef.current && weaponManagerRef.current && isActuallyLocked) {
         console.log('[INPUT] All conditions met, calling shootZombie');
         shootZombie();
       } else {
         console.log('[INPUT] Conditions not met:', {
           hasZombieManager: !!zombieManagerRef.current,
           hasWeaponManager: !!weaponManagerRef.current,
-          isPointerLocked
+          isPointerLockedState: isPointerLocked,
+          isActuallyLocked
         });
       }
     };
