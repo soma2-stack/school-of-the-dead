@@ -1070,6 +1070,9 @@ export default function App() {
     const ft = MAP_CONFIG.floorThickness;
     const doorH = MAP_CONFIG.doorHeight;
 
+    // Collect all collidable map objects for zombie AI
+    const collidableObjects: THREE.Object3D[] = [];
+    
     const wallMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wall_tiles') });
     const floorMatWood = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wood_floor') });
     const ceilMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('ceiling_tiles') });
@@ -1127,6 +1130,8 @@ export default function App() {
                   const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, stripDepth), floorMat);
                   floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
                   floor.receiveShadow = true;
+                  floor.userData.isCollidable = true;
+                  collidableObjects.push(floor);
                   scene.add(floor);
                 } else {
                   // Has holes, create segments around them
@@ -1139,6 +1144,8 @@ export default function App() {
                       const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                       floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                       floor.receiveShadow = true;
+                      floor.userData.isCollidable = true;
+                      collidableObjects.push(floor);
                       scene.add(floor);
                     }
                     currentX = Math.max(currentX, hole.xMax);
@@ -1150,6 +1157,8 @@ export default function App() {
                     const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                     floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                     floor.receiveShadow = true;
+                    floor.userData.isCollidable = true;
+                    collidableObjects.push(floor);
                     scene.add(floor);
                   }
                 }
@@ -1167,6 +1176,8 @@ export default function App() {
             const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
             floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
             floor.receiveShadow = true;
+            floor.userData.isCollidable = true;
+            collidableObjects.push(floor);
             scene.add(floor);
           }
         } else {
@@ -1174,6 +1185,8 @@ export default function App() {
           const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
           floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
           floor.receiveShadow = true;
+          floor.userData.isCollidable = true;
+          collidableObjects.push(floor);
           scene.add(floor);
         }
       }
@@ -1182,6 +1195,8 @@ export default function App() {
       if (!r.disabledCeiling) {
         const ceil = new THREE.Mesh(new THREE.BoxGeometry(r.w, ct, r.d), ceilMat);
         ceil.position.set(r.cx, r.floorY + r.h + ct / 2, r.cz);
+        ceil.userData.isCollidable = true;
+        collidableObjects.push(ceil);
         scene.add(ceil);
       }
 
@@ -1207,6 +1222,8 @@ export default function App() {
           if (rotY === 0) below.position.set(px + segCenter, r.floorY + belowH / 2, pz);
           else below.position.set(px, r.floorY + belowH / 2, pz + segCenter);
           below.castShadow = true; below.receiveShadow = true;
+          below.userData.isCollidable = true;
+          collidableObjects.push(below);
           scene.add(below);
           if (r.h > doorH) {
             const aboveH = r.h - doorH;
@@ -1214,6 +1231,8 @@ export default function App() {
             above.rotation.y = rotY;
             if (rotY === 0) above.position.set(px + segCenter, r.floorY + doorH + aboveH / 2, pz);
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
+            above.userData.isCollidable = true;
+            collidableObjects.push(above);
             scene.add(above);
           }
         };
@@ -1284,6 +1303,8 @@ export default function App() {
           collisionRamp.rotation.x = angle;
         }
         
+        collisionRamp.userData.isCollidable = true;
+        collidableObjects.push(collisionRamp);
         scene.add(collisionRamp);
         
         // Calculate and log offsets between visual and collision
@@ -1356,6 +1377,8 @@ export default function App() {
         new THREE.MeshLambertMaterial({ color: parseInt(prop.color.replace('#', ''), 16) })
       );
       mesh.position.set(prop.cx, (ownerRoom?.floorY ?? 0) + prop.h / 2, prop.cz);
+      mesh.userData.isCollidable = true;
+      collidableObjects.push(mesh);
       scene.add(mesh);
     });
 
@@ -1871,7 +1894,7 @@ export default function App() {
 
       // Update zombies AI
       if (zombieManagerRef.current) {
-        zombieManagerRef.current.update(dt, playerPos.current);
+        zombieManagerRef.current.update(dt, playerPos.current, collidableObjects);
         
         // Throttled zombie debug data update (4 times per second = 250ms)
         if (now - lastZombieDebugUpdate.current > 250) {
