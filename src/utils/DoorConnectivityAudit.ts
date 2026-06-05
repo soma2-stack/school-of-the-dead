@@ -379,7 +379,12 @@ class DoorConnectivityAuditor {
    * Run full door audit and generate report
    */
   runAudit(): DoorAuditReport {
-    const roomsWithDoors = this.roomsData.filter(r => r.doors.some(d => d.isPurchasable)).length;
+    // Count rooms with any door connection (gap exists)
+    const roomsWithDoorGaps = this.roomsData.filter(r => r.doors.some(d => d.gapWidth > 0)).length;
+    
+    // Count rooms with purchasable doors (configured)
+    const roomsWithPurchasableDoors = this.roomsData.filter(r => r.doors.some(d => d.isPurchasable)).length;
+    
     const roomsMissingDoors = this.roomsData.filter(r => r.missingDoors.length > 0).length;
     const reachableWithoutPurchase = this.roomsData
       .filter(r => r.reachableWithoutPurchase && r.id !== 'starter')
@@ -402,6 +407,30 @@ class DoorConnectivityAuditor {
       allConnections.push(...room.doors.filter(d => d.gapWidth > 0));
     }
 
+    // Categorize connections by type
+    const doorConnections = allConnections.filter(c => c.connectionType === 'Door');
+    const openPassages = allConnections.filter(c => c.connectionType === 'Open Passage');
+    const stairConnections = allConnections.filter(c => c.connectionType === 'Stairwell');
+    const connectorConnections = allConnections.filter(c => c.connectionType === 'Connector');
+    const noneConnections = allConnections.filter(c => c.connectionType === 'None');
+
+    console.log('\\n=== CONNECTION BREAKDOWN ===');
+    console.log(`Door Connections: ${doorConnections.length}`);
+    console.log(`Open Passages: ${openPassages.length}`);
+    console.log(`Stair Connections: ${stairConnections.length}`);
+    console.log(`Connector Connections: ${connectorConnections.length}`);
+    console.log(`None/Barrier: ${noneConnections.length}`);
+    console.log(`Total Gaps: ${allConnections.length}`);
+    console.log('============================\\n');
+
+    // Print each connection detail
+    console.log('\\n=== ALL CONNECTIONS ===');
+    allConnections.forEach(conn => {
+      console.log(`${conn.fromRoomName} -> ${conn.toRoomName || 'VOID'}`);
+      console.log(`  Side: ${conn.side}, Type: ${conn.connectionType}, Cost: ${conn.isPurchasable ? `$${conn.cost}` : 'N/A'}, Gap: ${conn.gapWidth}`);
+    });
+    console.log('=======================\\n');
+
     const allRecommendations: MissingDoorRecommendation[] = [];
     for (const room of this.roomsData) {
       allRecommendations.push(...room.missingDoors);
@@ -409,7 +438,7 @@ class DoorConnectivityAuditor {
 
     return {
       totalRooms: this.roomsData.length,
-      roomsWithDoors,
+      roomsWithDoors: roomsWithDoorGaps,  // Changed to count rooms with gaps, not just purchasable
       roomsMissingDoors,
       reachableWithoutPurchase,
       progressionBreaks,
