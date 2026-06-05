@@ -12,6 +12,9 @@ import { getDoorAuditor, DoorAuditReport, DoorConnection } from './utils/DoorCon
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
 import { getRoundManager, RoundManager } from './utils/rounds';
+import { getWeaponManager, WeaponManager } from './utils/weapons';
+import { Crosshair } from './utils/Crosshair';
+import { WeaponUI } from './utils/WeaponUI';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================
@@ -402,6 +405,9 @@ export default function App() {
 
   // Zombie manager ref
   const zombieManagerRef = useRef<ZombieManager | null>(null);
+  
+  // Weapon manager ref
+  const weaponManagerRef = useRef<WeaponManager | null>(null);
 
   // Debug Lighting toggle function (defined at component scope for JSX access)
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -863,6 +869,9 @@ export default function App() {
       console.log('Player damaged:', damage, 'by zombie:', zombie.id);
       // Could add player health system here
     });
+
+    // Initialize Weapon Manager
+    weaponManagerRef.current = getWeaponManager(scene);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1348,37 +1357,25 @@ export default function App() {
       }
       
       // Shooting - hitscan on left click when pointer locked
-      if (zombieManagerRef.current && isPointerLocked) {
+      if (zombieManagerRef.current && weaponManagerRef.current && isPointerLocked) {
         shootZombie();
       }
     };
     
     const shootZombie = () => {
       const zombieManager = zombieManagerRef.current;
-      if (!zombieManager || !cameraRef.current) return;
+      const weaponManager = weaponManagerRef.current;
+      if (!zombieManager || !weaponManager || !cameraRef.current) return;
       
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
-      // Check intersection with zombie meshes
-      const aliveZombies = zombieManager.getAliveZombies();
-      const zombieMeshes = aliveZombies
-        .map(z => z.mesh)
-        .filter((mesh): mesh is THREE.Mesh => mesh !== undefined);
+      // Use weapon manager to fire
+      const result = weaponManager.fire(raycaster, zombieManager, 'player');
       
-      const intersects = raycaster.intersectObjects(zombieMeshes);
-      
-      if (intersects.length > 0) {
-        const hitObject = intersects[0].object;
-        // Find the zombie that owns this mesh
-        const hitZombie = aliveZombies.find(z => z.mesh === hitObject || z.mesh === hitObject.parent);
-        
-        if (hitZombie) {
-          // Deal damage (instant kill for simplicity - could add weapon system later)
-          zombieManager.damageZombie(hitZombie.id, 100, 'player');
-          console.log('Hit zombie:', hitZombie.id, 'Health:', hitZombie.health);
-        }
+      if (result.success && result.hitZombieId) {
+        console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);
       }
     };
     const handleLockChange = () => { setIsPointerLocked(document.pointerLockElement === canvas); };
@@ -2159,16 +2156,15 @@ export default function App() {
         <PointsDisplay playerId="player1" />
       </div>
 
+      {/* Crosshair */}
+      {isPointerLocked && <Crosshair />}
+
+      {/* Weapon UI */}
+      {isPointerLocked && <WeaponUI />}
+
       <div ref={mountRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
         <canvas ref={canvasRef} className="block w-full h-full" style={{ pointerEvents: 'auto' }} />
       </div>
-
-      {/* Crosshair */}
-      {isPointerLocked && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <div className={`w-1.5 h-1.5 rounded-full border border-white/60 ${geometryInspectorEnabled ? 'bg-yellow-400' : 'bg-emerald-400'}`} />
-        </div>
-      )}
 
       {/* Geometry Inspector Info Display */}
       {isPointerLocked && geometryInspectorEnabled && inspectedMeshInfo && (
