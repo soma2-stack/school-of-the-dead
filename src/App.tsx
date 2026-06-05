@@ -1381,10 +1381,10 @@ export default function App() {
       logger.input.debug('Mouse click received', e.button);
       
       // Debug: Check actual pointer lock state at click time
-      logger.input.debug document.pointerLockElement:', document.pointerLockElement);
-      logger.input.debug canvas:', canvas);
-      logger.input.debug isPointerLocked (state):', isPointerLocked);
-      logger.input.debug Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
+      logger.input.debug('document.pointerLockElement:', document.pointerLockElement);
+      logger.input.debug('canvas:', canvas);
+      logger.input.debug('isPointerLocked (state):', isPointerLocked);
+      logger.input.debug('Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
       
       if (document.pointerLockElement !== canvas) {
         logger.input.debug('Pointer not locked, requesting pointer lock');
