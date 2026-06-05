@@ -203,6 +203,7 @@ export class ZombieManager {
   }
 
   spawnWave(count: number): Zombie[] {
+    console.log('[ROUND FLOW] spawnWave called with count:', count);
     const spawned: Zombie[] = [];
     
     for (let i = 0; i < count; i++) {
@@ -329,6 +330,7 @@ export class ZombieManager {
   // ==========================================================================
 
   damageZombie(zombieId: string, damage: number, playerId: string): boolean {
+    console.log('[ROUND FLOW] Zombie killed - damageZombie called for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state !== 'alive') return false;
 
@@ -345,6 +347,7 @@ export class ZombieManager {
   }
 
   killZombie(zombieId: string, playerId: string): boolean {
+    console.log('[ROUND FLOW] killZombie called for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state === 'dead') return false;
 
@@ -356,6 +359,7 @@ export class ZombieManager {
 
     // Notify round manager
     const roundManager = getRoundManager();
+    console.log('[ROUND FLOW] Calling roundManager.registerZombieKill()');
     roundManager.registerZombieKill();
 
     this.notifyDeath(zombie, playerId);

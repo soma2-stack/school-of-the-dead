@@ -873,11 +873,11 @@ export default function App() {
     // Subscribe to round start events for automatic zombie spawning
     const roundManager = getRoundManager();
     roundManager.onRoundStart((roundNumber) => {
-      console.log('[APP] Round', roundNumber, 'started, auto-spawning zombies');
+      console.log('[ROUND FLOW] Round start event received in App.tsx for round', roundNumber);
       const zombieManager = zombieManagerRef.current;
       if (zombieManager) {
         const totalZombies = RoundManager.calculateZombieCount(roundNumber);
-        console.log('[APP] Auto-spawning', totalZombies, 'zombies for round', roundNumber);
+        console.log('[ROUND FLOW] Auto spawning zombies for round:', roundNumber, 'count:', totalZombies);
         for (let i = 0; i < totalZombies; i++) {
           zombieManager.spawnZombie();
           roundManager.registerZombieSpawn();
@@ -887,6 +887,8 @@ export default function App() {
           zombiesAlive: totalZombies,
           spawnStatus: roundManager.getState(),
         }));
+      } else {
+        console.warn('[ROUND FLOW] ZombieManager not available for auto-spawn');
       }
     });
 

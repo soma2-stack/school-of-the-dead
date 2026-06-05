@@ -154,7 +154,7 @@ export class RoundManager {
    * @param totalZombies - Optional override. If not provided, uses calculateZombieCount().
    */
   startRound(totalZombies?: number): void {
-    console.log('[ROUND] startRound() called', {
+    console.log('[ROUND FLOW] startRound called', {
       state: this.roundData.state,
       currentRound: this.roundData.currentRound,
       totalZombiesOverride: totalZombies,
@@ -165,7 +165,10 @@ export class RoundManager {
       return;
     }
 
+    const oldState = this.roundData.state;
     this.roundData.state = 'active';
+    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    
     this.roundData.currentRound = Math.max(this.config.startingRound, this.roundData.currentRound);
     
     // Use provided count or calculate based on round number
@@ -192,7 +195,7 @@ export class RoundManager {
    * Automatically starts intermission, which then auto-advances to the next round.
    */
   endRound(): void {
-    console.log('[ROUND] endRound() called', {
+    console.log('[ROUND FLOW] endRound called', {
       state: this.roundData.state,
       currentRound: this.roundData.currentRound,
     });
@@ -213,7 +216,10 @@ export class RoundManager {
     // Store previous round duration
     this.roundData.previousRoundDurationMs = roundDuration;
 
+    const oldState = this.roundData.state;
     this.roundData.state = 'ended';
+    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    
     this.roundData.totalRoundsCompleted += 1;
     this.roundData.roundStartTime = null;
 
@@ -233,7 +239,7 @@ export class RoundManager {
    * Automatically schedules the next round to start when intermission completes.
    */
   startIntermission(): void {
-    console.log('[ROUND] startIntermission() called', {
+    console.log('[ROUND FLOW] startIntermission called', {
       state: this.roundData.state,
     });
 
@@ -248,7 +254,10 @@ export class RoundManager {
       this.intermissionTimerId = null;
     }
 
+    const oldState = this.roundData.state;
     this.roundData.state = 'intermission';
+    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    
     this.roundData.intermissionStartTime = Date.now();
 
     console.log('[ROUND] Intermission started, scheduling auto-advance in', this.config.intermissionDurationMs, 'ms');
@@ -268,7 +277,7 @@ export class RoundManager {
    * Automatically advances to the next round and starts it
    */
   private onIntermissionComplete(): void {
-    console.log('[ROUND] onIntermissionComplete() called', {
+    console.log('[ROUND FLOW] onIntermissionComplete called', {
       currentRound: this.roundData.currentRound,
     });
 
@@ -306,7 +315,7 @@ export class RoundManager {
    * Note: With automatic progression, this is rarely needed.
    */
   forceNextRound(): void {
-    console.log('[ROUND] forceNextRound() called', {
+    console.log('[ROUND FLOW] forceNextRound called', {
       currentRound: this.roundData.currentRound,
       state: this.roundData.state,
     });
@@ -317,8 +326,11 @@ export class RoundManager {
       this.intermissionTimerId = null;
     }
 
+    const oldState = this.roundData.state;
     this.roundData.currentRound += 1;
     this.roundData.state = 'idle';
+    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    
     this.roundData.zombiesRemaining = 0;
     this.roundData.zombiesKilled = 0;
     this.roundData.totalZombiesSpawned = 0;
@@ -338,7 +350,7 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieSpawn(): number {
-    console.log('[ROUND] registerZombieSpawn() called', {
+    console.log('[ROUND FLOW] registerZombieSpawn called', {
       state: this.roundData.state,
       totalSpawnedBefore: this.roundData.totalZombiesSpawned,
     });
@@ -366,7 +378,7 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieKill(): number {
-    console.log('[ROUND] registerZombieKill called', {
+    console.log('[ROUND FLOW] registerZombieKill called', {
       state: this.roundData.state,
       zombiesRemaining: this.roundData.zombiesRemaining,
       zombiesKilled: this.roundData.zombiesKilled,
@@ -390,7 +402,7 @@ export class RoundManager {
 
     // Auto-end round if all zombies defeated
     if (this.roundData.zombiesRemaining <= 0) {
-      console.log('[ROUND] All zombies defeated, calling endRound()');
+      console.log('[ROUND FLOW] Round should end now - zombiesRemaining =', this.roundData.zombiesRemaining);
       this.endRound();
     }
 
@@ -427,6 +439,7 @@ export class RoundManager {
   }
 
   getState(): RoundState {
+    console.log('[ROUND DEBUG] getState() returning:', this.roundData.state);
     return this.roundData.state;
   }
 
