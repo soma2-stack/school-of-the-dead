@@ -198,21 +198,19 @@ const DoorsTab: React.FC<Props> = ({ doorAuditReport }) => {
                 borderRadius: '3px',
                 padding: '6px',
                 marginBottom: '6px',
-                backgroundColor: rec.priority === 'critical' ? 'rgba(255, 0, 0, 0.2)' : 'transparent',
+                backgroundColor: 'transparent',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <strong style={{ color: rec.priority === 'critical' ? '#f00' : '#f0f' }}>
-                  [{rec.priority.toUpperCase()}] {rec.type}
+                <strong style={{ color: '#f0f' }}>
+                  {rec.recommendedType}
                 </strong>
-                <span style={{ fontSize: '9px', color: '#888' }}>{rec.room}</span>
+                <span style={{ fontSize: '9px', color: '#888' }}>Price: ${rec.recommendedPrice}</span>
               </div>
-              <div style={{ fontSize: '9px', color: '#d8d' }}>{rec.description}</div>
-              {rec.suggestedAction && (
-                <div style={{ fontSize: '9px', color: '#afa', marginTop: '4px' }}>
-                  → {rec.suggestedAction}
-                </div>
-              )}
+              <div style={{ fontSize: '9px', color: '#d8d' }}>{rec.reason}</div>
+              <div style={{ fontSize: '9px', color: '#afa', marginTop: '4px' }}>
+                → Location: [${rec.location[0].toFixed(1)}, ${rec.location[1].toFixed(1)}, ${rec.location[2].toFixed(1)}]
+              </div>
             </div>
           ))}
         </div>
