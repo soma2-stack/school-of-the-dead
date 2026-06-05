@@ -8,7 +8,7 @@ import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
-import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
+import { getDoorAuditor, DoorAuditReport, DoorConnection } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
 import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
 import { getRoundManager, RoundManager } from './utils/rounds';
