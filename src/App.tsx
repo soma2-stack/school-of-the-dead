@@ -2158,89 +2158,6 @@ export default function App() {
         <PointsDisplay playerId="player1" />
       </div>
 
-      {/* Not Enough Points Feedback */}
-      {showNotEnoughPoints && (
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
-          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
-            NOT ENOUGH POINTS
-          </div>
-        </div>
-      )}
-
-      {/* Debug Overlay - Collapsible F1 menu */}
-      <DebugOverlay
-        data={{
-          fps,
-          meshCount,
-          drawCalls,
-          playerPos: playerPos.current,
-          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
-          currentRoom: currentRoomName,
-          noclip: noclipRef.current,
-          round: roundState.round,
-          zombiesAlive: roundState.zombiesAlive,
-          spawnStatus: roundState.spawnStatus,
-          connectivityIssues: connectivityIssues,
-          floorIntegrityIssues: floorAuditIssues,
-          debugLightingEnabled,
-          debugLightingBrightness,
-          roomDetectorStatus: {
-            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
-            roomCount: INITIAL_ROOMS.length,
-            closestRoom: null,
-            closestDistance: 0,
-            currentRoom: currentRoomName,
-            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
-          },
-          stairDebugData,
-          playerStairAnalysis,
-        }}
-        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
-        onRunConnectivity={() => {
-          const auditor = connectivityAuditorRef.current;
-          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
-          const report = auditor.runAudit();
-          const issues = auditor.getIssues();
-          setConnectivityIssues(issues);
-          setConnectivityReport(report);
-          setConnectivityDebugMode(true);
-          setCurrentConnectivityIssueIndex(-1);
-        }}
-        onRunFloorAudit={() => {
-          const auditor = floorAuditorRef.current;
-          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
-          const report = auditor.runAudit();
-          setFloorAuditIssues(report.issues);
-          setFloorDebugMode(true);
-          setCurrentFloorIssueIndex(-1);
-        }}
-        onTeleportToSpawn={() => {
-          // Teleport to starter room spawn point
-          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
-          yaw.current = Math.PI;
-          console.log('[DebugOverlay] Teleported to starter room spawn');
-        }}
-        onTeleportToIssue={(issue) => {
-          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-          yaw.current = Math.PI;
-          noclipRef.current = true;
-          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
-        }}
-        onToggleDebugLighting={toggleDebugLighting}
-        onSetDebugLightingBrightness={(brightness: number) => {
-          setDebugLightingBrightness(brightness);
-          if (debugLightingEnabled && ambientLightRef.current) {
-            ambientLightRef.current.intensity = brightness;
-          }
-        }}
-        onStairVisualToggle={(enabled: boolean) => {
-          setStairVisualDebugEnabled(enabled);
-        }}
-        onStairCollisionToggle={(enabled: boolean) => {
-          setStairCollisionDebugEnabled(enabled);
-        }}
-      />
-
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
@@ -2357,6 +2274,89 @@ export default function App() {
           )}
         </>
       )}
+
+      {/* Not Enough Points Feedback */}
+      {showNotEnoughPoints && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
+          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
+            NOT ENOUGH POINTS
+          </div>
+        </div>
+      )}
+
+      {/* Debug Overlay - Collapsible F1 menu (RENDERED LAST TO BE ON TOP) */}
+      <DebugOverlay
+        data={{
+          fps,
+          meshCount,
+          drawCalls,
+          playerPos: playerPos.current,
+          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
+          currentRoom: currentRoomName,
+          noclip: noclipRef.current,
+          round: roundState.round,
+          zombiesAlive: roundState.zombiesAlive,
+          spawnStatus: roundState.spawnStatus,
+          connectivityIssues: connectivityIssues,
+          floorIntegrityIssues: floorAuditIssues,
+          debugLightingEnabled,
+          debugLightingBrightness,
+          roomDetectorStatus: {
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            roomCount: INITIAL_ROOMS.length,
+            closestRoom: null,
+            closestDistance: 0,
+            currentRoom: currentRoomName,
+            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
+          },
+          stairDebugData,
+          playerStairAnalysis,
+        }}
+        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
+        onRunConnectivity={() => {
+          const auditor = connectivityAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+          const report = auditor.runAudit();
+          const issues = auditor.getIssues();
+          setConnectivityIssues(issues);
+          setConnectivityReport(report);
+          setConnectivityDebugMode(true);
+          setCurrentConnectivityIssueIndex(-1);
+        }}
+        onRunFloorAudit={() => {
+          const auditor = floorAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+          const report = auditor.runAudit();
+          setFloorAuditIssues(report.issues);
+          setFloorDebugMode(true);
+          setCurrentFloorIssueIndex(-1);
+        }}
+        onTeleportToSpawn={() => {
+          // Teleport to starter room spawn point
+          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
+          yaw.current = Math.PI;
+          console.log('[DebugOverlay] Teleported to starter room spawn');
+        }}
+        onTeleportToIssue={(issue) => {
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI;
+          noclipRef.current = true;
+          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
+        }}
+        onToggleDebugLighting={toggleDebugLighting}
+        onSetDebugLightingBrightness={(brightness: number) => {
+          setDebugLightingBrightness(brightness);
+          if (debugLightingEnabled && ambientLightRef.current) {
+            ambientLightRef.current.intensity = brightness;
+          }
+        }}
+        onStairVisualToggle={(enabled: boolean) => {
+          setStairVisualDebugEnabled(enabled);
+        }}
+        onStairCollisionToggle={(enabled: boolean) => {
+          setStairCollisionDebugEnabled(enabled);
+        }}
+      />
     </div>
   );
 }
