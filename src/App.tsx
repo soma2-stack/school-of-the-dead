@@ -533,11 +533,14 @@ export default function App() {
   useEffect(() => {
     (window as any).runDoorAudit = () => {
       const auditor = doorAuditorRef.current;
+      auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, []);
       const report = auditor.runAudit();
       setDoorAuditReport(report);
       
       console.log("[DOOR AUDIT] Registered");
       console.log(typeof (window as any).runDoorAudit);
+      console.log("[DOOR AUDIT] Room Source", INITIAL_ROOMS);
+      console.log("[DOOR AUDIT] Room Count", INITIAL_ROOMS.length);
       
       console.log('=== DOOR AUDIT REPORT ===');
       console.log(`Total Rooms: ${report.totalRooms}`);
