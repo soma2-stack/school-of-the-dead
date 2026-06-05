@@ -529,6 +529,40 @@ export default function App() {
     };
   }, []);
 
+  // Expose global command for running door audit from console
+  useEffect(() => {
+    (window as any).runDoorAudit = () => {
+      const auditor = doorAuditorRef.current;
+      const report = auditor.runAudit();
+      setDoorAuditReport(report);
+      
+      console.log("[DOOR AUDIT] Registered");
+      console.log(typeof (window as any).runDoorAudit);
+      
+      console.log('=== DOOR AUDIT REPORT ===');
+      console.log(`Total Rooms: ${report.totalRooms}`);
+      console.log(`Rooms With Doors: ${report.roomsWithDoors}`);
+      console.log(`Rooms Missing Doors: ${report.roomsMissingDoors}`);
+      console.log(`Reachable Without Purchase: ${report.reachableWithoutPurchase.length}`);
+      console.log(`Progression Breaks: ${report.progressionBreaks.length}`);
+      if (report.progressionBreaks.length > 0) {
+        report.progressionBreaks.forEach(name => console.log(`  - ${name}`));
+      }
+      console.log(`Total Door Connections: ${report.allConnections.length}`);
+      console.log(`Total Recommendations: ${report.recommendations.length}`);
+      console.log('=========================');
+      
+      return report;
+    };
+    
+    console.log("[DOOR AUDIT] Registered");
+    console.log(typeof (window as any).runDoorAudit);
+    
+    return () => {
+      delete (window as any).runDoorAudit;
+    };
+  }, []);
+
   useEffect(() => {
     console.log("DOOR EFFECT RUNNING");
     const canvas = canvasRef.current;
