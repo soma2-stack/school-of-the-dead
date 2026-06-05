@@ -1,1 +1,10 @@
-(src/utils/zombies.ts)
+```
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+
+# Vite cache
+node_modules/.vite/
+```
