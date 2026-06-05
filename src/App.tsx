@@ -533,7 +533,7 @@ export default function App() {
   useEffect(() => {
     (window as any).runDoorAudit = () => {
       const auditor = doorAuditorRef.current;
-      auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, []);
+      auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, DOORS_CONFIG);
       const report = auditor.runAudit();
       setDoorAuditReport(report);
       
@@ -553,6 +553,131 @@ export default function App() {
       }
       console.log(`Total Door Connections: ${report.allConnections.length}`);
       console.log(`Total Recommendations: ${report.recommendations.length}`);
+      
+      // ========================================================================
+      // COMPLETE PROGRESSION GRAPH - Print every room and every connection
+      // ========================================================================
+      console.log('\\n========================================');
+      console.log('       COMPLETE ROOM CONNECTIVITY GRAPH');
+      console.log('========================================\\n');
+      
+      report.roomData.forEach(room => {
+        console.log(`┌─────────────────────────────────────────`);
+        console.log(`│ ${room.name}`);
+        console.log(`│ ID: ${room.id}`);
+        console.log(`│ Reachable Without Purchase: ${room.reachableWithoutPurchase ? 'YES' : 'NO'}`);
+        console.log(`│ Connected Rooms:`);
+        
+        if (room.doors.length === 0) {
+          console.log(`│   (No connections)`);
+        } else {
+          room.doors.forEach(door => {
+            const targetName = door.toRoomName || 'VOID (exterior)';
+            const typeLabel = door.connectionType === 'None' ? 'Solid Wall' : door.connectionType;
+            const costLabel = door.isPurchasable ? `$${door.cost}` : (door.connectionType === 'Open Passage' ? 'FREE' : 'N/A');
+            console.log(`│   -> ${targetName}`);
+            console.log(`│      Side: ${door.side}, Type: ${typeLabel}, Cost: ${costLabel}`);
+          });
+        }
+        console.log(`└─────────────────────────────────────────\\n`);
+      });
+      
+      // ========================================================================
+      // CONNECTION TYPE SUMMARY
+      // ========================================================================
+      console.log('========================================');
+      console.log('         CONNECTION TYPE SUMMARY');
+      console.log('========================================\\n');
+      
+      const byType: Record<string, number> = {};
+      report.allConnections.forEach(conn => {
+        byType[conn.connectionType] = (byType[conn.connectionType] || 0) + 1;
+      });
+      
+      Object.entries(byType).forEach(([type, count]) => {
+        console.log(`${type}: ${count}`);
+      });
+      
+      // ========================================================================
+      // EXPLAIN: Rooms With Doors = 0 vs Total Door Connections = 43
+      // ========================================================================
+      console.log('\\n========================================');
+      console.log('         CONTRADICTION EXPLANATION');
+      console.log('========================================\\n');
+      
+      const roomsWithGaps = report.roomData.filter(r => r.doors.some(d => d.gapWidth > 0));
+      const roomsWithPurchasable = report.roomData.filter(r => r.doors.some(d => d.isPurchasable));
+      
+      console.log(`"Rooms With Doors" metric counts rooms with PURCHASABLE doors configured.`);
+      console.log(`Current DOORS_CONFIG has ${DOORS_CONFIG.length} entries.`);
+      console.log(`Rooms with purchasable doors: ${roomsWithPurchasable.length}`);
+      console.log(`Rooms with door gaps (openings): ${roomsWithGaps.length}`);
+      console.log(`Total door gap connections: ${report.allConnections.length}\\n`);
+      
+      console.log(`The apparent contradiction occurs because:`);
+      console.log(`1. There ARE ${report.allConnections.length} door gaps (physical openings)`);
+      console.log(`2. But "Rooms With Doors" only counts rooms with CONFIGURED purchasable doors`);
+      console.log(`3. If DOORS_CONFIG is empty or misconfigured, count will be 0\\n`);
+      
+      // ========================================================================
+      // WHY NURSE'S OFFICE IS A PROGRESSION BREAK
+      // ========================================================================
+      console.log('========================================');
+      console.log('     PROGRESSION BREAK ANALYSIS');
+      console.log('========================================\\n');
+      
+      const nursesOffice = report.roomData.find(r => r.id === 'nurses_office');
+      if (nursesOffice) {
+        console.log(`Nurse's Office Analysis:`);
+        console.log(`  Reachable Without Purchase: ${nursesOffice.reachableWithoutPurchase ? 'YES' : 'NO'}`);
+        console.log(`  Connections:`);
+        nursesOffice.doors.forEach(d => {
+          const neighborReachable = report.roomData.find(r => r.id === d.toRoomId)?.reachableWithoutPurchase;
+          console.log(`    -> ${d.toRoomName || 'VOID'} (${d.connectionType}, ${d.isPurchasable ? `$${d.cost}` : 'FREE'})`);
+          console.log(`       Neighbor reachable: ${neighborReachable ? 'YES' : 'NO'}`);
+        });
+        
+        if (!nursesOffice.reachableWithoutPurchase) {
+          console.log(`\\n  REASON FOR PROGRESSION BREAK:`);
+          console.log(`  All paths to Nurse's Office require purchasing a door.`);
+          console.log(`  Check if adjacent rooms are reachable without purchase.\\n`);
+        }
+      }
+      
+      // ========================================================================
+      // WHY 16 ROOMS ARE REACHABLE WITHOUT PURCHASES
+      // ========================================================================
+      console.log('========================================');
+      console.log('    REACHABLE ROOMS ANALYSIS (16)');
+      console.log('========================================\\n');
+      
+      const reachableRooms = report.roomData.filter(r => r.reachableWithoutPurchase);
+      console.log(`Total reachable without purchase: ${reachableRooms.length} (including starter)\\n`);
+      
+      reachableRooms.forEach(room => {
+        if (room.id === 'starter') {
+          console.log(`✓ ${room.name} (STARTING ROOM)`);
+        } else {
+          // Find which door allows access
+          const entryDoor = room.doors.find(d => {
+            const neighbor = report.roomData.find(r => r.id === d.toRoomId);
+            return neighbor?.reachableWithoutPurchase && (!d.isPurchasable || d.cost === 0 || d.connectionType === 'Open Passage');
+          });
+          
+          if (entryDoor) {
+            const fromRoom = report.roomData.find(r => r.id === entryDoor.toRoomId);
+            console.log(`✓ ${room.name}`);
+            console.log(`  Accessed via: ${fromRoom?.name} -> ${room.name} (${entryDoor.connectionType})`);
+          } else {
+            console.log(`✓ ${room.name} (path unclear - may be starter)`);
+          }
+        }
+      });
+      
+      console.log('\\n========================================');
+      console.log('              END OF REPORT');
+      console.log('========================================\\n');
+      
       console.log('=========================');
       
       return report;
