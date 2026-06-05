@@ -2529,7 +2529,19 @@ export default function App() {
           console.log('[APP] onSpawnCurrentWave called');
           const roundManager = getRoundManager();
           const zombieManager = zombieManagerRef.current;
+          
+          // LOG STATE BEFORE SPAWNING
+          console.log('[ROUND TRACE] Before spawn - current state:', roundManager.getState());
+          console.log('[ROUND TRACE] Before spawn - current round:', roundManager.getCurrentRound());
+          
           if (zombieManager) {
+            // FIX: If round is idle, start it first
+            if (roundManager.getState() === 'idle') {
+              console.log('[ROUND TRACE] Round is idle, calling startRound() before spawning');
+              roundManager.startRound(roundManager.getCurrentRound());
+              console.log('[ROUND TRACE] After startRound() - new state:', roundManager.getState());
+            }
+            
             // spawnCurrentWave doesn't exist on RoundManager - spawn based on round config
             const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
             console.log('[ROUND FLOW] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
