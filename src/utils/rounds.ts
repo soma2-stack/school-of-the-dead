@@ -199,19 +199,27 @@ export class RoundManager {
       ? RoundManager.calculateZombieCount(this.roundData.currentRound)
       : RoundManager.calculateZombieCount(this.roundData.currentRound);
     console.log('[ROUND TRACE] Calculated zombieCount:', zombieCount, 'for round:', this.roundData.currentRound);
-    this.roundData.zombiesRemaining = zombieCount;
+    
+    // CRITICAL FIX: Reset zombiesRemaining and totalZombiesSpawned BEFORE notifying callbacks
+    // This ensures the auto-spawn callback sees the correct initial values
+    this.roundData.zombiesRemaining = 0;  // Will be incremented by registerZombieSpawn() during spawn
     this.roundData.zombiesKilled = 0;
-    this.roundData.totalZombiesSpawned = zombieCount;
+    this.roundData.totalZombiesSpawned = 0;  // Will be incremented by registerZombieSpawn() during spawn
     this.roundData.roundStartTime = Date.now();
     this.roundData.intermissionStartTime = null;
 
     console.log('[ROUND] Round started', {
       round: this.roundData.currentRound,
-      totalZombies: zombieCount,
+      expectedZombies: zombieCount,
+      zombiesRemaining: this.roundData.zombiesRemaining,
+      totalZombiesSpawned: this.roundData.totalZombiesSpawned,
     });
 
     console.log('[ROUND TRACE] About to notifyRoundStart with round:', this.roundData.currentRound);
+    // Notify callbacks FIRST so they can spawn zombies and call registerZombieSpawn()
     this.notifyRoundStart(this.roundData.currentRound);
+    console.log('[ROUND TRACE] After notifyRoundStart - zombiesRemaining:', this.roundData.zombiesRemaining, 'totalSpawned:', this.roundData.totalZombiesSpawned);
+    
     console.log('[ROUND TRACE] About to notifyStateChange');
     this.notifyStateChange();
     console.log('[ROUND TRACE] About to notifyZombiesRemaining');
