@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
+import { logger } from './logger';
 
 // ============================================================================
 // Configuration
@@ -203,8 +204,8 @@ export class ZombieManager {
   }
 
   spawnWave(count: number): Zombie[] {
-    console.log('[ROUND TRACE] ENTER spawnWave');
-    console.log('[ROUND TRACE] spawnWave called with count:', count);
+    logger.zombies.info('spawnWave called with count:', count);
+    logger.zombies.debug('ENTER spawnWave');
     const spawned: Zombie[] = [];
     
     for (let i = 0; i < count; i++) {
@@ -331,7 +332,7 @@ export class ZombieManager {
   // ==========================================================================
 
   damageZombie(zombieId: string, damage: number, playerId: string): boolean {
-    console.log('[ROUND TRACE] ENTER damageZombie for', zombieId);
+    logger.zombies.debug('ENTER damageZombie for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state !== 'alive') return false;
 
@@ -348,7 +349,7 @@ export class ZombieManager {
   }
 
   killZombie(zombieId: string, playerId: string): boolean {
-    console.log('[ROUND TRACE] ENTER killZombie for', zombieId);
+    logger.zombies.info('ENTER killZombie for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state === 'dead') return false;
 
@@ -360,7 +361,7 @@ export class ZombieManager {
 
     // Notify round manager
     const roundManager = getRoundManager();
-    console.log('[ROUND TRACE] Calling roundManager.registerZombieKill() from killZombie');
+    logger.zombies.debug('Calling roundManager.registerZombieKill() from killZombie');
     roundManager.registerZombieKill();
 
     this.notifyDeath(zombie, playerId);

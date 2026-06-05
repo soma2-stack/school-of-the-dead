@@ -14,6 +14,7 @@ import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils
 import { getRoundManager, RoundManager } from './utils/rounds';
 import { getWeaponManager, WeaponManager } from './utils/weapons';
 import { Crosshair } from './utils/Crosshair';
+import { logger } from './utils/logger';
 import { WeaponUI } from './utils/WeaponUI';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
@@ -872,14 +873,14 @@ export default function App() {
 
     // Subscribe to round start events for automatic zombie spawning
     const roundManager = getRoundManager();
-    console.log('[ROUND TRACE] Subscribing to onRoundStart in App.tsx');
+    logger.rounds.debug('Subscribing to onRoundStart in App.tsx');
     roundManager.onRoundStart((roundNumber) => {
-      console.log('[ROUND TRACE] Round start event received in App.tsx for round', roundNumber);
-      console.log('[ROUND TRACE] zombieManagerRef.current:', zombieManagerRef.current);
+      logger.rounds.info('Round start event received in App.tsx for round', roundNumber);
+      logger.rounds.debug('zombieManagerRef.current:', zombieManagerRef.current);
       const zombieManager = zombieManagerRef.current;
       if (zombieManager) {
         const totalZombies = RoundManager.calculateZombieCount(roundNumber);
-        console.log('[ROUND TRACE] Auto spawning zombies for round:', roundNumber, 'count:', totalZombies);
+        logger.rounds.info('Auto spawning zombies for round:', roundNumber, 'count:', totalZombies);
         for (let i = 0; i < totalZombies; i++) {
           zombieManager.spawnZombie();
           roundManager.registerZombieSpawn();
@@ -889,7 +890,7 @@ export default function App() {
           zombiesAlive: totalZombies,
           spawnStatus: roundManager.getState(),
         }));
-        console.log('[ROUND TRACE] Auto-spawn complete, setRoundState called');
+        logger.rounds.debug('Auto-spawn complete, setRoundState called');
       } else {
         console.warn('[ROUND TRACE] ZombieManager not available for auto-spawn');
       }
@@ -897,7 +898,7 @@ export default function App() {
 
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
-    console.log('[WEAPON] WeaponManager initialized:', weaponManagerRef.current !== null);
+    logger.weapon.info('WeaponManager initialized:', weaponManagerRef.current !== null);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1377,30 +1378,30 @@ export default function App() {
       pitch.current = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch.current));
     };
     const handleClick = (e: MouseEvent) => { 
-      console.log('[INPUT] Mouse click received', e.button);
+      logger.input.debug('Mouse click received', e.button);
       
       // Debug: Check actual pointer lock state at click time
-      console.log('[INPUT DEBUG] document.pointerLockElement:', document.pointerLockElement);
-      console.log('[INPUT DEBUG] canvas:', canvas);
-      console.log('[INPUT DEBUG] isPointerLocked (state):', isPointerLocked);
-      console.log('[INPUT DEBUG] Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
+      logger.input.debug document.pointerLockElement:', document.pointerLockElement);
+      logger.input.debug canvas:', canvas);
+      logger.input.debug isPointerLocked (state):', isPointerLocked);
+      logger.input.debug Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
       
       if (document.pointerLockElement !== canvas) {
-        console.log('[INPUT] Pointer not locked, requesting pointer lock');
+        logger.input.debug('Pointer not locked, requesting pointer lock');
         canvas?.requestPointerLock();
         return;
       }
       
-      console.log('[INPUT] Pointer is locked, proceeding to fire');
+      logger.input.debug('Pointer is locked, proceeding to fire');
       
       // Shooting - hitscan on left click when pointer locked
       // Use actual DOM check instead of stale state
       const isActuallyLocked = document.pointerLockElement === canvas;
       if (zombieManagerRef.current && weaponManagerRef.current && isActuallyLocked) {
-        console.log('[INPUT] All conditions met, calling shootZombie');
+        logger.input.debug('All conditions met, calling shootZombie');
         shootZombie();
       } else {
-        console.log('[INPUT] Conditions not met:', {
+        logger.input.warn('Conditions not met:', {
           hasZombieManager: !!zombieManagerRef.current,
           hasWeaponManager: !!weaponManagerRef.current,
           isPointerLockedState: isPointerLocked,
@@ -1410,25 +1411,25 @@ export default function App() {
     };
     
     const shootZombie = () => {
-      console.log('[INPUT] shootZombie called');
+      logger.input.debug('shootZombie called');
       const zombieManager = zombieManagerRef.current;
       const weaponManager = weaponManagerRef.current;
       if (!zombieManager || !weaponManager || !cameraRef.current) {
-        console.log('[INPUT] shootZombie aborted: missing dependencies', {
+        logger.input.warn('shootZombie aborted: missing dependencies', {
           hasZombieManager: !!zombieManager,
           hasWeaponManager: !!weaponManager,
           hasCamera: !!cameraRef.current
         });
         return;
       }
-      console.log('[INPUT] Attempting weapon fire');
+      logger.input.info('Attempting weapon fire');
       
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
       // Use weapon manager to fire
-      console.log('[INPUT] Calling weaponManager.fire()');
+      logger.input.info('Calling weaponManager.fire()');
       const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
       if (result.success && result.hitZombieId) {
@@ -1437,7 +1438,7 @@ export default function App() {
     };
     const handleLockChange = () => { 
       const locked = document.pointerLockElement === canvas;
-      console.log('[INPUT] Pointer lock changed:', locked);
+      logger.input.debug('Pointer lock changed:', locked);
       setIsPointerLocked(locked);
     };
     console.log('[INPUT] Registering click event listener on canvas');

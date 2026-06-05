@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 /**
  * School of the Dead - Round System
  * COD Zombies-inspired round management
@@ -65,7 +67,7 @@ export class RoundManager {
     // Merge provided config with defaults to ensure custom values are applied
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.roundData = this.createInitialRoundData();
-    console.log('[ROUND TRACE] RoundManager created', {
+    logger.rounds.debug('RoundManager created', {
       sessionId: 'default',
       initialState: this.roundData.state,
       startingRound: this.config.startingRound,
@@ -131,15 +133,15 @@ export class RoundManager {
   }
 
   private notifyRoundStart(roundNumber: number): void {
-    console.log('[ROUND TRACE] notifyRoundStart called with round:', roundNumber);
-    console.log('[ROUND TRACE] Number of callbacks to notify:', this.roundStartCallbacks.length);
+    logger.rounds.debug('notifyRoundStart called with round:', roundNumber);
+    logger.rounds.debug('Number of callbacks to notify:', this.roundStartCallbacks.length);
     this.roundStartCallbacks.forEach((cb, index) => {
-      console.log('[ROUND TRACE] Calling roundStartCallbacks[', index, ']');
+      logger.rounds.debug('Calling roundStartCallbacks[', index, ']');
       try {
         cb(roundNumber);
-        console.log('[ROUND TRACE] roundStartCallbacks[', index, '] completed successfully');
+        logger.rounds.debug('roundStartCallbacks[', index, '] completed successfully');
       } catch (error) {
-        console.error('[ROUND TRACE] roundStartCallbacks[', index, '] threw error:', error);
+        logger.rounds.error('roundStartCallbacks[', index, '] threw error:', error);
       }
     });
   }
@@ -169,36 +171,36 @@ export class RoundManager {
    * @param totalZombies - Optional override. If not provided, uses calculateZombieCount().
    */
   startRound(totalZombies?: number): void {
-    console.log('[ROUND TRACE] ENTER startRound');
-    console.log('[ROUND TRACE] startRound invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
-    console.log('[ROUND TRACE] Current round before update:', this.roundData.currentRound);
-    console.log('[ROUND TRACE] totalZombies parameter:', totalZombies);
+    logger.rounds.debug('ENTER startRound');
+    logger.rounds.debug('startRound invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
+    logger.rounds.debug('Current round before update:', this.roundData.currentRound);
+    logger.rounds.debug('totalZombies parameter:', totalZombies);
     
     if (this.roundData.state === 'active') {
-      console.warn('[ROUND] Round already active');
-      console.log('[ROUND TRACE] EARLY RETURN: state is already active');
+      logger.rounds.warn('Round already active');
+      logger.rounds.debug('EARLY RETURN: state is already active');
       return;
     }
 
     const oldState = this.roundData.state;
     this.roundData.state = 'active';
-    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
+    logger.rounds.info('State changed:', oldState, '->', this.roundData.state);
     
     // Update current round - use provided totalZombies as round number if it's a number
     if (typeof totalZombies === 'number' && totalZombies > 0) {
       this.roundData.currentRound = Math.max(this.config.startingRound, totalZombies);
-      console.log('[ROUND TRACE] Updated currentRound to:', this.roundData.currentRound, '(from totalZombies param)');
+      logger.rounds.debug('Updated currentRound to:', this.roundData.currentRound, '(from totalZombies param)');
     } else {
       this.roundData.currentRound = Math.max(this.config.startingRound, this.roundData.currentRound);
-      console.log('[ROUND TRACE] Updated currentRound to:', this.roundData.currentRound, '(existing value)');
+      logger.rounds.debug('Updated currentRound to:', this.roundData.currentRound, '(existing value)');
     }
     
     // Use provided count or calculate based on round number
     const zombieCount = typeof totalZombies === 'number' && totalZombies > 0 
       ? RoundManager.calculateZombieCount(this.roundData.currentRound)
       : RoundManager.calculateZombieCount(this.roundData.currentRound);
-    console.log('[ROUND TRACE] Calculated zombieCount:', zombieCount, 'for round:', this.roundData.currentRound);
+    logger.rounds.debug('Calculated zombieCount:', zombieCount, 'for round:', this.roundData.currentRound);
     
     // CRITICAL FIX: Reset zombiesRemaining and totalZombiesSpawned BEFORE notifying callbacks
     // This ensures the auto-spawn callback sees the correct initial values
@@ -208,23 +210,23 @@ export class RoundManager {
     this.roundData.roundStartTime = Date.now();
     this.roundData.intermissionStartTime = null;
 
-    console.log('[ROUND] Round started', {
+    logger.rounds.info('Round started', {
       round: this.roundData.currentRound,
       expectedZombies: zombieCount,
       zombiesRemaining: this.roundData.zombiesRemaining,
       totalZombiesSpawned: this.roundData.totalZombiesSpawned,
     });
 
-    console.log('[ROUND TRACE] About to notifyRoundStart with round:', this.roundData.currentRound);
+    logger.rounds.debug('About to notifyRoundStart with round:', this.roundData.currentRound);
     // Notify callbacks FIRST so they can spawn zombies and call registerZombieSpawn()
     this.notifyRoundStart(this.roundData.currentRound);
-    console.log('[ROUND TRACE] After notifyRoundStart - zombiesRemaining:', this.roundData.zombiesRemaining, 'totalSpawned:', this.roundData.totalZombiesSpawned);
+    logger.rounds.debug('After notifyRoundStart - zombiesRemaining:', this.roundData.zombiesRemaining, 'totalSpawned:', this.roundData.totalZombiesSpawned);
     
-    console.log('[ROUND TRACE] About to notifyStateChange');
+    logger.rounds.debug('About to notifyStateChange');
     this.notifyStateChange();
-    console.log('[ROUND TRACE] About to notifyZombiesRemaining');
+    logger.rounds.debug('About to notifyZombiesRemaining');
     this.notifyZombiesRemaining();
-    console.log('[ROUND TRACE] startRound complete - final state:', this.roundData.state);
+    logger.rounds.debug('startRound complete - final state:', this.roundData.state);
   }
 
   /**
@@ -233,13 +235,13 @@ export class RoundManager {
    * Automatically starts intermission, which then auto-advances to the next round.
    */
   endRound(): void {
-    console.log('[ROUND TRACE] ENTER endRound');
-    console.log('[ROUND TRACE] endRound invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    logger.rounds.debug('ENTER endRound');
+    logger.rounds.debug('endRound invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'active') {
-      console.warn('[ROUND] Cannot end round - no active round');
-      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
+      logger.rounds.warn('Cannot end round - no active round');
+      logger.rounds.debug('EARLY RETURN: state is not active');
       return;
     }
 
@@ -248,7 +250,7 @@ export class RoundManager {
 
     // Enforce minimum round duration
     if (roundDuration < this.config.minRoundDurationMs) {
-      console.warn('[ROUND] Round ended too early, enforcing minimum duration');
+      logger.rounds.warn('Round ended too early, enforcing minimum duration');
     }
 
     // Store previous round duration
@@ -256,12 +258,12 @@ export class RoundManager {
 
     const oldState = this.roundData.state;
     this.roundData.state = 'ended';
-    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
+    logger.rounds.info('State changed:', oldState, '->', this.roundData.state);
     
     this.roundData.totalRoundsCompleted += 1;
     this.roundData.roundStartTime = null;
 
-    console.log('[ROUND] Round ended, notifying callbacks and starting intermission');
+    logger.rounds.info('Round ended, notifying callbacks and starting intermission');
 
     this.notifyRoundEnd(this.roundData.currentRound);
     this.notifyStateChange();
@@ -277,13 +279,13 @@ export class RoundManager {
    * Automatically schedules the next round to start when intermission completes.
    */
   startIntermission(): void {
-    console.log('[ROUND TRACE] ENTER startIntermission');
-    console.log('[ROUND TRACE] startIntermission invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    logger.rounds.debug('ENTER startIntermission');
+    logger.rounds.debug('startIntermission invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'ended' && this.roundData.state !== 'idle') {
-      console.warn('[ROUND] Can only start intermission after round ends');
-      console.log('[ROUND TRACE] EARLY RETURN: state is not ended or idle');
+      logger.rounds.warn('Can only start intermission after round ends');
+      logger.rounds.debug('EARLY RETURN: state is not ended or idle');
       return;
     }
 
@@ -295,18 +297,18 @@ export class RoundManager {
 
     const oldState = this.roundData.state;
     this.roundData.state = 'intermission';
-    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
+    logger.rounds.info('State changed:', oldState, '->', this.roundData.state);
     
     this.roundData.intermissionStartTime = Date.now();
 
-    console.log('[ROUND] Intermission started, scheduling auto-advance in', this.config.intermissionDurationMs, 'ms');
+    logger.rounds.info('Intermission started, scheduling auto-advance in', this.config.intermissionDurationMs, 'ms');
 
     this.notifyStateChange();
 
     // AUTOMATIC ROUND PROGRESSION:
     // Schedule next round to start automatically when intermission completes
     this.intermissionTimerId = setTimeout(() => {
-      console.log('[ROUND] Intermission timer fired, calling onIntermissionComplete()');
+      logger.rounds.info('Intermission timer fired, calling onIntermissionComplete()');
       this.onIntermissionComplete();
     }, this.config.intermissionDurationMs);
   }
@@ -316,19 +318,19 @@ export class RoundManager {
    * Automatically advances to the next round and starts it
    */
   private onIntermissionComplete(): void {
-    console.log('[ROUND TRACE] ENTER onIntermissionComplete');
-    console.log('[ROUND TRACE] onIntermissionComplete invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
-    console.log('[ROUND TRACE] Current round before advance:', this.roundData.currentRound);
+    logger.rounds.debug('ENTER onIntermissionComplete');
+    logger.rounds.debug('onIntermissionComplete invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
+    logger.rounds.debug('Current round before advance:', this.roundData.currentRound);
 
     // Advance round number
     this.roundData.currentRound += 1;
     
-    console.log('[ROUND] Starting round', this.roundData.currentRound, 'automatically');
+    logger.rounds.info('Starting round', this.roundData.currentRound, 'automatically');
     
     // AUTOMATIC ROUND PROGRESSION:
     // Start the new round immediately (this will spawn zombies via callbacks)
-    console.log('[ROUND TRACE] Calling startRound() from onIntermissionComplete');
+    logger.rounds.debug('Calling startRound() from onIntermissionComplete');
     this.startRound();
   }
 
@@ -356,10 +358,10 @@ export class RoundManager {
    * Note: With automatic progression, this is rarely needed.
    */
   forceNextRound(): void {
-    console.log('[ROUND TRACE] ENTER forceNextRound');
-    console.log('[ROUND TRACE] forceNextRound invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
-    console.log('[ROUND TRACE] Current round before force:', this.roundData.currentRound);
+    logger.rounds.debug('ENTER forceNextRound');
+    logger.rounds.debug('forceNextRound invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
+    logger.rounds.debug('Current round before force:', this.roundData.currentRound);
 
     // Clear any pending intermission timer
     if (this.intermissionTimerId) {
@@ -370,14 +372,14 @@ export class RoundManager {
     const oldState = this.roundData.state;
     this.roundData.currentRound += 1;
     this.roundData.state = 'idle';
-    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
+    logger.rounds.debug('State changed:', oldState, '->', this.roundData.state);
     
     this.roundData.zombiesRemaining = 0;
     this.roundData.zombiesKilled = 0;
     this.roundData.totalZombiesSpawned = 0;
     this.roundData.intermissionStartTime = null;
 
-    console.log('[ROUND] Forced advance to round', this.roundData.currentRound);
+    logger.rounds.info('Forced advance to round', this.roundData.currentRound);
 
     this.notifyStateChange();
   }
@@ -391,19 +393,19 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieSpawn(): number {
-    console.log('[ROUND TRACE] ENTER registerZombieSpawn');
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    logger.rounds.debug('ENTER registerZombieSpawn');
+    logger.rounds.debug('Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'active') {
-      console.warn('[ROUND] Cannot spawn zombie - round not active');
-      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
+      logger.rounds.warn('Cannot spawn zombie - round not active');
+      logger.rounds.debug('EARLY RETURN: state is not active');
       return this.roundData.zombiesRemaining;
     }
 
     this.roundData.totalZombiesSpawned += 1;
     this.roundData.zombiesRemaining += 1;
 
-    console.log('[ROUND] After spawn', {
+    logger.rounds.info('After spawn', {
       zombiesRemaining: this.roundData.zombiesRemaining,
       totalSpawned: this.roundData.totalZombiesSpawned,
     });
@@ -418,21 +420,21 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieKill(): number {
-    console.log('[ROUND TRACE] ENTER registerZombieKill');
-    console.log('[ROUND TRACE] registerZombieKill invoked from:', new Error().stack);
-    console.log('[ROUND TRACE] Current state:', this.roundData.state);
-    console.log('[ROUND TRACE] zombiesRemaining before:', this.roundData.zombiesRemaining);
+    logger.rounds.debug('ENTER registerZombieKill');
+    logger.rounds.debug('registerZombieKill invoked from:', new Error().stack);
+    logger.rounds.debug('Current state:', this.roundData.state);
+    logger.rounds.debug('zombiesRemaining before:', this.roundData.zombiesRemaining);
 
     if (this.roundData.state !== 'active') {
-      console.warn('[ROUND] Cannot register kill - round not active');
-      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
+      logger.rounds.warn('Cannot register kill - round not active');
+      logger.rounds.debug('EARLY RETURN: state is not active');
       return this.roundData.zombiesRemaining;
     }
 
     this.roundData.zombiesKilled += 1;
     this.roundData.zombiesRemaining = Math.max(0, this.roundData.zombiesRemaining - 1);
 
-    console.log('[ROUND] After kill', {
+    logger.rounds.info('After kill', {
       zombiesRemaining: this.roundData.zombiesRemaining,
       zombiesKilled: this.roundData.zombiesKilled,
       totalSpawned: this.roundData.totalZombiesSpawned,
@@ -442,8 +444,8 @@ export class RoundManager {
 
     // Auto-end round if all zombies defeated
     if (this.roundData.zombiesRemaining <= 0) {
-      console.log('[ROUND TRACE] Round should end now - zombiesRemaining =', this.roundData.zombiesRemaining);
-      console.log('[ROUND TRACE] Calling endRound() from registerZombieKill');
+      logger.rounds.info('Round should end now - zombiesRemaining =', this.roundData.zombiesRemaining);
+      logger.rounds.debug('Calling endRound() from registerZombieKill');
       this.endRound();
     }
 
