@@ -8,8 +8,10 @@ import { PointsDisplay } from './utils/PointsDisplay';
 import { RuntimeDoor } from './types';
 import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from './utils/FloorIntegrityAudit';
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
-import { getDoorAuditor, DoorAuditReport } from './utils/DoorConnectivityAudit';
+import { getDoorAuditor, DoorAuditReport, DoorConnection } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
+import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
+import { getRoundManager, RoundManager } from './utils/rounds';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
 // ============================================================================
@@ -158,6 +160,7 @@ const getStaircaseElevationMath = (r: Room, px: number, pz: number): number => {
     const t = Math.max(0, Math.min(1, (pz - zMin) / r.d));
     return r.floorY + (1 - t) * climb;
   }
+  return r.floorY;
 };
 
 const INITIAL_ROOMS: Room[] = [
@@ -388,6 +391,17 @@ export default function App() {
   const [stairCollisionDebugEnabled, setStairCollisionDebugEnabled] = useState<boolean>(false);
   const [stairDebugData, setStairDebugData] = useState<any[]>([]);
   const [playerStairAnalysis, setPlayerStairAnalysis] = useState<any>(null);
+
+  // Zombie debug state (throttled)
+  const [zombieDebugData, setZombieDebugData] = useState<any>(null);
+
+  // Refs for per-frame debug data to avoid re-renders
+  const currentRoomNameRef = useRef<string>('');
+  const playerStairAnalysisRef = useRef<any>(null);
+  const lastZombieDebugUpdate = useRef<number>(0);
+
+  // Zombie manager ref
+  const zombieManagerRef = useRef<ZombieManager | null>(null);
 
   // Debug Lighting toggle function (defined at component scope for JSX access)
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -822,6 +836,34 @@ export default function App() {
     camera.position.copy(playerPos.current);
     cameraRef.current = camera;
 
+    // Initialize Zombie Manager
+    zombieManagerRef.current = getZombieManager(scene);
+    
+    // Set up spawn points (starter room area)
+    zombieManagerRef.current.setSpawnPoints([
+      { x: 20, y: 0, z: -40, roomId: 'starter' },
+      { x: -20, y: 0, z: -40, roomId: 'starter' },
+      { x: 0, y: 0, z: -60, roomId: 'starter' },
+    ]);
+
+    // Handle zombie spawn events
+    zombieManagerRef.current.onSpawn((zombie) => {
+      console.log('Zombie spawned:', zombie.id);
+      setRoundState(prev => ({ ...prev, zombiesAlive: prev.zombiesAlive + 1 }));
+    });
+
+    // Handle zombie death events
+    zombieManagerRef.current.onDeath((zombie, playerId) => {
+      console.log('Zombie killed:', zombie.id, 'by player:', playerId);
+      setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
+    });
+
+    // Handle player damage events
+    zombieManagerRef.current.onPlayerDamage((damage, zombie) => {
+      console.log('Player damaged:', damage, 'by zombie:', zombie.id);
+      // Could add player health system here
+    });
+
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
 
@@ -1235,42 +1277,40 @@ export default function App() {
         const heightDelta = Math.abs((visualRamp.position.y - r.floorY) - (collisionRamp.position.y - r.floorY));
         const validationPass = positionDelta < 0.01 && rotationDelta < 0.001 && heightDelta < 0.01;
         
-        setStairDebugData((prev) => [
-          ...prev,
-          {
-            id: r.id,
-            name: r.name,
-            direction: dir,
-            visualPosition: { x: visualRamp.position.x, y: visualRamp.position.y, z: visualRamp.position.z },
-            visualRotation: { x: visualRamp.rotation.x, y: visualRamp.rotation.y, z: visualRamp.rotation.z },
-            visualScale: { x: visualRamp.scale.x, y: visualRamp.scale.y, z: visualRamp.scale.z },
-            collisionPosition: { x: collisionRamp.position.x, y: collisionRamp.position.y, z: collisionRamp.position.z },
-            collisionRotation: { x: collisionRamp.rotation.x, y: collisionRamp.rotation.y, z: collisionRamp.rotation.z },
-            collisionScale: { x: collisionRamp.scale.x, y: collisionRamp.scale.y, z: collisionRamp.scale.z },
-            offsetX,
-            offsetY,
-            offsetZ,
-            rotationDiffX,
-            rotationDiffY,
-            rotationDiffZ,
-            width: r.w,
-            depth: r.d,
-            climbHeight: climb,
-            isMisaligned,
-            misalignmentWarning: isMisaligned ? `MISALIGNED STAIR DETECTED - Offset: (${offsetX.toFixed(4)}, ${offsetY.toFixed(4)}, ${offsetZ.toFixed(4)})` : undefined,
-            // Validation data
-            positionDelta,
-            rotationDelta,
-            heightDelta,
-            validationPass,
-          },
-        ]);
+        stairDebugDataArray.push({
+          id: r.id,
+          name: r.name,
+          direction: dir,
+          visualPosition: { x: visualRamp.position.x, y: visualRamp.position.y, z: visualRamp.position.z },
+          visualRotation: { x: visualRamp.rotation.x, y: visualRamp.rotation.y, z: visualRamp.rotation.z },
+          visualScale: { x: visualRamp.scale.x, y: visualRamp.scale.y, z: visualRamp.scale.z },
+          collisionPosition: { x: collisionRamp.position.x, y: collisionRamp.position.y, z: collisionRamp.position.z },
+          collisionRotation: { x: collisionRamp.rotation.x, y: collisionRamp.rotation.y, z: collisionRamp.rotation.z },
+          collisionScale: { x: collisionRamp.scale.x, y: collisionRamp.scale.y, z: collisionRamp.scale.z },
+          offsetX,
+          offsetY,
+          offsetZ,
+          rotationDiffX,
+          rotationDiffY,
+          rotationDiffZ,
+          width: r.w,
+          depth: r.d,
+          climbHeight: climb,
+          isMisaligned,
+          misalignmentWarning: isMisaligned ? `MISALIGNED STAIR DETECTED - Offset: (${offsetX.toFixed(4)}, ${offsetY.toFixed(4)}, ${offsetZ.toFixed(4)})` : undefined,
+          // Validation data
+          positionDelta,
+          rotationDelta,
+          heightDelta,
+          validationPass,
+        });
       }
     };
 
     // Reset stair debug data before building rooms
-    setStairDebugData([]);
+    const stairDebugDataArray: any[] = [];
     INITIAL_ROOMS.forEach(r => buildRoom(r));
+    setStairDebugData(stairDebugDataArray);
 
     // Props
     MAP_PROPS.forEach(prop => {
@@ -1301,7 +1341,46 @@ export default function App() {
       pitch.current -= e.movementY * 0.002;
       pitch.current = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch.current));
     };
-    const handleClick = () => { if (document.pointerLockElement !== canvas) canvas?.requestPointerLock(); };
+    const handleClick = () => { 
+      if (document.pointerLockElement !== canvas) {
+        canvas?.requestPointerLock();
+        return;
+      }
+      
+      // Shooting - hitscan on left click when pointer locked
+      if (zombieManagerRef.current && isPointerLocked) {
+        shootZombie();
+      }
+    };
+    
+    const shootZombie = () => {
+      const zombieManager = zombieManagerRef.current;
+      if (!zombieManager || !cameraRef.current) return;
+      
+      // Raycast from camera center
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
+      
+      // Check intersection with zombie meshes
+      const aliveZombies = zombieManager.getAliveZombies();
+      const zombieMeshes = aliveZombies
+        .map(z => z.mesh)
+        .filter((mesh): mesh is THREE.Mesh => mesh !== undefined);
+      
+      const intersects = raycaster.intersectObjects(zombieMeshes);
+      
+      if (intersects.length > 0) {
+        const hitObject = intersects[0].object;
+        // Find the zombie that owns this mesh
+        const hitZombie = aliveZombies.find(z => z.mesh === hitObject || z.mesh === hitObject.parent);
+        
+        if (hitZombie) {
+          // Deal damage (instant kill for simplicity - could add weapon system later)
+          zombieManager.damageZombie(hitZombie.id, 100, 'player');
+          console.log('Hit zombie:', hitZombie.id, 'Health:', hitZombie.health);
+        }
+      }
+    };
     const handleLockChange = () => { setIsPointerLocked(document.pointerLockElement === canvas); };
     canvas.addEventListener('click', handleClick);
     document.addEventListener('mousemove', handleMouseMove);
@@ -1665,7 +1744,12 @@ export default function App() {
           playerPos.current.z,
           playerPos.current.y
         );
-        setCurrentRoomName(detectedRoom?.name || "None");
+        // Only update state if room name changed to avoid re-renders every frame
+        const newRoomName = detectedRoom?.name || "None";
+        if (newRoomName !== currentRoomNameRef.current) {
+          currentRoomNameRef.current = newRoomName;
+          setCurrentRoomName(newRoomName);
+        }
         
         let groundY = currentRoom
           ? (currentRoom.isStaircase
@@ -1677,25 +1761,39 @@ export default function App() {
         if (currentRoom?.isStaircase) {
           const stairHeight = getStaircaseElevationMath(currentRoom, playerPos.current.x, playerPos.current.z);
           
-          // Update player stair analysis for the STAIRS tab
-          setPlayerStairAnalysis({
+          // Update player stair analysis for the STAIRS tab - only if values changed
+          const newStairAnalysis = {
             playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
             currentRoomId: currentRoom.id,
             expectedRampHeight: stairHeight,
             actualPlayerHeight: playerPos.current.y,
             heightDifference: playerPos.current.y - stairHeight,
             isInStairwell: true,
-          });
+          };
+          // Only update if significant change (avoid per-frame updates for minor position changes)
+          const prevAnalysis = playerStairAnalysisRef.current;
+          if (!prevAnalysis || 
+              prevAnalysis.currentRoomId !== newStairAnalysis.currentRoomId ||
+              Math.abs(prevAnalysis.expectedRampHeight! - newStairAnalysis.expectedRampHeight!) > 0.1 ||
+              Math.abs(prevAnalysis.heightDifference - newStairAnalysis.heightDifference) > 0.1) {
+            playerStairAnalysisRef.current = newStairAnalysis;
+            setPlayerStairAnalysis(newStairAnalysis);
+          }
         } else {
           // Not in a stairwell - clear or update player stair analysis
-          setPlayerStairAnalysis({
+          const newStairAnalysis = {
             playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
             currentRoomId: currentRoom?.id || null,
             expectedRampHeight: null,
             actualPlayerHeight: playerPos.current.y,
             heightDifference: 0,
             isInStairwell: false,
-          });
+          };
+          const prevAnalysis = playerStairAnalysisRef.current;
+          if (!prevAnalysis || prevAnalysis.isInStairwell !== false) {
+            playerStairAnalysisRef.current = newStairAnalysis;
+            setPlayerStairAnalysis(newStairAnalysis);
+          }
         }
         playerPos.current.y += velocityY.current * dt;
         if (playerPos.current.y <= groundY) {
@@ -1709,6 +1807,18 @@ export default function App() {
         const moved = tryMove(playerPos.current, moveDir);
         playerPos.current.x = moved.x;
         playerPos.current.z = moved.z;
+      }
+
+      // Update zombies AI
+      if (zombieManagerRef.current) {
+        zombieManagerRef.current.update(dt, playerPos.current);
+        
+        // Throttled zombie debug data update (4 times per second = 250ms)
+        if (now - lastZombieDebugUpdate.current > 250) {
+          lastZombieDebugUpdate.current = now;
+          const debugData = zombieManagerRef.current.getDebugData(playerPos.current);
+          setZombieDebugData(debugData);
+        }
       }
 
       camera.position.copy(playerPos.current);
@@ -2049,89 +2159,6 @@ export default function App() {
         <PointsDisplay playerId="player1" />
       </div>
 
-      {/* Not Enough Points Feedback */}
-      {showNotEnoughPoints && (
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
-          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
-            NOT ENOUGH POINTS
-          </div>
-        </div>
-      )}
-
-      {/* Debug Overlay - Collapsible F1 menu */}
-      <DebugOverlay
-        data={{
-          fps,
-          meshCount,
-          drawCalls,
-          playerPos: playerPos.current,
-          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
-          currentRoom: currentRoomName,
-          noclip: noclipRef.current,
-          round: roundState.round,
-          zombiesAlive: roundState.zombiesAlive,
-          spawnStatus: roundState.spawnStatus,
-          connectivityIssues: connectivityIssues,
-          floorIntegrityIssues: floorAuditIssues,
-          debugLightingEnabled,
-          debugLightingBrightness,
-          roomDetectorStatus: {
-            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
-            roomCount: INITIAL_ROOMS.length,
-            closestRoom: null,
-            closestDistance: 0,
-            currentRoom: currentRoomName,
-            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
-          },
-          stairDebugData,
-          playerStairAnalysis,
-        }}
-        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
-        onRunConnectivity={() => {
-          const auditor = connectivityAuditorRef.current;
-          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
-          const report = auditor.runAudit();
-          const issues = auditor.getIssues();
-          setConnectivityIssues(issues);
-          setConnectivityReport(report);
-          setConnectivityDebugMode(true);
-          setCurrentConnectivityIssueIndex(-1);
-        }}
-        onRunFloorAudit={() => {
-          const auditor = floorAuditorRef.current;
-          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
-          const report = auditor.runAudit();
-          setFloorAuditIssues(report.issues);
-          setFloorDebugMode(true);
-          setCurrentFloorIssueIndex(-1);
-        }}
-        onTeleportToSpawn={() => {
-          // Teleport to starter room spawn point
-          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
-          yaw.current = Math.PI;
-          console.log('[DebugOverlay] Teleported to starter room spawn');
-        }}
-        onTeleportToIssue={(issue) => {
-          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-          yaw.current = Math.PI;
-          noclipRef.current = true;
-          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
-        }}
-        onToggleDebugLighting={toggleDebugLighting}
-        onSetDebugLightingBrightness={(brightness: number) => {
-          setDebugLightingBrightness(brightness);
-          if (debugLightingEnabled && ambientLightRef.current) {
-            ambientLightRef.current.intensity = brightness;
-          }
-        }}
-        onStairVisualToggle={(enabled: boolean) => {
-          setStairVisualDebugEnabled(enabled);
-        }}
-        onStairCollisionToggle={(enabled: boolean) => {
-          setStairCollisionDebugEnabled(enabled);
-        }}
-      />
-
       <div ref={mountRef} className="absolute inset-0">
         <canvas ref={canvasRef} className="block w-full h-full" />
       </div>
@@ -2248,6 +2275,89 @@ export default function App() {
           )}
         </>
       )}
+
+      {/* Not Enough Points Feedback */}
+      {showNotEnoughPoints && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50">
+          <div className="bg-red-900/90 border-2 border-red-500 px-6 py-3 rounded-lg text-lg font-mono tracking-wide text-red-200 whitespace-nowrap animate-pulse">
+            NOT ENOUGH POINTS
+          </div>
+        </div>
+      )}
+
+      {/* Debug Overlay - Collapsible F1 menu (RENDERED LAST TO BE ON TOP) */}
+      <DebugOverlay
+        data={{
+          fps,
+          meshCount,
+          drawCalls,
+          playerPos: playerPos.current,
+          playerRot: cameraRef.current?.rotation || new THREE.Euler(0, 0, 0),
+          currentRoom: currentRoomName,
+          noclip: noclipRef.current,
+          round: roundState.round,
+          zombiesAlive: roundState.zombiesAlive,
+          spawnStatus: roundState.spawnStatus,
+          connectivityIssues: connectivityIssues,
+          floorIntegrityIssues: floorAuditIssues,
+          debugLightingEnabled,
+          debugLightingBrightness,
+          roomDetectorStatus: {
+            playerPosition: { x: playerPos.current.x, y: playerPos.current.y, z: playerPos.current.z },
+            roomCount: INITIAL_ROOMS.length,
+            closestRoom: null,
+            closestDistance: 0,
+            currentRoom: currentRoomName,
+            rejectionReason: currentRoomName === 'None' ? 'Player position does not fall within any room bounds. Check Y height (floorY) or X/Z coordinates.' : null,
+          },
+          stairDebugData,
+          playerStairAnalysis,
+        }}
+        onToggleNoclip={() => { noclipRef.current = !noclipRef.current; }}
+        onRunConnectivity={() => {
+          const auditor = connectivityAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+          const report = auditor.runAudit();
+          const issues = auditor.getIssues();
+          setConnectivityIssues(issues);
+          setConnectivityReport(report);
+          setConnectivityDebugMode(true);
+          setCurrentConnectivityIssueIndex(-1);
+        }}
+        onRunFloorAudit={() => {
+          const auditor = floorAuditorRef.current;
+          auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+          const report = auditor.runAudit();
+          setFloorAuditIssues(report.issues);
+          setFloorDebugMode(true);
+          setCurrentFloorIssueIndex(-1);
+        }}
+        onTeleportToSpawn={() => {
+          // Teleport to starter room spawn point
+          playerPos.current.set(17.5, PLAYER_EYE_HEIGHT, -10);
+          yaw.current = Math.PI;
+          console.log('[DebugOverlay] Teleported to starter room spawn');
+        }}
+        onTeleportToIssue={(issue) => {
+          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+          yaw.current = Math.PI;
+          noclipRef.current = true;
+          console.log(`[DebugOverlay] Teleported to issue: ${issue.type} in ${issue.roomName}`);
+        }}
+        onToggleDebugLighting={toggleDebugLighting}
+        onSetDebugLightingBrightness={(brightness: number) => {
+          setDebugLightingBrightness(brightness);
+          if (debugLightingEnabled && ambientLightRef.current) {
+            ambientLightRef.current.intensity = brightness;
+          }
+        }}
+        onStairVisualToggle={(enabled: boolean) => {
+          setStairVisualDebugEnabled(enabled);
+        }}
+        onStairCollisionToggle={(enabled: boolean) => {
+          setStairCollisionDebugEnabled(enabled);
+        }}
+      />
     </div>
   );
 }

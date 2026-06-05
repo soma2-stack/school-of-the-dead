@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { ConnectivityIssue, FloorIssue } from '../utils/MapConnectivityAudit';
 import { DoorAuditReport, RoomDoorData, MissingDoorRecommendation } from '../utils/DoorConnectivityAudit';
+import AuditTab from './tabs/AuditTab';
+import DoorsTab from './tabs/DoorsTab';
+import ZombiesTab from './tabs/ZombiesTab';
+import StairsTab from './tabs/StairsTab';
 
 export interface StairDebugData {
   id: string;
@@ -77,6 +81,26 @@ export interface DebugData {
   playerStairAnalysis?: PlayerStairAnalysis;
   // Door audit data
   doorAuditReport?: DoorAuditReport | null;
+  // Zombie debug data
+  zombieDebugData?: ZombieDebugData;
+}
+
+export interface ZombieDebugData {
+  aliveCount: number;
+  deadCount: number;
+  currentRound: number;
+  expectedZombiesThisRound: number;
+  killsThisRound: number;
+  zombies: ZombieDebugEntry[];
+}
+
+export interface ZombieDebugEntry {
+  id: string;
+  health: number;
+  maxHealth: number;
+  position: { x: number; y: number; z: number };
+  distanceToPlayer: number;
+  state: 'alive' | 'dying' | 'dead';
 }
 
 interface Props {
@@ -90,6 +114,19 @@ interface Props {
   onSetDebugLightingBrightness?: (brightness: number) => void;
   onStairVisualToggle?: (enabled: boolean) => void;
   onStairCollisionToggle?: (enabled: boolean) => void;
+  onAddPoints?: (amount: number) => void;
+  onSetPoints?: (amount: number) => void;
+  onRestoreHealth?: () => void;
+  onToggleGodMode?: () => void;
+  onTeleportToCurrentRoomSpawn?: () => void;
+  onToggleInfiniteAmmo?: () => void;
+  onStartRound?: (round: number) => void;
+  onNextRound?: () => void;
+  onPreviousRound?: () => void;
+  onForceEndRound?: () => void;
+  onSpawnCurrentWave?: () => void;
+  onKillAllZombies?: () => void;
+  onSpawnZombie?: (count: number) => void;
 }
 
 const DebugOverlay: React.FC<Props> = ({
@@ -103,13 +140,30 @@ const DebugOverlay: React.FC<Props> = ({
   onSetDebugLightingBrightness,
   onStairVisualToggle,
   onStairCollisionToggle,
+  onAddPoints,
+  onSetPoints,
+  onRestoreHealth,
+  onToggleGodMode,
+  onTeleportToCurrentRoomSpawn,
+  onToggleInfiniteAmmo,
+  onStartRound,
+  onNextRound,
+  onPreviousRound,
+  onForceEndRound,
+  onSpawnCurrentWave,
+  onKillAllZombies,
+  onSpawnZombie,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'audit' | 'player' | 'rounds' | 'perf' | 'stairs'>('audit');
+  const [activeTab, setActiveTab] = useState<'audit' | 'doors' | 'player' | 'rounds' | 'zombies' | 'perf' | 'stairs'>('audit');
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<'all' | 'connectivity' | 'floor' | 'open'>('all');
   const [stairVisualEnabled, setStairVisualEnabled] = useState(false);
   const [stairCollisionEnabled, setStairCollisionEnabled] = useState(false);
+  const [customPointsAmount, setCustomPointsAmount] = useState<number>(1000);
+  const [godModeEnabled, setGodModeEnabled] = useState(false);
+  const [infiniteAmmoEnabled, setInfiniteAmmoEnabled] = useState(false);
+  const [clipboardFeedback, setClipboardFeedback] = useState<string | null>(null);
 
   // Notify parent when toggles change
   useEffect(() => {
@@ -218,19 +272,22 @@ const DebugOverlay: React.FC<Props> = ({
 
   const tabsStyle: React.CSSProperties = {
     display: 'flex',
+    flexWrap: 'wrap' as const,
     marginBottom: '10px',
     borderBottom: '1px solid #333',
+    gap: '2px',
   };
 
   const tabStyle = (isActive: boolean): React.CSSProperties => ({
-    flex: 1,
+    flex: '0 1 auto',
     textAlign: 'center',
-    padding: '4px 2px',
+    padding: '4px 6px',
     cursor: 'pointer',
     backgroundColor: isActive ? '#0f0' : 'transparent',
     color: isActive ? '#000' : '#0f0',
     fontWeight: 'bold',
-    fontSize: '10px',
+    fontSize: '9px',
+    minWidth: '50px',
   });
 
   const sectionStyle: React.CSSProperties = {
@@ -309,184 +366,26 @@ const DebugOverlay: React.FC<Props> = ({
 
         {isOpen && (
           <div style={tabsStyle}>
-            <div style={tabStyle(activeTab === 'audit')} onClick={() => setActiveTab('audit')}>
-              AUDIT
-            </div>
-            <div style={tabStyle(activeTab === 'doors')} onClick={() => setActiveTab('doors')}>
-              DOORS
-            </div>
-            <div style={tabStyle(activeTab === 'player')} onClick={() => setActiveTab('player')}>
-              PLAYER
-            </div>
-            <div style={tabStyle(activeTab === 'rounds')} onClick={() => setActiveTab('rounds')}>
-              ROUNDS
-            </div>
-            <div style={tabStyle(activeTab === 'perf')} onClick={() => setActiveTab('perf')}>
-              PERF
-            </div>
-            <div style={tabStyle(activeTab === 'stairs')} onClick={() => setActiveTab('stairs')}>
-              STAIRS
-            </div>
+            <div style={tabStyle(activeTab === 'audit')} onClick={() => setActiveTab('audit')}>AUDIT</div>
+            <div style={tabStyle(activeTab === 'doors')} onClick={() => setActiveTab('doors')}>DOORS</div>
+            <div style={tabStyle(activeTab === 'player')} onClick={() => setActiveTab('player')}>PLAYER</div>
+            <div style={tabStyle(activeTab === 'rounds')} onClick={() => setActiveTab('rounds')}>ROUNDS</div>
+            <div style={tabStyle(activeTab === 'zombies')} onClick={() => setActiveTab('zombies')}>ZOMBIES</div>
+            <div style={tabStyle(activeTab === 'perf')} onClick={() => setActiveTab('perf')}>PERF</div>
+            <div style={tabStyle(activeTab === 'stairs')} onClick={() => setActiveTab('stairs')}>STAIRS</div>
           </div>
         )}
 
         <div style={sectionStyle}>
           {activeTab === 'audit' && (
-            <div>
-              {/* Issue Counts Summary */}
-              <div style={rowStyle}>
-                <span>Connectivity Issues:</span>
-                <span style={{ color: data.connectivityIssues.length > 0 ? '#f00' : '#0f0' }}>
-                  {data.connectivityIssues.length}
-                </span>
-              </div>
-              <div style={rowStyle}>
-                <span>Floor Integrity:</span>
-                <span style={{ color: data.floorIntegrityIssues.length > 0 ? '#f00' : '#0f0' }}>
-                  {data.floorIntegrityIssues.length}
-                </span>
-              </div>
-              
-              {/* Filter Buttons */}
-              <div style={{ marginTop: '10px', borderTop: '1px dashed #333', paddingTop: '5px' }}>
-                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
-                  {(['all', 'connectivity', 'floor', 'open'] as const).map(filter => (
-                    <button
-                      key={filter}
-                      onClick={() => setFilterType(filter)}
-                      style={{
-                        ...buttonStyle,
-                        marginTop: 0,
-                        backgroundColor: filterType === filter ? '#0f0' : '#003300',
-                        color: filterType === filter ? '#000' : '#0f0',
-                        flex: 1,
-                        fontSize: '9px',
-                        padding: '3px 2px',
-                      }}
-                    >
-                      {filter.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                
-                {/* Expand/Collapse All */}
-                <div style={{ ...buttonStyle, marginTop: '2px' }} onClick={() => {
-                  if (expandedIssues.size === filteredIssues.length) {
-                    setExpandedIssues(new Set());
-                  } else {
-                    setExpandedIssues(new Set(filteredIssues.map(i => i.id)));
-                  }
-                }}>
-                  {expandedIssues.size === filteredIssues.length ? 'Collapse All' : 'Expand All'}
-                </div>
-              </div>
-
-              {/* Issue List */}
-              {filteredIssues.length > 0 && (
-                <div style={{ marginTop: '10px', maxHeight: '300px', overflowY: 'auto' }}>
-                  {filteredIssues.map((issue, idx) => {
-                    const isExpanded = expandedIssues.has(issue.id);
-                    return (
-                      <div
-                        key={issue.id}
-                        style={{
-                          border: '1px solid #333',
-                          borderRadius: '3px',
-                          marginBottom: '6px',
-                          backgroundColor: isExpanded ? 'rgba(0, 255, 0, 0.1)' : 'transparent',
-                        }}
-                      >
-                        {/* Issue Header */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '4px 6px',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => toggleIssueExpand(issue.id)}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '10px', color: '#888' }}>#{idx + 1}</span>
-                            <span style={{ 
-                              fontSize: '10px', 
-                              fontWeight: 'bold',
-                              color: getSeverityColor(issue.severity),
-                            }}>
-                              [{issue.type.toUpperCase()}]
-                            </span>
-                            <span style={{ fontSize: '10px', color: '#aaa' }}>{issue.roomName}</span>
-                          </div>
-                          <span style={{ fontSize: '10px' }}>{isExpanded ? '▼' : '▶'}</span>
-                        </div>
-                        
-                        {/* Expanded Details */}
-                        {isExpanded && (
-                          <div style={{ 
-                            padding: '6px', 
-                            borderTop: '1px solid #333',
-                            fontSize: '10px',
-                          }}>
-                            <div style={rowStyle}>
-                              <span>Position:</span>
-                              <span>[{issue.location[0].toFixed(1)}, {issue.location[1].toFixed(1)}, {issue.location[2].toFixed(1)}]</span>
-                            </div>
-                            <div style={rowStyle}>
-                              <span>Severity:</span>
-                              <span style={{ color: getSeverityColor(issue.severity) }}>{issue.severity.toUpperCase()}</span>
-                            </div>
-                            <div style={{ marginTop: '4px' }}>
-                              <span style={{ color: '#888' }}>Reason: </span>
-                              <span>{'description' in issue ? issue.description : issue.cause}</span>
-                            </div>
-                            {'details' in issue && issue.details && (
-                              <div style={{ marginTop: '2px' }}>
-                                <span style={{ color: '#888' }}>Details: </span>
-                                <span>{issue.details}</span>
-                              </div>
-                            )}
-                            <div style={{ 
-                              marginTop: '6px', 
-                              padding: '4px', 
-                              backgroundColor: 'rgba(255, 255, 0, 0.1)',
-                              borderLeft: '2px solid #ff0',
-                            }}>
-                              <span style={{ color: '#ff0' }}>Suggested Fix: </span>
-                              <span>{getSuggestedFix(issue)}</span>
-                            </div>
-                            {onTeleportToIssue && (
-                              <button
-                                style={{ ...buttonStyle, marginTop: '6px' }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onTeleportToIssue(issue);
-                                }}
-                              >
-                                Teleport To Issue
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              
-              {/* Audit Action Buttons */}
-              <div style={{ marginTop: '10px', borderTop: '1px dashed #333', paddingTop: '5px' }}>
-                <div style={buttonStyle} onClick={onRunConnectivity}>
-                  Run Connectivity Audit
-                </div>
-                <div style={{ ...buttonStyle, marginTop: '2px' }} onClick={onRunFloorAudit}>
-                  Run Floor Integrity
-                </div>
-                <div style={{ ...buttonStyle, marginTop: '2px' }} onClick={onTeleportToSpawn}>
-                  Teleport to Spawn
-                </div>
-              </div>
-            </div>
+            <AuditTab
+              connectivityIssues={data.connectivityIssues}
+              floorIntegrityIssues={data.floorIntegrityIssues}
+              onRunConnectivity={onRunConnectivity}
+              onRunFloorAudit={onRunFloorAudit}
+              onTeleportToSpawn={onTeleportToSpawn}
+              onTeleportToIssue={onTeleportToIssue}
+            />
           )}
 
           {activeTab === 'player' && (
@@ -605,23 +504,313 @@ const DebugOverlay: React.FC<Props> = ({
                   <div style={{ fontSize: '9px', color: '#888', marginTop: '2px' }}>Range: 1.0x - 5.0x</div>
                 </div>
               )}
+
+              {/* Player Cheats Section */}
+              <div style={{ marginTop: '12px', borderTop: '1px dashed #333', paddingTop: '8px' }}>
+                <strong style={{ color: '#0ff', fontSize: '10px', display: 'block', marginBottom: '6px' }}>PLAYER CHEATS</strong>
+                
+                {/* Points Controls */}
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ fontSize: '9px', color: '#888', marginBottom: '4px' }}>POINTS</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {[500, 1000, 5000, 10000].map(amt => (
+                      <button
+                        key={amt}
+                        onClick={() => onAddPoints?.(amt)}
+                        style={{
+                          ...buttonStyle,
+                          marginTop: 0,
+                          backgroundColor: '#059669',
+                          flex: '0 1 auto',
+                          padding: '4px 8px',
+                          fontSize: '9px',
+                        }}
+                      >
+                        +{amt.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      value={customPointsAmount}
+                      onChange={(e) => setCustomPointsAmount(parseInt(e.target.value) || 0)}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#111',
+                        border: '1px solid #0f0',
+                        color: '#0f0',
+                        padding: '4px',
+                        fontSize: '10px',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                    <button
+                      onClick={() => onSetPoints?.(customPointsAmount)}
+                      style={{ ...buttonStyle, marginTop: 0, padding: '4px 8px', fontSize: '9px' }}
+                    >
+                      SET
+                    </button>
+                  </div>
+                </div>
+
+                {/* Toggle Cheats */}
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => { setGodModeEnabled(!godModeEnabled); onToggleGodMode?.(); }}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      flex: 1,
+                      backgroundColor: godModeEnabled ? '#dc2626' : '#4b5563',
+                      borderColor: godModeEnabled ? '#f00' : '#888',
+                    }}
+                  >
+                    GOD MODE {godModeEnabled ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    onClick={() => { setInfiniteAmmoEnabled(!infiniteAmmoEnabled); onToggleInfiniteAmmo?.(); }}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      flex: 1,
+                      backgroundColor: infiniteAmmoEnabled ? '#059669' : '#4b5563',
+                      borderColor: infiniteAmmoEnabled ? '#0f0' : '#888',
+                    }}
+                  >
+                    INF AMMO {infiniteAmmoEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Health & Teleport */}
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                  <button
+                    onClick={() => onRestoreHealth?.()}
+                    style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#059669' }}
+                  >
+                    ❤ RESTORE HEALTH
+                  </button>
+                  <button
+                    onClick={() => onTeleportToSpawn?.()}
+                    style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#1e3a8a' }}
+                  >
+                    📍 TELEPORT TO SPAWN
+                  </button>
+                </div>
+                <button
+                  onClick={() => onTeleportToCurrentRoomSpawn?.()}
+                  style={{ ...buttonStyle, width: '100%', backgroundColor: '#1e3a8a' }}
+                >
+                  📍 TELEPORT TO ROOM SPAWN
+                </button>
+              </div>
             </div>
           )}
 
           {activeTab === 'rounds' && (
             <div>
-              <div style={rowStyle}>
-                <span>Current Round:</span>
-                <span>{data.round}</span>
+              {/* Round Stats */}
+              <div style={{ marginBottom: '10px', border: '1px solid #ff0', padding: '8px', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 0, 0.05)' }}>
+                <strong style={{ color: '#ff0', display: 'block', marginBottom: '6px' }}>ROUND STATUS</strong>
+                <div style={rowStyle}>
+                  <span>Current Round:</span>
+                  <span style={{ color: '#ff0', fontWeight: 'bold' }}>{data.round}</span>
+                </div>
+                <div style={rowStyle}>
+                  <span>Zombies Remaining:</span>
+                  <span>{data.zombiesAlive}</span>
+                </div>
+                <div style={rowStyle}>
+                  <span>Spawn Status:</span>
+                  <span>{data.spawnStatus}</span>
+                </div>
               </div>
-              <div style={rowStyle}>
-                <span>Zombies Alive:</span>
-                <span>{data.zombiesAlive}</span>
+
+              {/* Quick Start Round Buttons */}
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ fontSize: '10px', color: '#888' }}>START ROUND</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                  {[1, 5, 10, 20, 50].map(r => (
+                    <button
+                      key={r}
+                      onClick={() => onStartRound?.(r)}
+                      style={{
+                        ...buttonStyle,
+                        marginTop: 0,
+                        backgroundColor: '#1e3a8a',
+                        borderColor: '#00f',
+                        flex: '0 1 auto',
+                        padding: '4px 8px',
+                        fontSize: '9px',
+                      }}
+                    >
+                      R{r}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div style={rowStyle}>
-                <span>Spawn Status:</span>
-                <span>{data.spawnStatus}</span>
+
+              {/* Round Navigation */}
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    onClick={() => onPreviousRound?.()}
+                    style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#4b5563' }}
+                  >
+                    ◀ Previous
+                  </button>
+                  <button
+                    onClick={() => onNextRound?.()}
+                    style={{ ...buttonStyle, marginTop: 0, flex: 1, backgroundColor: '#1e3a8a' }}
+                  >
+                    Next ▶
+                  </button>
+                </div>
+                <button
+                  onClick={() => onForceEndRound?.()}
+                  style={{ ...buttonStyle, marginTop: '4px', backgroundColor: '#991b1b', borderColor: '#f00' }}
+                >
+                  ⚠ FORCE END ROUND
+                </button>
+                <button
+                  onClick={() => onSpawnCurrentWave?.()}
+                  style={{ ...buttonStyle, marginTop: '4px', backgroundColor: '#166534', borderColor: '#0f0' }}
+                >
+                  🧟 SPAWN CURRENT WAVE
+                </button>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'zombies' && data.zombieDebugData && (
+            <div>
+              {/* Summary Stats */}
+              <div style={{
+                border: '1px solid #f00',
+                backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                padding: '8px',
+                marginBottom: '10px',
+                borderRadius: '4px'
+              }}>
+                <strong style={{ color: '#f00', display: 'block', marginBottom: '6px' }}>
+                  ZOMBIE STATUS
+                </strong>
+                <div style={{ fontSize: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                  <span>Alive Zombies:</span>
+                  <span style={{ color: '#0f0' }}>{data.zombieDebugData.aliveCount}</span>
+
+                  <span>Dead Zombies:</span>
+                  <span style={{ color: '#888' }}>{data.zombieDebugData.deadCount}</span>
+
+                  <span>Current Round:</span>
+                  <span style={{ color: '#ff0' }}>{data.zombieDebugData.currentRound}</span>
+
+                  <span>Expected This Round:</span>
+                  <span>{data.zombieDebugData.expectedZombiesThisRound}</span>
+
+                  <span>Kills This Round:</span>
+                  <span style={{ color: '#0ff' }}>{data.zombieDebugData.killsThisRound}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ marginBottom: '10px' }}>
+                <button
+                  onClick={() => onKillAllZombies?.()}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: '#991b1b',
+                    borderColor: '#f00',
+                    marginBottom: '4px',
+                  }}
+                >
+                  💀 KILL ALL ZOMBIES
+                </button>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    onClick={() => onSpawnZombie?.(1)}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: '#166534',
+                      borderColor: '#0f0',
+                      flex: 1,
+                    }}
+                  >
+                    🧟 SPAWN 1 ZOMBIE
+                  </button>
+                  <button
+                    onClick={() => onSpawnZombie?.(10)}
+                    style={{
+                      ...buttonStyle,
+                      marginTop: 0,
+                      backgroundColor: '#166534',
+                      borderColor: '#0f0',
+                      flex: 1,
+                    }}
+                  >
+                    🧟🧟 SPAWN 10 ZOMBIES
+                  </button>
+                </div>
+                <button
+                  onClick={() => onNextRound?.()}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: '#1e3a8a',
+                    borderColor: '#00f',
+                    marginTop: '4px',
+                  }}
+                >
+                  🔄 START NEXT ROUND
+                </button>
+              </div>
+
+              {/* Zombie List */}
+              <div style={{
+                border: '1px solid #333',
+                borderRadius: '4px',
+                maxHeight: '300px',
+                overflowY: 'auto',
+              }}>
+                <strong style={{ color: '#f88', display: 'block', padding: '6px', borderBottom: '1px solid #333' }}>
+                  ZOMBIE DETAILS ({data.zombieDebugData.zombies.length})
+                </strong>
+                {data.zombieDebugData.zombies.map((zombie, idx) => (
+                  <div
+                    key={zombie.id}
+                    style={{
+                      padding: '6px',
+                      borderBottom: '1px solid #222',
+                      backgroundColor: zombie.state === 'alive' ? 'rgba(0, 255, 0, 0.05)' : 'rgba(255, 0, 0, 0.05)',
+                      fontSize: '9px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <strong style={{ color: zombie.state === 'alive' ? '#0f0' : '#f00' }}>
+                        #{idx + 1} - {zombie.id.slice(-8)}
+                      </strong>
+                      <span style={{ 
+                        color: zombie.state === 'alive' ? '#0f0' : zombie.state === 'dying' ? '#ff0' : '#f00',
+                        fontWeight: 'bold',
+                      }}>
+                        [{zombie.state.toUpperCase()}]
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
+                      <span>Health: {zombie.health}/{zombie.maxHealth}</span>
+                      <span>Dist: {zombie.distanceToPlayer.toFixed(1)}</span>
+                      <span>X: {zombie.position.x.toFixed(1)}</span>
+                      <span>Z: {zombie.position.z.toFixed(1)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'zombies' && !data.zombieDebugData && (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
+              No zombie data available. Start a round to see zombie debug info.
             </div>
           )}
 
