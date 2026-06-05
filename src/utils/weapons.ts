@@ -94,8 +94,10 @@ export class WeaponManager {
     playerId: string
   ): FireResult {
     console.log('[WEAPON] Fire input received');
+    console.log('[WEAPON] weaponManager !== null:', this !== null);
 
     if (!this.canFire()) {
+      console.log('[WEAPON] canFire() returned false');
       return { success: false, reason: 'cannot_fire' };
     }
 
@@ -155,12 +157,23 @@ export class WeaponManager {
 
         // Award hit points
         const pointsManager = getPointsManager();
-        pointsManager.addBulletHit(playerId);
+        console.log('[POINTS] Before bulletHit - playerId:', playerId);
+        const beforeState = pointsManager.getPlayerState(playerId);
+        console.log('[POINTS] Before:', beforeState?.currentPoints ?? 0);
+        const hitResult = pointsManager.addBulletHit(playerId);
+        console.log('[POINTS] addBulletHit result:', hitResult);
+        const afterState = pointsManager.getPlayerState(playerId);
+        console.log('[POINTS] After:', afterState?.currentPoints ?? 0);
         console.log('[WEAPON] Awarded 10 points');
 
         // Check if kill happened (health was > 0 before damage, now <= 0)
         if (previousHealth > 0 && previousHealth <= damage) {
           console.log('[WEAPON] Zombie killed', hitZombie.id);
+          // Award kill bonus points
+          const killResult = pointsManager.addZombieKill(playerId);
+          console.log('[POINTS] addZombieKill result:', killResult);
+          const afterKillState = pointsManager.getPlayerState(playerId);
+          console.log('[POINTS] After kill bonus:', afterKillState?.currentPoints ?? 0);
           console.log('[WEAPON] Awarded 100 kill bonus');
         }
 

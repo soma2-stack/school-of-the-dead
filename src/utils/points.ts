@@ -5,6 +5,7 @@
  * Supports multiplayer, save/load, and future expansion.
  */
 
+import { logger } from './logger';
 // ============================================================================
 // CONFIGURATION - All point values are centralized here for easy tuning
 // ============================================================================
@@ -257,6 +258,7 @@ export class PlayerPointsManager {
     reason: PointsEvent
   ): PointsOperationResult | null {
     const player = this.players.get(playerId);
+    logger.points.debug('addPoints called:', { playerId, amount, reason, playerExists: !!player });
     if (!player) return null;
 
     if (amount <= 0) {
@@ -273,6 +275,7 @@ export class PlayerPointsManager {
     player.currentPoints += amount;
     player.totalEarned += amount;
     player.lastUpdated = Date.now();
+    logger.points.debug('Points updated:', { previousPoints, newPoints: player.currentPoints });
 
     const result: PointsOperationResult = {
       success: true,
@@ -282,6 +285,7 @@ export class PlayerPointsManager {
       reason,
     };
 
+    logger.points.debug('Notifying listeners, listener count:', this.listeners.size);
     this.notifyListeners(playerId, result);
     return result;
   }
@@ -406,9 +410,12 @@ export class PlayerPointsManager {
    * Notify all listeners of a points change
    */
   private notifyListeners(playerId: string, result: PointsOperationResult): void {
-    this.listeners.forEach((listener) => {
+    logger.points.debug('notifyListeners called:', { playerId, result, listenerCount: this.listeners.size });
+    this.listeners.forEach((listener, index) => {
+      logger.points.debug(`Calling listener ${index}`);
       try {
         listener(playerId, result);
+        logger.points.debug(`Listener ${index} completed`);
       } catch (error) {
         console.error('Error in points change listener:', error);
       }

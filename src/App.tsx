@@ -14,6 +14,7 @@ import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils
 import { getRoundManager, RoundManager } from './utils/rounds';
 import { getWeaponManager, WeaponManager } from './utils/weapons';
 import { Crosshair } from './utils/Crosshair';
+import { logger } from './utils/logger';
 import { WeaponUI } from './utils/WeaponUI';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 
@@ -870,8 +871,34 @@ export default function App() {
       // Could add player health system here
     });
 
+    // Subscribe to round start events for automatic zombie spawning
+    const roundManager = getRoundManager();
+    logger.rounds.debug('Subscribing to onRoundStart in App.tsx');
+    roundManager.onRoundStart((roundNumber) => {
+      logger.rounds.info('Round start event received in App.tsx for round', roundNumber);
+      logger.rounds.debug('zombieManagerRef.current:', zombieManagerRef.current);
+      const zombieManager = zombieManagerRef.current;
+      if (zombieManager) {
+        const totalZombies = RoundManager.calculateZombieCount(roundNumber);
+        logger.rounds.info('Auto spawning zombies for round:', roundNumber, 'count:', totalZombies);
+        for (let i = 0; i < totalZombies; i++) {
+          zombieManager.spawnZombie();
+          roundManager.registerZombieSpawn();
+        }
+        setRoundState(prev => ({
+          round: roundNumber,
+          zombiesAlive: totalZombies,
+          spawnStatus: roundManager.getState(),
+        }));
+        logger.rounds.debug('Auto-spawn complete, setRoundState called');
+      } else {
+        console.warn('[ROUND TRACE] ZombieManager not available for auto-spawn');
+      }
+    });
+
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
+    logger.weapon.info('WeaponManager initialized:', weaponManagerRef.current !== null);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1043,6 +1070,9 @@ export default function App() {
     const ft = MAP_CONFIG.floorThickness;
     const doorH = MAP_CONFIG.doorHeight;
 
+    // Collect all collidable map objects for zombie AI
+    const collidableObjects: THREE.Object3D[] = [];
+    
     const wallMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wall_tiles') });
     const floorMatWood = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wood_floor') });
     const ceilMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('ceiling_tiles') });
@@ -1100,6 +1130,8 @@ export default function App() {
                   const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, stripDepth), floorMat);
                   floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
                   floor.receiveShadow = true;
+                  floor.userData.isCollidable = true;
+                  collidableObjects.push(floor);
                   scene.add(floor);
                 } else {
                   // Has holes, create segments around them
@@ -1112,6 +1144,8 @@ export default function App() {
                       const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                       floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                       floor.receiveShadow = true;
+                      floor.userData.isCollidable = true;
+                      collidableObjects.push(floor);
                       scene.add(floor);
                     }
                     currentX = Math.max(currentX, hole.xMax);
@@ -1123,6 +1157,8 @@ export default function App() {
                     const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                     floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                     floor.receiveShadow = true;
+                    floor.userData.isCollidable = true;
+                    collidableObjects.push(floor);
                     scene.add(floor);
                   }
                 }
@@ -1140,6 +1176,8 @@ export default function App() {
             const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
             floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
             floor.receiveShadow = true;
+            floor.userData.isCollidable = true;
+            collidableObjects.push(floor);
             scene.add(floor);
           }
         } else {
@@ -1147,6 +1185,8 @@ export default function App() {
           const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
           floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
           floor.receiveShadow = true;
+          floor.userData.isCollidable = true;
+          collidableObjects.push(floor);
           scene.add(floor);
         }
       }
@@ -1155,6 +1195,8 @@ export default function App() {
       if (!r.disabledCeiling) {
         const ceil = new THREE.Mesh(new THREE.BoxGeometry(r.w, ct, r.d), ceilMat);
         ceil.position.set(r.cx, r.floorY + r.h + ct / 2, r.cz);
+        ceil.userData.isCollidable = true;
+        collidableObjects.push(ceil);
         scene.add(ceil);
       }
 
@@ -1180,6 +1222,8 @@ export default function App() {
           if (rotY === 0) below.position.set(px + segCenter, r.floorY + belowH / 2, pz);
           else below.position.set(px, r.floorY + belowH / 2, pz + segCenter);
           below.castShadow = true; below.receiveShadow = true;
+          below.userData.isCollidable = true;
+          collidableObjects.push(below);
           scene.add(below);
           if (r.h > doorH) {
             const aboveH = r.h - doorH;
@@ -1187,6 +1231,8 @@ export default function App() {
             above.rotation.y = rotY;
             if (rotY === 0) above.position.set(px + segCenter, r.floorY + doorH + aboveH / 2, pz);
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
+            above.userData.isCollidable = true;
+            collidableObjects.push(above);
             scene.add(above);
           }
         };
@@ -1257,6 +1303,8 @@ export default function App() {
           collisionRamp.rotation.x = angle;
         }
         
+        collisionRamp.userData.isCollidable = true;
+        collidableObjects.push(collisionRamp);
         scene.add(collisionRamp);
         
         // Calculate and log offsets between visual and collision
@@ -1329,6 +1377,8 @@ export default function App() {
         new THREE.MeshLambertMaterial({ color: parseInt(prop.color.replace('#', ''), 16) })
       );
       mesh.position.set(prop.cx, (ownerRoom?.floorY ?? 0) + prop.h / 2, prop.cz);
+      mesh.userData.isCollidable = true;
+      collidableObjects.push(mesh);
       scene.add(mesh);
     });
 
@@ -1350,35 +1400,71 @@ export default function App() {
       pitch.current -= e.movementY * 0.002;
       pitch.current = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch.current));
     };
-    const handleClick = () => { 
+    const handleClick = (e: MouseEvent) => { 
+      logger.input.debug('Mouse click received', e.button);
+      
+      // Debug: Check actual pointer lock state at click time
+      logger.input.debug('document.pointerLockElement:', document.pointerLockElement);
+      logger.input.debug('canvas:', canvas);
+      logger.input.debug('isPointerLocked (state):', isPointerLocked);
+      logger.input.debug('Actual lock check (document.pointerLockElement === canvas):', document.pointerLockElement === canvas);
+      
       if (document.pointerLockElement !== canvas) {
+        logger.input.debug('Pointer not locked, requesting pointer lock');
         canvas?.requestPointerLock();
         return;
       }
       
+      logger.input.debug('Pointer is locked, proceeding to fire');
+      
       // Shooting - hitscan on left click when pointer locked
-      if (zombieManagerRef.current && weaponManagerRef.current && isPointerLocked) {
+      // Use actual DOM check instead of stale state
+      const isActuallyLocked = document.pointerLockElement === canvas;
+      if (zombieManagerRef.current && weaponManagerRef.current && isActuallyLocked) {
+        logger.input.debug('All conditions met, calling shootZombie');
         shootZombie();
+      } else {
+        logger.input.warn('Conditions not met:', {
+          hasZombieManager: !!zombieManagerRef.current,
+          hasWeaponManager: !!weaponManagerRef.current,
+          isPointerLockedState: isPointerLocked,
+          isActuallyLocked
+        });
       }
     };
     
     const shootZombie = () => {
+      logger.input.debug('shootZombie called');
       const zombieManager = zombieManagerRef.current;
       const weaponManager = weaponManagerRef.current;
-      if (!zombieManager || !weaponManager || !cameraRef.current) return;
+      if (!zombieManager || !weaponManager || !cameraRef.current) {
+        logger.input.warn('shootZombie aborted: missing dependencies', {
+          hasZombieManager: !!zombieManager,
+          hasWeaponManager: !!weaponManager,
+          hasCamera: !!cameraRef.current
+        });
+        return;
+      }
+      logger.input.info('Attempting weapon fire');
       
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
       // Use weapon manager to fire
-      const result = weaponManager.fire(raycaster, zombieManager, 'player');
+      logger.input.info('Calling weaponManager.fire()');
+      const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
       if (result.success && result.hitZombieId) {
         console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);
       }
     };
-    const handleLockChange = () => { setIsPointerLocked(document.pointerLockElement === canvas); };
+    const handleLockChange = () => { 
+      const locked = document.pointerLockElement === canvas;
+      logger.input.debug('Pointer lock changed:', locked);
+      setIsPointerLocked(locked);
+    };
+    console.log('[INPUT] Registering click event listener on canvas');
     canvas.addEventListener('click', handleClick);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('pointerlockchange', handleLockChange);
@@ -1808,7 +1894,7 @@ export default function App() {
 
       // Update zombies AI
       if (zombieManagerRef.current) {
-        zombieManagerRef.current.update(dt, playerPos.current);
+        zombieManagerRef.current.update(dt, playerPos.current, collidableObjects);
         
         // Throttled zombie debug data update (4 times per second = 250ms)
         if (now - lastZombieDebugUpdate.current > 250) {
@@ -2404,11 +2490,14 @@ export default function App() {
           console.log('[APP] onToggleInfiniteAmmo called - Infinite ammo not yet implemented');
         }}
         onStartRound={(round: number) => {
-          console.log('[APP] onStartRound called with round:', round);
+          console.log('[ROUND TRACE] ENTER onStartRound handler in App.tsx');
+          console.log('[ROUND TRACE] onStartRound called with round:', round);
           const roundManager = getRoundManager();
-          console.log('[APP] RoundManager state before start:', roundManager.getCurrentRound());
+          console.log('[ROUND TRACE] RoundManager instance:', roundManager);
+          console.log('[ROUND TRACE] RoundManager state before start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
+          console.log('[ROUND TRACE] Calling roundManager.startRound() with:', round);
           roundManager.startRound(round);
-          console.log('[APP] RoundManager state after start:', roundManager.getCurrentRound());
+          console.log('[ROUND TRACE] RoundManager state after start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           // Update React state to reflect changes
           setRoundState({
             round: roundManager.getCurrentRound(),
@@ -2417,12 +2506,14 @@ export default function App() {
           });
         }}
         onNextRound={() => {
+          console.log('[ROUND FLOW] NEXT ROUND button clicked');
           console.log('[APP] onNextRound called');
           const roundManager = getRoundManager();
           const currentRound = roundManager.getCurrentRound();
-          console.log('[APP] Current round before next:', currentRound);
+          console.log('[APP] Current round before next:', currentRound, 'state:', roundManager.getState());
+          console.log('[ROUND FLOW] Calling roundManager.forceNextRound()');
           roundManager.forceNextRound();
-          console.log('[APP] Current round after next:', roundManager.getCurrentRound());
+          console.log('[APP] Current round after next:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
           setRoundState({
             round: roundManager.getCurrentRound(),
             zombiesAlive: roundManager.getZombiesRemaining(),
@@ -2446,8 +2537,10 @@ export default function App() {
           });
         }}
         onForceEndRound={() => {
+          console.log('[ROUND FLOW] FORCE END ROUND button clicked');
           console.log('[APP] onForceEndRound called');
           const roundManager = getRoundManager();
+          console.log('[ROUND FLOW] Calling roundManager.endRound()');
           roundManager.endRound();
           setRoundState({
             round: roundManager.getCurrentRound(),
@@ -2456,13 +2549,26 @@ export default function App() {
           });
         }}
         onSpawnCurrentWave={() => {
+          console.log('[ROUND FLOW] SPAWN CURRENT WAVE button clicked (handler)');
           console.log('[APP] onSpawnCurrentWave called');
           const roundManager = getRoundManager();
           const zombieManager = zombieManagerRef.current;
+          
+          // LOG STATE BEFORE SPAWNING
+          console.log('[ROUND TRACE] Before spawn - current state:', roundManager.getState());
+          console.log('[ROUND TRACE] Before spawn - current round:', roundManager.getCurrentRound());
+          
           if (zombieManager) {
+            // FIX: If round is idle, start it first
+            if (roundManager.getState() === 'idle') {
+              console.log('[ROUND TRACE] Round is idle, calling startRound() before spawning');
+              roundManager.startRound(roundManager.getCurrentRound());
+              console.log('[ROUND TRACE] After startRound() - new state:', roundManager.getState());
+            }
+            
             // spawnCurrentWave doesn't exist on RoundManager - spawn based on round config
             const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
-            console.log('[APP] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
+            console.log('[ROUND FLOW] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
             for (let i = 0; i < totalZombies; i++) {
               zombieManager.spawnZombie();
               roundManager.registerZombieSpawn();

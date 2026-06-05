@@ -6,10 +6,17 @@
 import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
+import { logger } from './logger';
 
 // ============================================================================
 // Configuration
 // ============================================================================
+
+export const ZOMBIE_ATTACK_RANGE = 2.5;
+export const ZOMBIE_SEPARATION_RADIUS = 1.5;
+export const ZOMBIE_COLLISION_DISTANCE = 1.0;
+export const ZOMBIE_STUCK_THRESHOLD = 2.0; // seconds
+export const ZOMBIE_STUCK_RECOVERY_DISTANCE = 0.5;
 
 export interface ZombieConfig {
   health: number;
@@ -58,6 +65,9 @@ export interface Zombie {
   config: ZombieConfig;
   spawnTime: number;
   lastDamageTime: number;
+  // Collision and tracking fields
+  stuckTimer?: number;
+  lastPosition?: THREE.Vector3;
 }
 
 export interface ZombieSpawnPoint {
@@ -203,6 +213,8 @@ export class ZombieManager {
   }
 
   spawnWave(count: number): Zombie[] {
+    logger.zombies.info('spawnWave called with count:', count);
+    logger.zombies.debug('ENTER spawnWave');
     const spawned: Zombie[] = [];
     
     for (let i = 0; i < count; i++) {
@@ -262,14 +274,127 @@ export class ZombieManager {
   // Zombie Update (AI & Movement)
   // ==========================================================================
 
-  update(deltaTime: number, playerPosition: THREE.Vector3): void {
+  update(
+    deltaTime: number, 
+    playerPosition: THREE.Vector3, 
+    mapObjects: THREE.Object3D[] = []
+  ): void {
     const deadZombies: string[] = [];
+    
+    // Reuse vectors for performance
+    const direction = new THREE.Vector3();
+    const repulsion = new THREE.Vector3();
+    const moveStep = new THREE.Vector3();
+    const wallNormal = new THREE.Vector3();
+    const rayOrigin = new THREE.Vector3();
+    
+    const raycaster = new THREE.Raycaster();
 
     this.zombies.forEach((zombie, id) => {
       if (zombie.state !== 'alive') return;
 
-      // Move toward player
-      this.moveZombie(zombie, playerPosition, deltaTime);
+      // Initialize tracking fields if needed
+      if (!zombie.stuckTimer) zombie.stuckTimer = 0;
+      if (!zombie.lastPosition) zombie.lastPosition = new THREE.Vector3().copy(zombie.position);
+
+      // --- STUCK DETECTION ---
+      const distanceMoved = zombie.position.distanceTo(zombie.lastPosition);
+      const isMoving = distanceMoved > 0.05;
+
+      if (!isMoving && zombie.state === 'alive') {
+        zombie.stuckTimer += deltaTime;
+        if (zombie.stuckTimer > ZOMBIE_STUCK_THRESHOLD) {
+          logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
+          
+          // Recovery: Slightly lift and reposition to avoid geometry trap
+          zombie.position.y += ZOMBIE_STUCK_RECOVERY_DISTANCE;
+          zombie.position.x += (Math.random() - 0.5) * 2;
+          zombie.position.z += (Math.random() - 0.5) * 2;
+          zombie.stuckTimer = 0;
+          logger.zombies.info(`[PATH DEBUG] Recovery Triggered for Zombie ${zombie.id}`);
+        }
+      } else {
+        zombie.stuckTimer = 0;
+      }
+      zombie.lastPosition.copy(zombie.position);
+
+      // --- BEHAVIOR LOGIC ---
+      const distanceToPlayer = zombie.position.distanceTo(playerPosition);
+      
+      if (distanceToPlayer < ZOMBIE_ATTACK_RANGE) {
+        // Attack mode: stay at range, face player
+        if (zombie.mesh) {
+          zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
+        }
+      } else {
+        // Chase mode: move toward player
+        
+        // 1. Base Direction: Towards Player
+        direction.subVectors(playerPosition, zombie.position).normalize();
+        direction.y = 0;
+
+        // 2. Zombie Separation (Avoid Stacking)
+        repulsion.set(0, 0, 0);
+        let neighborCount = 0;
+        
+        this.zombies.forEach((other, otherId) => {
+          if (otherId === id || other.state !== 'alive') return;
+          
+          const dist = zombie.position.distanceTo(other.position);
+          if (dist < ZOMBIE_SEPARATION_RADIUS && dist > 0.01) {
+            const push = new THREE.Vector3().subVectors(zombie.position, other.position).normalize();
+            push.multiplyScalar((ZOMBIE_SEPARATION_RADIUS - dist) / ZOMBIE_SEPARATION_RADIUS);
+            repulsion.add(push);
+            neighborCount++;
+          }
+        });
+
+        if (neighborCount > 0) {
+          repulsion.divideScalar(neighborCount).normalize();
+          // Blend separation with chase direction
+          direction.add(repulsion.multiplyScalar(0.8)).normalize();
+        }
+
+        // 3. Wall Collision (Raycast ahead)
+        if (mapObjects.length > 0) {
+          rayOrigin.copy(zombie.position);
+          rayOrigin.y += 1; // Raycast from center of zombie
+          raycaster.set(rayOrigin, direction);
+          raycaster.far = ZOMBIE_COLLISION_DISTANCE;
+          
+          const intersects = raycaster.intersectObjects(mapObjects, true);
+          
+          if (intersects.length > 0) {
+            // Hit a wall. Slide along it.
+            const hit = intersects[0];
+            wallNormal.copy(hit.face?.normal || new THREE.Vector3(0, 1, 0));
+            
+            // Transform normal to world space
+            if (hit.object.matrixWorld) {
+              wallNormal.transformDirection(hit.object.matrixWorld).normalize();
+            }
+            
+            // Remove component of movement that goes INTO the wall
+            const dot = direction.dot(wallNormal);
+            if (dot < 0) {
+              direction.add(wallNormal.multiplyScalar(-dot));
+              direction.normalize();
+              logger.zombies.debug(`[PATH DEBUG] Zombie ${zombie.id} blocked by wall, sliding.`);
+            }
+          }
+        }
+
+        // Apply Movement
+        moveStep.copy(direction).multiplyScalar(zombie.config.speed * deltaTime);
+        zombie.position.add(moveStep);
+
+        // Update mesh
+        if (zombie.mesh) {
+          zombie.mesh.position.copy(zombie.position);
+          zombie.mesh.position.y += zombie.config.height / 2;
+          zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
+        }
+      }
 
       // Check collision with player
       if (this.checkPlayerCollision(zombie, playerPosition)) {
@@ -279,32 +404,6 @@ export class ZombieManager {
 
     // Clean up dead zombies
     deadZombies.forEach(id => this.removeZombie(id));
-  }
-
-  private moveZombie(zombie: Zombie, target: THREE.Vector3, deltaTime: number): void {
-    if (zombie.state !== 'alive') return;
-
-    const direction = new THREE.Vector3().subVectors(target, zombie.position);
-    direction.y = 0; // Keep movement on horizontal plane
-    const distance = direction.length();
-
-    if (distance > 0.5) {
-      direction.normalize();
-      
-      // Simple speed scaling - could add round-based difficulty here
-      const moveDistance = zombie.config.speed * deltaTime;
-      zombie.position.add(direction.multiplyScalar(moveDistance));
-
-      // Update mesh position
-      if (zombie.mesh) {
-        zombie.mesh.position.x = zombie.position.x;
-        zombie.mesh.position.z = zombie.position.z;
-        
-        // Rotate to face player
-        const angle = Math.atan2(direction.x, direction.z);
-        zombie.mesh.rotation.y = angle;
-      }
-    }
   }
 
   private checkPlayerCollision(zombie: Zombie, playerPosition: THREE.Vector3): boolean {
@@ -329,6 +428,7 @@ export class ZombieManager {
   // ==========================================================================
 
   damageZombie(zombieId: string, damage: number, playerId: string): boolean {
+    logger.zombies.debug('ENTER damageZombie for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state !== 'alive') return false;
 
@@ -345,6 +445,7 @@ export class ZombieManager {
   }
 
   killZombie(zombieId: string, playerId: string): boolean {
+    logger.zombies.info('ENTER killZombie for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state === 'dead') return false;
 
@@ -356,6 +457,7 @@ export class ZombieManager {
 
     // Notify round manager
     const roundManager = getRoundManager();
+    logger.zombies.debug('Calling roundManager.registerZombieKill() from killZombie');
     roundManager.registerZombieKill();
 
     this.notifyDeath(zombie, playerId);
@@ -440,6 +542,9 @@ export class ZombieManager {
   getDebugData(playerPosition: THREE.Vector3): {
     aliveCount: number;
     deadCount: number;
+    stuckCount: number;
+    chasingCount: number;
+    attackingCount: number;
     currentRound: number;
     expectedZombiesThisRound: number;
     killsThisRound: number;
@@ -450,6 +555,7 @@ export class ZombieManager {
       position: { x: number; y: number; z: number };
       distanceToPlayer: number;
       state: 'alive' | 'dying' | 'dead';
+      isStuck: boolean;
     }>;
   } {
     const roundManager = getRoundManager();
@@ -459,6 +565,9 @@ export class ZombieManager {
       return {
         aliveCount: 0,
         deadCount: 0,
+        stuckCount: 0,
+        chasingCount: 0,
+        attackingCount: 0,
         currentRound: 0,
         expectedZombiesThisRound: 0,
         killsThisRound: 0,
@@ -470,6 +579,9 @@ export class ZombieManager {
     
     let aliveCount = 0;
     let deadCount = 0;
+    let stuckCount = 0;
+    let chasingCount = 0;
+    let attackingCount = 0;
     const zombiesList: Array<{
       id: string;
       health: number;
@@ -477,11 +589,24 @@ export class ZombieManager {
       position: { x: number; y: number; z: number };
       distanceToPlayer: number;
       state: 'alive' | 'dying' | 'dead';
+      isStuck: boolean;
     }> = [];
 
     this.zombies.forEach(zombie => {
       if (zombie.state === 'alive') {
         aliveCount++;
+        
+        // Determine if zombie is stuck
+        const isStuck = (zombie.stuckTimer && zombie.stuckTimer > 0.5) || false;
+        if (isStuck) stuckCount++;
+        
+        // Determine behavior state based on distance
+        const distToPlayer = zombie.position.distanceTo(playerPosition);
+        if (distToPlayer < ZOMBIE_ATTACK_RANGE) {
+          attackingCount++;
+        } else {
+          chasingCount++;
+        }
       } else {
         deadCount++;
       }
@@ -494,12 +619,16 @@ export class ZombieManager {
         position: { x: zombie.position.x, y: zombie.position.y, z: zombie.position.z },
         distanceToPlayer: distance,
         state: zombie.state,
+        isStuck: (zombie.stuckTimer && zombie.stuckTimer > 0.5) || false,
       });
     });
 
     return {
       aliveCount,
       deadCount,
+      stuckCount,
+      chasingCount,
+      attackingCount,
       currentRound: roundDebug.round,
       expectedZombiesThisRound: roundDebug.expectedZombies,
       killsThisRound: roundDebug.killsThisRound,
