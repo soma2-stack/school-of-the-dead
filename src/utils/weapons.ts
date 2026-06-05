@@ -93,7 +93,7 @@ export class WeaponManager {
     zombieManager: any,
     playerId: string
   ): FireResult {
-    console.log('[WEAPON] Fired');
+    console.log('[WEAPON] Fire input received');
 
     if (!this.canFire()) {
       return { success: false, reason: 'cannot_fire' };
@@ -110,29 +110,48 @@ export class WeaponManager {
       this.weapon.config.magazine -= 1;
     }
 
+    console.log('[WEAPON] Raycast executed');
+
     // Raycast for hits
     const aliveZombies = zombieManager.getAliveZombies();
+    console.log(`[WEAPON] Alive zombies: ${aliveZombies.length}`);
+    
     const zombieMeshes = aliveZombies
       .map((z: any) => z.mesh)
       .filter((mesh: THREE.Mesh): mesh is THREE.Mesh => mesh !== undefined);
+    
+    console.log(`[WEAPON] Zombie meshes to test: ${zombieMeshes.length}`);
 
-    const intersects = raycaster.intersectObjects(zombieMeshes);
+    const intersects = raycaster.intersectObjects(zombieMeshes, true);
+    console.log(`[WEAPON] Intersections: ${intersects.length}`);
 
     if (intersects.length > 0) {
       const hitObject = intersects[0].object;
+      console.log(`[WEAPON] Hit mesh: ${hitObject.name || hitObject.type}`);
+      
+      // Find the root mesh (in case we hit a child object like eyes)
+      let rootMesh = hitObject;
+      while (rootMesh.parent && !aliveZombies.some((z: any) => z.mesh === rootMesh)) {
+        rootMesh = rootMesh.parent as THREE.Mesh;
+      }
+
       const hitZombie = aliveZombies.find(
-        (z: any) => z.mesh === hitObject || z.mesh === hitObject.parent
+        (z: any) => z.mesh === rootMesh
       );
 
       if (hitZombie) {
-        console.log('[WEAPON] Hit zombie', hitZombie.id);
+        console.log(`[WEAPON] Zombie ID: ${hitZombie.id}`);
+        console.log('[WEAPON] Calling damageZombie');
 
         // Store previous health to detect kill
         const previousHealth = hitZombie.health;
 
         // Deal damage
         const damage = this.weapon.config.damage;
-        zombieManager.damageZombie(hitZombie.id, damage, playerId);
+        const damageResult = zombieManager.damageZombie(hitZombie.id, damage, playerId);
+        
+        console.log('[WEAPON] Damage applied successfully');
+        console.log('[WEAPON] Hit zombie', hitZombie.id);
 
         // Award hit points
         const pointsManager = getPointsManager();
@@ -150,6 +169,8 @@ export class WeaponManager {
           hitZombieId: hitZombie.id,
           damageDealt: damage,
         };
+      } else {
+        console.log('[WEAPON] Could not find zombie for mesh');
       }
     }
 
