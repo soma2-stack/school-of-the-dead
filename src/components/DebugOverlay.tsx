@@ -663,7 +663,11 @@ const DebugOverlay: React.FC<Props> = ({
                   {[1, 5, 10, 20, 50].map(r => (
                     <button
                       key={r}
-                      onClick={() => { console.log("ROUND BUTTON CLICKED", r); onStartRound?.(r); }}
+                      onClick={() => { 
+                        console.log("[ROUND TRACE] R{r} button clicked in DebugOverlay");
+                        console.log("[ROUND TRACE] Calling onStartRound with round:", r);
+                        onStartRound?.(r); 
+                      }}
                       style={{
                         ...buttonStyle,
                         marginTop: 0,

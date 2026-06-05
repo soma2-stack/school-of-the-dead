@@ -65,6 +65,11 @@ export class RoundManager {
     // Merge provided config with defaults to ensure custom values are applied
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.roundData = this.createInitialRoundData();
+    console.log('[ROUND TRACE] RoundManager created', {
+      sessionId: 'default',
+      initialState: this.roundData.state,
+      startingRound: this.config.startingRound,
+    });
   }
 
   private createInitialRoundData(): RoundData {
@@ -154,20 +159,19 @@ export class RoundManager {
    * @param totalZombies - Optional override. If not provided, uses calculateZombieCount().
    */
   startRound(totalZombies?: number): void {
-    console.log('[ROUND FLOW] startRound called', {
-      state: this.roundData.state,
-      currentRound: this.roundData.currentRound,
-      totalZombiesOverride: totalZombies,
-    });
-
+    console.log('[ROUND TRACE] ENTER startRound');
+    console.log('[ROUND TRACE] startRound invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    
     if (this.roundData.state === 'active') {
       console.warn('[ROUND] Round already active');
+      console.log('[ROUND TRACE] EARLY RETURN: state is already active');
       return;
     }
 
     const oldState = this.roundData.state;
     this.roundData.state = 'active';
-    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
     
     this.roundData.currentRound = Math.max(this.config.startingRound, this.roundData.currentRound);
     
@@ -195,13 +199,13 @@ export class RoundManager {
    * Automatically starts intermission, which then auto-advances to the next round.
    */
   endRound(): void {
-    console.log('[ROUND FLOW] endRound called', {
-      state: this.roundData.state,
-      currentRound: this.roundData.currentRound,
-    });
+    console.log('[ROUND TRACE] ENTER endRound');
+    console.log('[ROUND TRACE] endRound invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'active') {
       console.warn('[ROUND] Cannot end round - no active round');
+      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
       return;
     }
 
@@ -218,7 +222,7 @@ export class RoundManager {
 
     const oldState = this.roundData.state;
     this.roundData.state = 'ended';
-    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
     
     this.roundData.totalRoundsCompleted += 1;
     this.roundData.roundStartTime = null;
@@ -239,12 +243,13 @@ export class RoundManager {
    * Automatically schedules the next round to start when intermission completes.
    */
   startIntermission(): void {
-    console.log('[ROUND FLOW] startIntermission called', {
-      state: this.roundData.state,
-    });
+    console.log('[ROUND TRACE] ENTER startIntermission');
+    console.log('[ROUND TRACE] startIntermission invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'ended' && this.roundData.state !== 'idle') {
       console.warn('[ROUND] Can only start intermission after round ends');
+      console.log('[ROUND TRACE] EARLY RETURN: state is not ended or idle');
       return;
     }
 
@@ -256,7 +261,7 @@ export class RoundManager {
 
     const oldState = this.roundData.state;
     this.roundData.state = 'intermission';
-    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
     
     this.roundData.intermissionStartTime = Date.now();
 
@@ -277,9 +282,10 @@ export class RoundManager {
    * Automatically advances to the next round and starts it
    */
   private onIntermissionComplete(): void {
-    console.log('[ROUND FLOW] onIntermissionComplete called', {
-      currentRound: this.roundData.currentRound,
-    });
+    console.log('[ROUND TRACE] ENTER onIntermissionComplete');
+    console.log('[ROUND TRACE] onIntermissionComplete invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    console.log('[ROUND TRACE] Current round before advance:', this.roundData.currentRound);
 
     // Advance round number
     this.roundData.currentRound += 1;
@@ -288,6 +294,7 @@ export class RoundManager {
     
     // AUTOMATIC ROUND PROGRESSION:
     // Start the new round immediately (this will spawn zombies via callbacks)
+    console.log('[ROUND TRACE] Calling startRound() from onIntermissionComplete');
     this.startRound();
   }
 
@@ -315,10 +322,10 @@ export class RoundManager {
    * Note: With automatic progression, this is rarely needed.
    */
   forceNextRound(): void {
-    console.log('[ROUND FLOW] forceNextRound called', {
-      currentRound: this.roundData.currentRound,
-      state: this.roundData.state,
-    });
+    console.log('[ROUND TRACE] ENTER forceNextRound');
+    console.log('[ROUND TRACE] forceNextRound invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    console.log('[ROUND TRACE] Current round before force:', this.roundData.currentRound);
 
     // Clear any pending intermission timer
     if (this.intermissionTimerId) {
@@ -329,7 +336,7 @@ export class RoundManager {
     const oldState = this.roundData.state;
     this.roundData.currentRound += 1;
     this.roundData.state = 'idle';
-    console.log('[ROUND FLOW] State changed:', oldState, '->', this.roundData.state);
+    console.log('[ROUND TRACE] setState called:', oldState, '->', this.roundData.state);
     
     this.roundData.zombiesRemaining = 0;
     this.roundData.zombiesKilled = 0;
@@ -350,13 +357,12 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieSpawn(): number {
-    console.log('[ROUND FLOW] registerZombieSpawn called', {
-      state: this.roundData.state,
-      totalSpawnedBefore: this.roundData.totalZombiesSpawned,
-    });
+    console.log('[ROUND TRACE] ENTER registerZombieSpawn');
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
 
     if (this.roundData.state !== 'active') {
       console.warn('[ROUND] Cannot spawn zombie - round not active');
+      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
       return this.roundData.zombiesRemaining;
     }
 
@@ -378,14 +384,14 @@ export class RoundManager {
    * @returns The new remaining count
    */
   registerZombieKill(): number {
-    console.log('[ROUND FLOW] registerZombieKill called', {
-      state: this.roundData.state,
-      zombiesRemaining: this.roundData.zombiesRemaining,
-      zombiesKilled: this.roundData.zombiesKilled,
-    });
+    console.log('[ROUND TRACE] ENTER registerZombieKill');
+    console.log('[ROUND TRACE] registerZombieKill invoked from:', new Error().stack);
+    console.log('[ROUND TRACE] Current state:', this.roundData.state);
+    console.log('[ROUND TRACE] zombiesRemaining before:', this.roundData.zombiesRemaining);
 
     if (this.roundData.state !== 'active') {
       console.warn('[ROUND] Cannot register kill - round not active');
+      console.log('[ROUND TRACE] EARLY RETURN: state is not active');
       return this.roundData.zombiesRemaining;
     }
 
@@ -402,7 +408,8 @@ export class RoundManager {
 
     // Auto-end round if all zombies defeated
     if (this.roundData.zombiesRemaining <= 0) {
-      console.log('[ROUND FLOW] Round should end now - zombiesRemaining =', this.roundData.zombiesRemaining);
+      console.log('[ROUND TRACE] Round should end now - zombiesRemaining =', this.roundData.zombiesRemaining);
+      console.log('[ROUND TRACE] Calling endRound() from registerZombieKill');
       this.endRound();
     }
 
@@ -439,7 +446,7 @@ export class RoundManager {
   }
 
   getState(): RoundState {
-    console.log('[ROUND DEBUG] getState() returning:', this.roundData.state);
+    console.log('[ROUND TRACE] getState() returning:', this.roundData.state);
     return this.roundData.state;
   }
 
@@ -608,8 +615,12 @@ export function getRoundManager(
   sessionId: string = 'default',
   config?: Partial<RoundConfig>
 ): RoundManager {
+  console.log('[ROUND TRACE] getRoundManager called with sessionId:', sessionId);
   if (!globalRoundManagers.has(sessionId)) {
+    console.log('[ROUND TRACE] Creating new RoundManager for sessionId:', sessionId);
     globalRoundManagers.set(sessionId, new RoundManager(config));
+  } else {
+    console.log('[ROUND TRACE] Returning existing RoundManager for sessionId:', sessionId);
   }
   return globalRoundManagers.get(sessionId)!;
 }
