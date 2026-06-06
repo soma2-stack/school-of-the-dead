@@ -112,6 +112,204 @@ export default function App() {
   const playerStairAnalysisRef = useRef<any>(null);
   const lastZombieDebugUpdate = useRef<number>(0);
 
+  // Refs to track latest debug issue arrays for hotkey cycling (avoid stale closures)
+  const floorAuditIssuesRef = useRef<FloorIssue[]>([]);
+  const connectivityIssuesRef = useRef<ConnectivityIssue[]>([]);
+  const validationIssuesRef = useRef<ValidationIssue[]>([]);
+
+  // Refs to track latest debug issue indexes for hotkey cycling (avoid stale closures)
+  const currentFloorIssueIndexRef = useRef<number>(-1);
+  const currentConnectivityIssueIndexRef = useRef<number>(-1);
+  const currentIssueIndexRef = useRef<number>(-1);
+
+  // Refs to track latest debug mode booleans for render loop (avoid stale closures)
+  const validationModeEnabledRef = useRef<boolean>(validationModeEnabled);
+  const floorDebugModeRef = useRef<boolean>(floorDebugMode);
+  const geometryInspectorEnabledRef = useRef<boolean>(geometryInspectorEnabled);
+
+  // Refs to track latest debug lighting state (avoid stale closures in handlers)
+  const debugLightingEnabledRef = useRef<boolean>(debugLightingEnabled);
+  const debugLightingBrightnessRef = useRef<number>(debugLightingBrightness);
+
+  useEffect(() => {
+    floorAuditIssuesRef.current = floorAuditIssues;
+  }, [floorAuditIssues]);
+
+  useEffect(() => {
+    connectivityIssuesRef.current = connectivityIssues;
+  }, [connectivityIssues]);
+
+  useEffect(() => {
+    validationIssuesRef.current = validationIssues;
+  }, [validationIssues]);
+
+  useEffect(() => {
+    currentFloorIssueIndexRef.current = currentFloorIssueIndex;
+  }, [currentFloorIssueIndex]);
+
+  useEffect(() => {
+    currentConnectivityIssueIndexRef.current = currentConnectivityIssueIndex;
+  }, [currentConnectivityIssueIndex]);
+
+  useEffect(() => {
+    currentIssueIndexRef.current = currentIssueIndex;
+  }, [currentIssueIndex]);
+
+  useEffect(() => {
+    validationModeEnabledRef.current = validationModeEnabled;
+  }, [validationModeEnabled]);
+
+  useEffect(() => {
+    floorDebugModeRef.current = floorDebugMode;
+  }, [floorDebugMode]);
+
+  useEffect(() => {
+    geometryInspectorEnabledRef.current = geometryInspectorEnabled;
+  }, [geometryInspectorEnabled]);
+
+  useEffect(() => {
+    debugLightingEnabledRef.current = debugLightingEnabled;
+  }, [debugLightingEnabled]);
+
+  useEffect(() => {
+    debugLightingBrightnessRef.current = debugLightingBrightness;
+  }, [debugLightingBrightness]);
+
+  // ==========================================================================
+  // DEBUG/AUDIT HELPER FUNCTIONS (Extracted from handleKeyDown for maintainability)
+  // ==========================================================================
+
+  const runFloorAudit = () => {
+    const auditor = floorAuditorRef.current;
+    auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
+    const report = auditor.runAudit();
+    setFloorAuditIssues(report.issues);
+    setFloorDebugMode(prev => !prev);
+    setCurrentFloorIssueIndex(-1);
+    if ((window as any).DEBUG_VERBOSE) {
+      console.log(`[FloorIntegrityAudit] Debug mode ${!floorDebugMode ? 'enabled' : 'disabled'}: ${report.totalIssuesFound} issues found`);
+    }
+  };
+
+  const teleportToNextFloorIssue = () => {
+    const issues = floorAuditIssuesRef.current;
+    const currentIndex = currentFloorIssueIndexRef.current;
+    if (issues.length > 0) {
+      const nextIndex = (currentIndex + 1) % issues.length;
+      const issue = issues[nextIndex];
+      
+      // Teleport player to issue location
+      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+      yaw.current = Math.PI; // Face the issue
+      setCurrentFloorIssueIndex(nextIndex);
+      if ((window as any).DEBUG_VERBOSE) {
+        console.log(`[FloorIntegrityAudit] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.cause} in ${issue.roomName}`);
+      }
+    }
+  };
+
+  const runConnectivityAudit = () => {
+    const auditor = connectivityAuditorRef.current;
+    auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
+    const report = auditor.runAudit();
+    const issues = auditor.getIssues();
+    setConnectivityIssues(issues);
+    setConnectivityReport(report);
+    setConnectivityDebugMode(true);
+    setCurrentConnectivityIssueIndex(-1);
+    if ((window as any).DEBUG_VERBOSE) {
+      console.log(`[MapConnectivityAudit] Audit complete: ${report.totalIssues} issues found`);
+      console.log(`  - Connected Rooms: ${report.totalConnectedRooms}`);
+      console.log(`  - Disconnected Rooms: ${report.disconnectedRooms.length}`);
+      console.log(`  - Void Exposures: ${report.voidExposures.length}`);
+      console.log(`  - Missing Walls: ${report.missingWalls.length}`);
+      console.log(`  - Missing Ceilings: ${report.missingCeilings.length}`);
+      console.log(`  - Navigation Breaks: ${report.navigationBreaks.length}`);
+    }
+  };
+
+  const teleportToNextConnectivityIssue = () => {
+    const issues = connectivityIssuesRef.current;
+    const currentIndex = currentConnectivityIssueIndexRef.current;
+    if (issues.length > 0) {
+      const nextIndex = (currentIndex + 1) % issues.length;
+      const issue = issues[nextIndex];
+      
+      // Teleport player to issue location
+      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+      yaw.current = Math.PI; // Face the issue
+      setCurrentConnectivityIssueIndex(nextIndex);
+      if ((window as any).DEBUG_VERBOSE) {
+        console.log(`[MapConnectivityAudit] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
+      }
+    }
+  };
+
+  const scanCurrentRoomForValidation = () => {
+    const validator = mapValidatorRef.current;
+    
+    // Get current room name based on player position
+    const px = playerPos.current.x;
+    const pz = playerPos.current.z;
+    let currentRoomName: string | undefined;
+    
+    for (const room of INITIAL_ROOMS) {
+      const halfW = room.w / 2;
+      const halfD = room.d / 2;
+      if (px >= room.cx - halfW && px <= room.cx + halfW &&
+          pz >= room.cz - halfD && pz <= room.cz + halfD) {
+        currentRoomName = room.name;
+        break;
+      }
+    }
+    
+    validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
+    validator.enable(currentRoomName);
+    const issues = validator.getIssues();
+    setValidationIssues(issues);
+    setValidationModeEnabled(true);
+    setCurrentIssueIndex(-1);
+    if ((window as any).DEBUG_VERBOSE) {
+      console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
+    }
+  };
+
+  const teleportToNextValidationIssue = () => {
+    const validator = mapValidatorRef.current;
+    const issues = validationIssuesRef.current;
+    const currentIndex = currentIssueIndexRef.current;
+    
+    if (issues.length > 0) {
+      const nextIndex = (currentIndex + 1) % issues.length;
+      const issue = issues[nextIndex];
+      
+      // Teleport player to issue location
+      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
+      yaw.current = Math.PI; // Face the issue
+      setCurrentIssueIndex(nextIndex);
+      if ((window as any).DEBUG_VERBOSE) {
+        console.log(`[RoomSealValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
+      }
+    }
+  };
+
+  const toggleValidationMode = () => {
+    const validator = mapValidatorRef.current;
+    validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
+    const enabled = validator.toggle();
+    setValidationModeEnabled(enabled);
+    if (enabled) {
+      const issues = validator.getIssues();
+      setValidationIssues(issues);
+    } else {
+      setValidationIssues([]);
+      setCurrentIssueIndex(-1);
+    }
+    if ((window as any).DEBUG_VERBOSE) {
+      console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  };
+
   // Zombie manager ref
   const zombieManagerRef = useRef<ZombieManager | null>(null);
   
@@ -123,13 +321,13 @@ export default function App() {
   const originalAmbientIntensityRef = useRef<number>(1.0);
   
   const toggleDebugLighting = () => {
-    const enabled = !debugLightingEnabled;
+    const enabled = !debugLightingEnabledRef.current;
     setDebugLightingEnabled(enabled);
     if (ambientLightRef.current) {
       if (enabled) {
         originalAmbientIntensityRef.current = ambientLightRef.current.intensity;
-        ambientLightRef.current.intensity = debugLightingBrightness;
-        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightness);
+        ambientLightRef.current.intensity = debugLightingBrightnessRef.current;
+        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightnessRef.current);
       } else {
         ambientLightRef.current.intensity = originalAmbientIntensityRef.current;
         console.log('[DEBUG LIGHTING] OFF');
@@ -655,7 +853,7 @@ export default function App() {
     (window as any).toggleDebugLighting = toggleDebugLighting;
     (window as any).setDebugLightingBrightness = (brightness: number) => {
       setDebugLightingBrightness(brightness);
-      if (debugLightingEnabled && ambientLightRef.current) {
+      if (debugLightingEnabledRef.current && ambientLightRef.current) {
         ambientLightRef.current.intensity = brightness;
       }
       console.log('[DEBUG LIGHTING] Brightness set to:', brightness);
@@ -1208,127 +1406,43 @@ export default function App() {
       // Floor Debug Mode - F7 to toggle floor audit visualization
       if (e.code === 'F7') {
         e.preventDefault();
-        const auditor = floorAuditorRef.current;
-        auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
-        const report = auditor.runAudit();
-        setFloorAuditIssues(report.issues);
-        setFloorDebugMode(prev => !prev);
-        setCurrentFloorIssueIndex(-1);
-        console.log(`[FloorIntegrityAudit] Debug mode ${!floorDebugMode ? 'enabled' : 'disabled'}: ${report.totalIssuesFound} issues found`);
+        runFloorAudit();
       }
       
       // Floor Debug Mode - F8 to teleport to next floor issue
       if (e.code === 'F8') {
         e.preventDefault();
-        if (floorAuditIssues.length > 0) {
-          const nextIndex = (currentFloorIssueIndex + 1) % floorAuditIssues.length;
-          const issue = floorAuditIssues[nextIndex];
-          
-          // Teleport player to issue location
-          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-          yaw.current = Math.PI; // Face the issue
-          setCurrentFloorIssueIndex(nextIndex);
-          console.log(`[FloorIntegrityAudit] Teleported to issue ${nextIndex + 1}/${floorAuditIssues.length}: ${issue.cause} in ${issue.roomName}`);
-        }
+        teleportToNextFloorIssue();
       }
       
       // Map Connectivity Audit - F6 to run full connectivity audit
       if (e.code === 'F6') {
         e.preventDefault();
-        const auditor = connectivityAuditorRef.current;
-        auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
-        const report = auditor.runAudit();
-        const issues = auditor.getIssues();
-        setConnectivityIssues(issues);
-        setConnectivityReport(report);
-        setConnectivityDebugMode(true);
-        setCurrentConnectivityIssueIndex(-1);
-        console.log(`[MapConnectivityAudit] Audit complete: ${report.totalIssues} issues found`);
-        console.log(`  - Connected Rooms: ${report.totalConnectedRooms}`);
-        console.log(`  - Disconnected Rooms: ${report.disconnectedRooms.length}`);
-        console.log(`  - Void Exposures: ${report.voidExposures.length}`);
-        console.log(`  - Missing Walls: ${report.missingWalls.length}`);
-        console.log(`  - Missing Ceilings: ${report.missingCeilings.length}`);
-        console.log(`  - Navigation Breaks: ${report.navigationBreaks.length}`);
+        runConnectivityAudit();
       }
       
       // Map Connectivity Audit - F5 to teleport to next connectivity issue
       if (e.code === 'F5') {
         e.preventDefault();
-        if (connectivityIssues.length > 0) {
-          const nextIndex = (currentConnectivityIssueIndex + 1) % connectivityIssues.length;
-          const issue = connectivityIssues[nextIndex];
-          
-          // Teleport player to issue location
-          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-          yaw.current = Math.PI; // Face the issue
-          setCurrentConnectivityIssueIndex(nextIndex);
-          console.log(`[MapConnectivityAudit] Teleported to issue ${nextIndex + 1}/${connectivityIssues.length}: ${issue.description} in ${issue.roomName}`);
-        }
+        teleportToNextConnectivityIssue();
       }
       
       // Map Validation Mode - F9 to scan current room
       if (e.code === 'F9') {
         e.preventDefault();
-        const validator = mapValidatorRef.current;
-        
-        // Get current room name based on player position
-        const px = playerPos.current.x;
-        const pz = playerPos.current.z;
-        let currentRoomName: string | undefined;
-        
-        for (const room of INITIAL_ROOMS) {
-          const halfW = room.w / 2;
-          const halfD = room.d / 2;
-          if (px >= room.cx - halfW && px <= room.cx + halfW &&
-              pz >= room.cz - halfD && pz <= room.cz + halfD) {
-            currentRoomName = room.name;
-            break;
-          }
-        }
-        
-        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
-        validator.enable(currentRoomName);
-        const issues = validator.getIssues();
-        setValidationIssues(issues);
-        setValidationModeEnabled(true);
-        setCurrentIssueIndex(-1);
-        console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
+        scanCurrentRoomForValidation();
       }
       
       // Map Validation Mode - F10 to teleport to next issue
       if (e.code === 'F10') {
         e.preventDefault();
-        const validator = mapValidatorRef.current;
-        const issues = validator.getIssues();
-        
-        if (issues.length > 0) {
-          const nextIndex = (currentIssueIndex + 1) % issues.length;
-          const issue = issues[nextIndex];
-          
-          // Teleport player to issue location
-          playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-          yaw.current = Math.PI; // Face the issue
-          setCurrentIssueIndex(nextIndex);
-          console.log(`[RoomSealValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
-        }
+        teleportToNextValidationIssue();
       }
       
       // Toggle validation mode with F11
       if (e.code === 'F11') {
         e.preventDefault();
-        const validator = mapValidatorRef.current;
-        validator.setData(INITIAL_ROOMS, ROOM_GAPS, doors);
-        const enabled = validator.toggle();
-        setValidationModeEnabled(enabled);
-        if (enabled) {
-          const issues = validator.getIssues();
-          setValidationIssues(issues);
-        } else {
-          setValidationIssues([]);
-          setCurrentIssueIndex(-1);
-        }
-        console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
+        toggleValidationMode();
       }
       
       // Door interaction - Press E to purchase door (removed - handled by handleInteractionKey)
@@ -1618,31 +1732,31 @@ export default function App() {
       camera.rotation.x = pitch.current;
       
       // Update validation mode highlights if enabled
-      if (validationModeEnabled) {
+      if (validationModeEnabledRef.current) {
         mapValidatorRef.current.updateHighlights(now / 1000);
       }
       
       // DEBUG_FLOORS: Render test wireframe box if enabled
       // This reads window.DEBUG_FLOORS every frame to verify connection to render loop
       if ((window as any).DEBUG_FLOORS === true) {
-        console.log('DEBUG WIREFRAMES ACTIVE');
-        
-        // LOG ROOM COUNT AND DETAILS
-        console.log("ROOM COUNT", INITIAL_ROOMS.length);
-        INITIAL_ROOMS.forEach((room, idx) => {
-          if (idx < 5) { // Log first 5 rooms to avoid spam
-            console.log(
-              "WIREFRAME ROOM",
-              room.id,
-              room.name,
-              room.cx,
-              room.cz,
-              room.w,
-              room.d,
-              room.floorY
-            );
-          }
-        });
+        if ((window as any).DEBUG_VERBOSE) {
+          console.log('DEBUG WIREFRAMES ACTIVE');
+          console.log("ROOM COUNT", INITIAL_ROOMS.length);
+          INITIAL_ROOMS.forEach((room, idx) => {
+            if (idx < 5) {
+              console.log(
+                "WIREFRAME ROOM",
+                room.id,
+                room.name,
+                room.cx,
+                room.cz,
+                room.w,
+                room.d,
+                room.floorY
+              );
+            }
+          });
+        }
         
         // Create or update test wireframe box at world position 0,5,0
         if (!debugWireframeRef.current) {
@@ -1655,7 +1769,9 @@ export default function App() {
           wireframe.frustumCulled = false;
           scene.add(wireframe);
           debugWireframeRef.current = wireframe;
-          console.log('[DEBUG] Red wireframe box created at (0, 5, 0)');
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log('[DEBUG] Red wireframe box created at (0, 5, 0)');
+          }
         }
         
         // TEMPORARY TEST: Render every room as a solid magenta wireframe box
@@ -1663,29 +1779,26 @@ export default function App() {
         const globalKey = '__ROOM_DEBUG_WIREFRAMES__';
         let roomWireframes: THREE.LineSegments[] = (window as any)[globalKey] || [];
         
-        // Clear existing room wireframes
-        roomWireframes.forEach(w => {
-          scene.remove(w);
-          w.geometry.dispose();
-          (w.material as THREE.Material).dispose();
-        });
-        roomWireframes = [];
-        
-        // Create magenta wireframe for each room
-        INITIAL_ROOMS.forEach(room => {
-          const roomGeometry = new THREE.BoxGeometry(room.w, 1, room.d);
-          const roomEdges = new THREE.EdgesGeometry(roomGeometry);
-          const roomMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
-          const roomWireframe = new THREE.LineSegments(roomEdges, roomMaterial);
-          roomWireframe.position.set(room.cx, room.floorY + 0.5, room.cz);
-          roomWireframe.renderOrder = 998;
-          roomWireframe.frustumCulled = false;
-          scene.add(roomWireframe);
-          roomWireframes.push(roomWireframe);
-        });
-        
-        (window as any)[globalKey] = roomWireframes;
-        console.log("WIREFRAMES CREATED", roomWireframes.length);
+        // Only recreate room wireframes if they don't exist yet (cache them)
+        if (roomWireframes.length === 0) {
+          // Create magenta wireframe for each room
+          INITIAL_ROOMS.forEach(room => {
+            const roomGeometry = new THREE.BoxGeometry(room.w, 1, room.d);
+            const roomEdges = new THREE.EdgesGeometry(roomGeometry);
+            const roomMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff });
+            const roomWireframe = new THREE.LineSegments(roomEdges, roomMaterial);
+            roomWireframe.position.set(room.cx, room.floorY + 0.5, room.cz);
+            roomWireframe.renderOrder = 998;
+            roomWireframe.frustumCulled = false;
+            scene.add(roomWireframe);
+            roomWireframes.push(roomWireframe);
+          });
+          
+          (window as any)[globalKey] = roomWireframes;
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log("WIREFRAMES CREATED", roomWireframes.length);
+          }
+        }
       } else {
         // Cleanup wireframe when disabled
         if (debugWireframeRef.current) {
@@ -1693,7 +1806,9 @@ export default function App() {
           (debugWireframeRef.current.material as THREE.Material).dispose();
           scene.remove(debugWireframeRef.current);
           debugWireframeRef.current = null;
-          console.log('[DEBUG] Red wireframe box removed');
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log('[DEBUG] Red wireframe box removed');
+          }
         }
         
         // Cleanup room wireframes when disabled
@@ -1708,46 +1823,48 @@ export default function App() {
       }
       
       // Render floor debug visualization if enabled
-      if (floorDebugMode) {
+      if (floorDebugModeRef.current) {
         renderFloorDebug(scene, now / 1000);
       }
       
       // Geometry Inspector - highlight mesh under crosshair
-      if (geometryInspectorEnabled && geometryInspectorRef.current) {
+      if (geometryInspectorEnabledRef.current && geometryInspectorRef.current) {
         const inspector = geometryInspectorRef.current;
         const hitMesh = inspector.inspectAtCrosshair();
         
-        // DIAGNOSTIC LOGGING: Compare room counts between systems
-        const allSceneMeshes: THREE.Mesh[] = [];
-        scene.traverse((obj) => {
-          if (obj instanceof THREE.Mesh && 
-              obj !== (inspector as any).highlightMesh && 
-              obj !== (inspector as any).wireframeMesh &&
-              !obj.name.includes('debug') &&
-              !obj.name.includes('highlight')) {
-            allSceneMeshes.push(obj);
-          }
-        });
-        
-        console.log('[DIAGNOSTIC] Geometry Inspector Scene Mesh Count:', allSceneMeshes.length);
-        console.log('[DIAGNOSTIC] Connectivity Audit Room Count:', INITIAL_ROOMS.length);
-        console.log('[DIAGNOSTIC] Connectivity Issues Array Length:', connectivityIssues.length);
-        
-        // Print room IDs scanned by each system
-        const sceneMeshIds = allSceneMeshes.map(m => m.name || m.uuid).slice(0, 10);
-        const roomIds = INITIAL_ROOMS.map(r => r.id);
-        console.log('[DIAGNOSTIC] Sample Scene Mesh Names:', sceneMeshIds);
-        console.log('[DIAGNOSTIC] Room IDs from INITIAL_ROOMS:', roomIds.slice(0, 10));
-        console.log('[DIAGNOSTIC] Total Issues Before Rendering:', connectivityIssues.length);
-        
-        // Print issue marker coordinates
-        if (connectivityIssues.length > 0) {
-          console.log('[DIAGNOSTIC] Issue Marker Coordinates:');
-          connectivityIssues.forEach((issue, idx) => {
-            if (idx < 5) {
-              console.log(`  #${idx + 1} ${issue.type}: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}] in ${issue.roomName}`);
+        // DIAGNOSTIC LOGGING: Only run expensive traversal and logs when DEBUG_VERBOSE is true
+        if ((window as any).DEBUG_VERBOSE) {
+          const allSceneMeshes: THREE.Mesh[] = [];
+          scene.traverse((obj) => {
+            if (obj instanceof THREE.Mesh && 
+                obj !== (inspector as any).highlightMesh && 
+                obj !== (inspector as any).wireframeMesh &&
+                !obj.name.includes('debug') &&
+                !obj.name.includes('highlight')) {
+              allSceneMeshes.push(obj);
             }
           });
+          
+          console.log('[DIAGNOSTIC] Geometry Inspector Scene Mesh Count:', allSceneMeshes.length);
+          console.log('[DIAGNOSTIC] Connectivity Audit Room Count:', INITIAL_ROOMS.length);
+          console.log('[DIAGNOSTIC] Connectivity Issues Array Length:', connectivityIssues.length);
+          
+          // Print room IDs scanned by each system
+          const sceneMeshIds = allSceneMeshes.map(m => m.name || m.uuid).slice(0, 10);
+          const roomIds = INITIAL_ROOMS.map(r => r.id);
+          console.log('[DIAGNOSTIC] Sample Scene Mesh Names:', sceneMeshIds);
+          console.log('[DIAGNOSTIC] Room IDs from INITIAL_ROOMS:', roomIds.slice(0, 10));
+          console.log('[DIAGNOSTIC] Total Issues Before Rendering:', connectivityIssues.length);
+          
+          // Print issue marker coordinates
+          if (connectivityIssues.length > 0) {
+            console.log('[DIAGNOSTIC] Issue Marker Coordinates:');
+            connectivityIssues.forEach((issue, idx) => {
+              if (idx < 5) {
+                console.log(`  #${idx + 1} ${issue.type}: [${issue.location[0].toFixed(1)}, ${issue.location[1].toFixed(1)}, ${issue.location[2].toFixed(1)}] in ${issue.roomName}`);
+              }
+            });
+          }
         }
         
         if (hitMesh) {
@@ -1841,8 +1958,8 @@ export default function App() {
         const newRoomName = currentRoom?.name || 'None';
         setCurrentRoomName(newRoomName);
         
-        // Debug logging every 60 frames (~1 second)
-        if ((window as any).__debugFrameCount % 60 === 0) {
+        // Debug logging every 60 frames (~1 second) - gated behind DEBUG_VERBOSE flag
+        if ((window as any).__debugFrameCount % 60 === 0 && (window as any).DEBUG_VERBOSE) {
           console.log(`[ROOM DEBUG] Pos: (${playerPos.current.x.toFixed(1)}, ${playerPos.current.y.toFixed(1)}, ${playerPos.current.z.toFixed(1)}) -> Room: ${newRoomName}`);
           if (newRoomName === 'None' && INITIAL_ROOMS.length > 0) {
             const firstRoom = INITIAL_ROOMS[0];
@@ -1851,8 +1968,8 @@ export default function App() {
         }
       }
       
-      // Log every frame to verify render loop is running
-      if (frameCount % 60 === 0) {
+      // Log every frame to verify render loop is running - gated behind DEBUG_VERBOSE flag
+      if (frameCount % 60 === 0 && (window as any).DEBUG_VERBOSE) {
         console.log("[RENDER LOOP] Frame", frameCount, "Room state:", currentRoomName);
       }
     };
@@ -1861,24 +1978,32 @@ export default function App() {
     // Keyboard handler for door interaction (uses hoveredDoor from prompt system)
     const handleInteractionKey = (e: KeyboardEvent) => {
       const isCurrentlyPointerLocked = document.pointerLockElement !== null;
-      console.log("KEY EVENT", e.code, "isPointerLocked =", isCurrentlyPointerLocked);
-      console.log('[DEBUG] Key event received:', e.key);
+      if ((window as any).DEBUG_VERBOSE) {
+        console.log("KEY EVENT", e.code, "isPointerLocked =", isCurrentlyPointerLocked);
+        console.log('[DEBUG] Key event received:', e.key);
+      }
       if (e.code === 'KeyE' && isCurrentlyPointerLocked) {
-        console.log("KEY_E_TEST");
-        console.log("=== [E] key pressed ===");
-        console.log("=== Key handler entered ===");
+        if ((window as any).DEBUG_VERBOSE) {
+          console.log("KEY_E_TEST");
+          console.log("=== [E] key pressed ===");
+          console.log("=== Key handler entered ===");
+        }
         
         // Use the same door reference that drives the visible prompt
         const currentDoor = hoveredDoor;
         
         if (!currentDoor) {
-          console.log("Current door found: NO (null)");
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log("Current door found: NO (null)");
+          }
           return;
         }
         
-        console.log("Current door found: YES");
-        console.log("Door ID:", currentDoor.id);
-        console.log("purchaseDoor() called");
+        if ((window as any).DEBUG_VERBOSE) {
+          console.log("Current door found: YES");
+          console.log("Door ID:", currentDoor.id);
+          console.log("purchaseDoor() called");
+        }
         
         const doorManager = getDoorManager();
         const playerId = 'player1';
@@ -1888,27 +2013,39 @@ export default function App() {
         const purchaseDoorId = currentDoor.doorManagerId || currentDoor.id;
         const result = doorManager.purchaseDoor(purchaseDoorId, playerId);
         
-        console.log("purchaseDoor() result:", result);
-        console.log("Result.success:", result.success);
+        if ((window as any).DEBUG_VERBOSE) {
+          console.log("purchaseDoor() result:", result);
+          console.log("Result.success:", result.success);
+        }
         
         if (result.success) {
-          console.log('[App] Door purchased successfully:', currentDoor.name);
-          console.log("DoorRenderer update called");
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log('[App] Door purchased successfully:', currentDoor.name);
+            console.log("DoorRenderer update called");
+          }
+          // Sync DoorRenderer state to ensure its mesh is also hidden/opened
+          doorRenderer.updateDoorState(purchaseDoorId, true);
           // Hide the actual door mesh created in App.tsx (not DoorRenderer's separate mesh)
           if (currentDoor.mesh) {
             currentDoor.mesh.visible = false;
-            console.log(`[App] Door mesh hidden: ${currentDoor.id}`);
+            if ((window as any).DEBUG_VERBOSE) {
+              console.log(`[App] Door mesh hidden: ${currentDoor.id}`);
+            }
           }
           // Also hide the collider to prevent any residual interaction
           if (currentDoor.collider) {
             currentDoor.collider.visible = false;
-            console.log(`[App] Door collider hidden: ${currentDoor.id}`);
+            if ((window as any).DEBUG_VERBOSE) {
+              console.log(`[App] Door collider hidden: ${currentDoor.id}`);
+            }
           }
           // Update door state
           currentDoor.isOpen = true;
           currentDoor.isPurchased = true;
         } else {
-          console.log('[App] Door purchase failed:', result.reason);
+          if ((window as any).DEBUG_VERBOSE) {
+            console.log('[App] Door purchase failed:', result.reason);
+          }
           if (result.reason === "INSUFFICIENT_POINTS") {
             setShowNotEnoughPoints(true);
             setTimeout(() => setShowNotEnoughPoints(false), 2000);
