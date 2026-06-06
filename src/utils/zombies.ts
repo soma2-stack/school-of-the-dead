@@ -305,7 +305,13 @@ export class ZombieManager {
 
     this.scene.remove(zombie.collisionHelper);
     zombie.collisionHelper.geometry.dispose();
-    zombie.collisionHelper.material.dispose();
+    // Handle both single material and array of materials
+    const material = zombie.collisionHelper.material;
+    if (Array.isArray(material)) {
+      material.forEach(m => m.dispose());
+    } else {
+      material.dispose();
+    }
     zombie.collisionHelper = undefined;
   }
 
