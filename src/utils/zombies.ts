@@ -32,6 +32,10 @@ export const ZOMBIE_MAX_SEPARATION_PER_FRAME = 0.08; // Max separation movement 
 export const ZOMBIE_MAX_STEP_SIZE = 0.1; // Maximum movement per substep to prevent clipping
 export const ZOMBIE_MAX_SUBSTEPS = 10; // Maximum number of substeps per frame
 
+// Stuck recovery configuration
+export const ZOMBIE_STUCK_RECOVERY_MAX_DISTANCE = 0.25; // Maximum nudge distance for stuck recovery
+export const ZOMBIE_TELEPORT_GUARD_MARGIN = 0.3; // Extra margin for teleport detection
+
 // Debug configuration
 export let SHOW_WALL_COLLIDERS = false;
 export function toggleWallColliderDebug(): boolean {
@@ -455,21 +459,33 @@ export class ZombieManager {
           logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
           
           // Recovery: Try small candidate offsets and only apply if collision-free
+          // CRITICAL: Recovery must NOT teleport zombies to other rooms
+          // Only tiny local nudges (max 0.25 units) are allowed
           const oldX = zombie.position.x;
+          const oldY = zombie.position.y;
           const oldZ = zombie.position.z;
           const recoveryCandidates = [
-            new THREE.Vector3(oldX + 0.3, oldZ, oldY),
-            new THREE.Vector3(oldX - 0.3, oldZ, oldY),
-            new THREE.Vector3(oldX, oldZ + 0.3, oldY),
-            new THREE.Vector3(oldX, oldZ - 0.3, oldY),
-            new THREE.Vector3(oldX + 0.2, oldZ + 0.2, oldY),
-            new THREE.Vector3(oldX - 0.2, oldZ - 0.2, oldY),
-            new THREE.Vector3(oldX + 0.2, oldZ - 0.2, oldY),
-            new THREE.Vector3(oldX - 0.2, oldZ + 0.2, oldY),
+            new THREE.Vector3(oldX + 0.15, oldY, oldZ),
+            new THREE.Vector3(oldX - 0.15, oldY, oldZ),
+            new THREE.Vector3(oldX, oldY, oldZ + 0.15),
+            new THREE.Vector3(oldX, oldY, oldZ - 0.15),
+            new THREE.Vector3(oldX + 0.1, oldY, oldZ + 0.1),
+            new THREE.Vector3(oldX - 0.1, oldY, oldZ - 0.1),
+            new THREE.Vector3(oldX + 0.1, oldY, oldZ - 0.1),
+            new THREE.Vector3(oldX - 0.1, oldY, oldZ + 0.1),
           ];
           
           let recoveryApplied = false;
           for (const candidate of recoveryCandidates) {
+            // Verify candidate is within max recovery distance
+            const distFromOld = Math.sqrt(
+              Math.pow(candidate.x - oldX, 2) + 
+              Math.pow(candidate.z - oldZ, 2)
+            );
+            if (distFromOld > ZOMBIE_STUCK_RECOVERY_MAX_DISTANCE) {
+              continue; // Skip candidates that are too far
+            }
+            
             if (!this.collidesWithWalls2D(candidate, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
               zombie.position.x = candidate.x;
               zombie.position.z = candidate.z;
@@ -482,7 +498,12 @@ export class ZombieManager {
           if (!recoveryApplied) {
             logger.zombies.warn(`[ZOMBIE STUCK] No valid recovery position found for zombie ${zombie.id}. Leaving in place.`);
           } else {
-            logger.zombies.info(`[PATH DEBUG] Recovery applied for Zombie ${zombie.id}`);
+            logger.zombies.info(`[ZOMBIE RECOVERY CHECK]`, {
+              oldX,
+              oldY,
+              oldZ,
+              newPosition: zombie.position.clone()
+            });
           }
           zombie.stuckTimer = 0;
         }
@@ -655,37 +676,66 @@ export class ZombieManager {
           zombie.position.y = groundY;
         }
 
-        // Update mesh - CRITICAL: sync visual mesh with logical position every frame
+        // Note: Mesh sync moved to END of zombie update to handle all behavior modes
+      }
+
+      // TELEPORT GUARD: Detect and block any unauthorized position changes
+      // Zombies should only move by normal speed-based movement, not teleport
+      const movedDistance = zombie.position.distanceTo(oldPos);
+      const maxAllowedMove = zombie.config.speed * deltaTime + ZOMBIE_TELEPORT_GUARD_MARGIN;
+
+      if (movedDistance > maxAllowedMove) {
+        logger.zombies.error('[ZOMBIE TELEPORT BLOCKED]', {
+          zombieId: zombie.id,
+          oldPos: oldPos.clone(),
+          attemptedPos: zombie.position.clone(),
+          movedDistance: movedDistance.toFixed(3),
+          maxAllowedMove: maxAllowedMove.toFixed(3)
+        });
+        // Revert to old position - this was an illegal teleport
+        zombie.position.copy(oldPos);
+        zombie.position.y = this.getGroundYAtPosition(oldPos.x, oldPos.z, mapObjects);
+        
+        // Also update mesh if it exists
         if (zombie.mesh) {
           zombie.mesh.position.copy(zombie.position);
-          zombie.mesh.position.y = groundY + zombie.config.height / 2;
-          zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
-          
-          // Desync check (only warn in debug mode)
-          if (window.DEBUG_VERBOSE) {
-            const logicalPos = zombie.position;
-            const meshPos = zombie.mesh.position;
-            const dx = logicalPos.x - meshPos.x;
-            const dz = logicalPos.z - meshPos.z;
-            const distXZ = Math.sqrt(dx * dx + dz * dz);
-            if (distXZ > 0.1) {
-              console.warn('[ZOMBIE DESYNC] mesh does not match logic position', {
-                id: zombie.id,
-                logical: logicalPos.clone(),
-                mesh: meshPos.clone()
-              });
-            }
-          }
+          zombie.mesh.position.y = zombie.position.y + zombie.config.height / 2;
         }
-
-        // Update collision helper visualization (only when debug enabled)
-        this.updateCollisionHelper(zombie);
       }
 
       // Check collision with player
       if (this.checkPlayerCollision(zombie, playerPosition)) {
         this.damagePlayer(zombie);
       }
+
+      // CRITICAL: Sync mesh position at the END of every zombie update
+      // This ensures visual mesh always matches logical position regardless of behavior mode
+      // (chase, attack, stuck recovery, etc.)
+      if (zombie.mesh) {
+        const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        zombie.mesh.position.copy(zombie.position);
+        zombie.mesh.position.y = groundY + zombie.config.height / 2;
+        zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
+        
+        // Desync check (only warn in debug mode)
+        if (window.DEBUG_VERBOSE) {
+          const logicalPos = zombie.position;
+          const meshPos = zombie.mesh.position;
+          const dx = logicalPos.x - meshPos.x;
+          const dz = logicalPos.z - meshPos.z;
+          const distXZ = Math.sqrt(dx * dx + dz * dz);
+          if (distXZ > 0.1) {
+            console.warn('[ZOMBIE DESYNC] mesh does not match logic position', {
+              id: zombie.id,
+              logical: logicalPos.clone(),
+              mesh: meshPos.clone()
+            });
+          }
+        }
+      }
+
+      // Update collision helper visualization (only when debug enabled)
+      this.updateCollisionHelper(zombie);
     });
 
     // Clean up dead zombies
