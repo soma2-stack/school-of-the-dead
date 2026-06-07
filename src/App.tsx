@@ -626,11 +626,11 @@ export default function App() {
     // Initialize Zombie Manager
     zombieManagerRef.current = getZombieManager(scene);
     
-    // Set up spawn points (starter room area)
+    // Set up spawn points (starter room area) - safe positions away from walls
     zombieManagerRef.current.setSpawnPoints([
-      { x: 20, y: 0, z: -40, roomId: 'starter' },
-      { x: -20, y: 0, z: -40, roomId: 'starter' },
-      { x: 0, y: 0, z: -60, roomId: 'starter' },
+      { x: 10, y: 0, z: -40, roomId: 'starter' },
+      { x: 25, y: 0, z: -45, roomId: 'starter' },
+      { x: 17.5, y: 0, z: -55, roomId: 'starter' },
     ]);
 
     // Handle zombie spawn events
@@ -841,6 +841,7 @@ export default function App() {
       collider.position.copy(doorMesh.position);
       collider.rotation.copy(doorMesh.rotation);
       scene.add(collider);
+      collider.userData.colliderType = "door";
       door.collider = collider;
       doorColliderMap.set(collider, door);
     });
@@ -915,6 +916,7 @@ export default function App() {
                   floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
                   floor.receiveShadow = true;
                   floor.userData.isCollidable = true;
+                  floor.userData.colliderType = "floor";
                   collidableObjects.push(floor);
                   scene.add(floor);
                 } else {
@@ -929,6 +931,7 @@ export default function App() {
                       floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                       floor.receiveShadow = true;
                       floor.userData.isCollidable = true;
+                      floor.userData.colliderType = "floor";
                       collidableObjects.push(floor);
                       scene.add(floor);
                     }
@@ -942,6 +945,7 @@ export default function App() {
                     floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                     floor.receiveShadow = true;
                     floor.userData.isCollidable = true;
+                    floor.userData.colliderType = "floor";
                     collidableObjects.push(floor);
                     scene.add(floor);
                   }
@@ -961,6 +965,7 @@ export default function App() {
             floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
             floor.receiveShadow = true;
             floor.userData.isCollidable = true;
+            floor.userData.colliderType = "floor";
             collidableObjects.push(floor);
             scene.add(floor);
           }
@@ -970,6 +975,7 @@ export default function App() {
           floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
           floor.receiveShadow = true;
           floor.userData.isCollidable = true;
+          floor.userData.colliderType = "floor";
           collidableObjects.push(floor);
           scene.add(floor);
         }
@@ -980,6 +986,7 @@ export default function App() {
         const ceil = new THREE.Mesh(new THREE.BoxGeometry(r.w, ct, r.d), ceilMat);
         ceil.position.set(r.cx, r.floorY + r.h + ct / 2, r.cz);
         ceil.userData.isCollidable = true;
+        ceil.userData.colliderType = "ceiling";
         collidableObjects.push(ceil);
         scene.add(ceil);
       }
@@ -1007,6 +1014,7 @@ export default function App() {
           else below.position.set(px, r.floorY + belowH / 2, pz + segCenter);
           below.castShadow = true; below.receiveShadow = true;
           below.userData.isCollidable = true;
+          below.userData.colliderType = "wall";
           collidableObjects.push(below);
           wallColliderMeshes.push(below);
           scene.add(below);
@@ -1017,6 +1025,7 @@ export default function App() {
             if (rotY === 0) above.position.set(px + segCenter, r.floorY + doorH + aboveH / 2, pz);
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
             above.userData.isCollidable = true;
+            above.userData.colliderType = "wall";
             collidableObjects.push(above);
             wallColliderMeshes.push(above);
             scene.add(above);
@@ -1090,6 +1099,7 @@ export default function App() {
         }
         
         collisionRamp.userData.isCollidable = true;
+        collisionRamp.userData.colliderType = "ramp";
         collidableObjects.push(collisionRamp);
         scene.add(collisionRamp);
         
@@ -1190,6 +1200,7 @@ export default function App() {
       );
       mesh.position.set(prop.cx, (ownerRoom?.floorY ?? 0) + prop.h / 2, prop.cz);
       mesh.userData.isCollidable = true;
+      mesh.userData.colliderType = "prop";
       collidableObjects.push(mesh);
       scene.add(mesh);
     });

@@ -38,6 +38,13 @@ export function setWallColliderDebug(enabled: boolean): void {
   SHOW_WALL_COLLIDERS = enabled;
 }
 
+// Global debug verbose flag for detailed logging
+declare global {
+  interface Window {
+    DEBUG_VERBOSE?: boolean;
+  }
+}
+
 export interface ZombieConfig {
   health: number;
   speed: number;
@@ -242,13 +249,15 @@ export class ZombieManager {
       this.createZombieMesh(zombie);
     }
 
-    // Debug log for exact spawn placement test
-    console.log('[SPAWN EXACT TEST]', {
-      id: zombie.id,
-      spawnPoint: spawnPos.clone(),
-      finalPosition: zombie.position.clone(),
-      roomId: requestedRoomId
-    });
+    // Debug log for exact spawn placement test (debug mode only)
+    if (window.DEBUG_VERBOSE) {
+      console.log('[SPAWN EXACT TEST]', {
+        id: zombie.id,
+        spawnPoint: spawnPos.clone(),
+        finalPosition: zombie.position.clone(),
+        roomId: requestedRoomId
+      });
+    }
 
     this.notifySpawn(zombie);
     return zombie;
@@ -279,10 +288,12 @@ export class ZombieManager {
     const point = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
     const requestedRoomId = point.roomId;
     
-    console.log('[SPAWN DEBUG] selecting spawn point', {
-      requestedPosition: point.position.clone(),
-      requestedRoomId
-    });
+    if (window.DEBUG_VERBOSE) {
+      console.log('[SPAWN DEBUG] selecting spawn point', {
+        requestedPosition: point.position.clone(),
+        requestedRoomId
+      });
+    }
     
     return point.position.clone();
   }
@@ -328,20 +339,22 @@ export class ZombieManager {
     this.scene.add(mesh);
     zombie.mesh = mesh;
 
-    // Create collision helper for debug visualization
+    // Create collision helper for debug visualization (only visible when debug enabled)
     this.createCollisionHelper(zombie);
     
-    // Debug log for visibility verification
-    console.log('[ZOMBIE VISIBILITY DEBUG] spawned', {
-      id: zombie.id,
-      logicalPosition: zombie.position.clone(),
-      meshPosition: mesh.position.clone(),
-      meshVisible: mesh.visible,
-      meshParent: mesh.parent?.type,
-      inScene: this.scene?.children.includes(mesh),
-      spawnY,
-      finalMeshY: mesh.position.y
-    });
+    // Debug log for visibility verification (debug mode only)
+    if (window.DEBUG_VERBOSE) {
+      console.log('[ZOMBIE VISIBILITY DEBUG] spawned', {
+        id: zombie.id,
+        logicalPosition: zombie.position.clone(),
+        meshPosition: mesh.position.clone(),
+        meshVisible: mesh.visible,
+        meshParent: mesh.parent?.type,
+        inScene: this.scene?.children.includes(mesh),
+        spawnY,
+        finalMeshY: mesh.position.y
+      });
+    }
   }
 
   private createCollisionHelper(zombie: Zombie): void {
@@ -365,8 +378,8 @@ export class ZombieManager {
     helper.position.copy(zombie.position);
     helper.position.y += zombie.config.height / 2;
     
-    // Ensure collision helper is visible and not frustum culled
-    helper.visible = true;
+    // Only show collision helpers when debug is enabled
+    helper.visible = SHOW_WALL_COLLIDERS;
     helper.frustumCulled = false;
     
     this.scene.add(helper);
@@ -393,6 +406,9 @@ export class ZombieManager {
 
     zombie.collisionHelper.position.copy(zombie.position);
     zombie.collisionHelper.position.y += zombie.config.height / 2;
+    
+    // Update visibility based on debug toggle
+    zombie.collisionHelper.visible = SHOW_WALL_COLLIDERS;
   }
 
   // ==========================================================================
@@ -497,7 +513,9 @@ export class ZombieManager {
             separation.x = (separation.x / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
             separation.z = (separation.z / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
           }
-          logger.zombies.debug(`[ZOMBIE SEPARATION] Zombie ${zombie.id}: ${neighborCount} neighbors, separation applied`);
+          if (window.DEBUG_VERBOSE) {
+            logger.zombies.debug(`[ZOMBIE SEPARATION] Zombie ${zombie.id}: ${neighborCount} neighbors, separation applied`);
+          }
         }
         separation.y = 0; // CRITICAL: No vertical component
 
@@ -517,9 +535,13 @@ export class ZombieManager {
             
           if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
             zombie.position.x = attemptX.x;
-            logger.zombies.debug(`[ZOMBIE COLLISION] slide X allowed for zombie ${zombie.id}`);
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE COLLISION] slide X allowed for zombie ${zombie.id}`);
+            }
           } else {
-            logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (X) for zombie ${zombie.id}`);
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (X) for zombie ${zombie.id}`);
+            }
           }
 
           // Try Z movement from current position (after X was potentially applied)
@@ -529,9 +551,13 @@ export class ZombieManager {
             
           if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
             zombie.position.z = attemptZ.z;
-            logger.zombies.debug(`[ZOMBIE COLLISION] slide Z allowed for zombie ${zombie.id}`);
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE COLLISION] slide Z allowed for zombie ${zombie.id}`);
+            }
           } else {
-            logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (Z) for zombie ${zombie.id}`);
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (Z) for zombie ${zombie.id}`);
+            }
           }
 
           // Check if both axes were blocked
@@ -541,7 +567,9 @@ export class ZombieManager {
           const movedZ = Math.abs(newZ - oldPos.z);
           
           if (movedX < 0.001 && movedZ < 0.001 && (Math.abs(totalMove.x) > 0.001 || Math.abs(totalMove.z) > 0.001)) {
-            logger.zombies.debug(`[ZOMBIE COLLISION] movement fully blocked for zombie ${zombie.id}`);
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE COLLISION] movement fully blocked for zombie ${zombie.id}`);
+            }
           }
         } else {
           // No map objects, apply movement directly
@@ -552,13 +580,15 @@ export class ZombieManager {
         // 4. Lock Y to ground height - CRITICAL: Never allow wall collision to change Y
         const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
         
-        // Debug log for Y position
-        console.log('[ZOMBIE Y DEBUG]', {
-          id: zombie.id,
-          oldY: oldY.toFixed(3),
-          computedGroundY: groundY.toFixed(3),
-          newPositionY: zombie.position.y.toFixed(3)
-        });
+        // Debug log for Y position (debug mode only)
+        if (window.DEBUG_VERBOSE) {
+          console.log('[ZOMBIE Y DEBUG]', {
+            id: zombie.id,
+            oldY: oldY.toFixed(3),
+            computedGroundY: groundY.toFixed(3),
+            newPositionY: zombie.position.y.toFixed(3)
+          });
+        }
         
         zombie.position.y = groundY;
 
@@ -574,18 +604,20 @@ export class ZombieManager {
           zombie.mesh.position.y = groundY + zombie.config.height / 2;
           zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
           
-          // Desync check
-          const logicalPos = zombie.position;
-          const meshPos = zombie.mesh.position;
-          const dx = logicalPos.x - meshPos.x;
-          const dz = logicalPos.z - meshPos.z;
-          const distXZ = Math.sqrt(dx * dx + dz * dz);
-          if (distXZ > 0.1) {
-            console.warn('[ZOMBIE DESYNC] mesh does not match logic position', {
-              id: zombie.id,
-              logical: logicalPos.clone(),
-              mesh: meshPos.clone()
-            });
+          // Desync check (only warn in debug mode)
+          if (window.DEBUG_VERBOSE) {
+            const logicalPos = zombie.position;
+            const meshPos = zombie.mesh.position;
+            const dx = logicalPos.x - meshPos.x;
+            const dz = logicalPos.z - meshPos.z;
+            const distXZ = Math.sqrt(dx * dx + dz * dz);
+            if (distXZ > 0.1) {
+              console.warn('[ZOMBIE DESYNC] mesh does not match logic position', {
+                id: zombie.id,
+                logical: logicalPos.clone(),
+                mesh: meshPos.clone()
+              });
+            }
           }
         }
         
@@ -779,6 +811,11 @@ export class ZombieManager {
       
       // Only consider objects marked as collidable
       if (!obj.userData.isCollidable) continue;
+      // Filter by colliderType: only walls, doors, and props block movement
+      const colliderType = obj.userData.colliderType;
+      if (colliderType !== 'wall' && colliderType !== 'door' && colliderType !== 'prop') {
+        continue;
+      }
       
       // Expand the box by zombie radius for circle-AABB collision
       const expandedBox = new THREE.Box3(
@@ -820,6 +857,11 @@ export class ZombieManager {
     
     for (const obj of mapObjects) {
       // Check if this is a floor object
+      // Filter by colliderType: only floors and ramps provide ground
+      const colliderType = obj.userData.colliderType;
+      if (colliderType !== 'floor' && colliderType !== 'ramp') {
+        continue;
+      }
       if (!obj.userData.isCollidable) continue;
       
       const box = new THREE.Box3().setFromObject(obj);
@@ -838,8 +880,10 @@ export class ZombieManager {
     
     // Safety check: ensure we return a valid number
     if (!foundFloor) {
-      // No floor found - log warning but return default ground level
-      console.warn('[ZOMBIE Y ERROR] No floor found at position', { x, z, defaultingTo: groundY });
+      // No floor found - log warning but return default ground level (only in debug mode)
+      if (window.DEBUG_VERBOSE) {
+        console.warn('[ZOMBIE Y ERROR] No floor found at position', { x, z, defaultingTo: groundY });
+      }
     }
     
     // Ensure groundY is never NaN or undefined
@@ -848,12 +892,15 @@ export class ZombieManager {
       groundY = 0;
     }
     
-    console.log('[ZOMBIE Y DEBUG] getGroundYAtPosition result', {
-      x: x.toFixed(2),
-      z: z.toFixed(2),
-      groundY: groundY.toFixed(3),
-      foundFloor
-    });
+    // Debug log for ground detection (debug mode only)
+    if (window.DEBUG_VERBOSE) {
+      console.log('[ZOMBIE Y DEBUG] getGroundYAtPosition result', {
+        x: x.toFixed(2),
+        z: z.toFixed(2),
+        groundY: groundY.toFixed(3),
+        foundFloor
+      });
+    }
     
     return groundY;
   }
