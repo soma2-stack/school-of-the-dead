@@ -1,53 +1,54 @@
-```
-# Dependencies
-node_modules/
-
-# Build artifacts
+```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 dist/
 build/
 target/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.so
-*.egg-info/
-.eggs/
-
-# Virtual environments
+# Dependencies
+node_modules/
 venv/
 .venv/
-env/
-.env/
+.env
+.env.local
+*.env.*
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
+*.swo
 
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# IDE
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# System files
+.DS_Store
+Thumbs.db
+
 # Coverage
-.coverage
 coverage/
 htmlcov/
+.coverage
 
-# Environment variables
-.env*
-!.env.example
+# Python specific
+.mypy_cache/
+.pytest_cache/
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
+# Java/Gradle
+.gradle/
+*.class
 
 # Compressed files
 *.zip
@@ -68,66 +69,8 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# PyTest
-.pytest_cache/
-
-# Gradle
-.gradle/
-build/
-
-# Go
-*.exe
-*.dll
-*.so
-*.dylib
-*.out
-
-# Java
-*.class
-*.jar
-*.war
-*.ear
-*.nar
-*.hprof
-hs_err_pid*
-
-# C/C++
-*.o
-*.a
-*.obj
-*.lib
-*.dll
-*.so
-*.dylib
-*.exe
-*.out
-*.pdb
-*.ilk
-
-# Rust
-Cargo.lock
-target/
-
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Ruby
-*.gem
-.bundle/
-.ruby-version
-.rubocop.yml
-
-# Julia
-julia-*/
-
-# Zig
-zig*/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

@@ -23,6 +23,16 @@ export const ZOMBIE_SLIDE_FACTOR = 0.6; // How much to slide along walls
 export const ZOMBIE_MAX_CLIMB_HEIGHT = 0.3; // Maximum step-up height allowed
 export const ZOMBIE_GROUND_Y = 0; // Ground level Y position
 
+// Debug configuration
+export let SHOW_WALL_COLLIDERS = false;
+export function toggleWallColliderDebug(): boolean {
+  SHOW_WALL_COLLIDERS = !SHOW_WALL_COLLIDERS;
+  return SHOW_WALL_COLLIDERS;
+}
+export function setWallColliderDebug(enabled: boolean): void {
+  SHOW_WALL_COLLIDERS = enabled;
+}
+
 export interface ZombieConfig {
   health: number;
   speed: number;

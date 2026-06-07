@@ -10,7 +10,7 @@ import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { getDoorAuditor, DoorAuditReport, DoorConnection } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
-import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
+import { getZombieManager, ZombieManager, getZombieCountForRound, setWallColliderDebug, toggleWallColliderDebug } from './utils/zombies';
 import { getRoundManager, RoundManager } from './utils/rounds';
 import { getWeaponManager, WeaponManager } from './utils/weapons';
 import { Crosshair } from './utils/Crosshair';
@@ -87,6 +87,9 @@ export default function App() {
   
   // Debug wireframe ref for DEBUG_FLOORS test
   const debugWireframeRef = useRef<THREE.LineSegments | null>(null);
+  
+  // Wall collider debug state
+  const [showWallColliders, setShowWallColliders] = useState<boolean>(false);
   
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
@@ -851,6 +854,9 @@ export default function App() {
     // Collect all collidable map objects for zombie AI
     const collidableObjects: THREE.Object3D[] = [];
     
+    // Track wall collider meshes for debug visualization
+    const wallColliderMeshes: THREE.Mesh[] = [];
+    
     const wallMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wall_tiles') });
     const floorMatWood = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wood_floor') });
     const ceilMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('ceiling_tiles') });
@@ -1002,6 +1008,7 @@ export default function App() {
           below.castShadow = true; below.receiveShadow = true;
           below.userData.isCollidable = true;
           collidableObjects.push(below);
+          wallColliderMeshes.push(below);
           scene.add(below);
           if (r.h > doorH) {
             const aboveH = r.h - doorH;
@@ -1011,6 +1018,7 @@ export default function App() {
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
             above.userData.isCollidable = true;
             collidableObjects.push(above);
+            wallColliderMeshes.push(above);
             scene.add(above);
           }
         };
@@ -1146,6 +1154,25 @@ export default function App() {
     const stairDebugDataArray: any[] = [];
     INITIAL_ROOMS.forEach(r => buildRoom(r));
     setStairDebugData(stairDebugDataArray);
+
+    // Create wall collider debug visualization helpers
+    const wallColliderHelpers: THREE.Mesh[] = [];
+    if (showWallColliders) {
+      wallColliderMeshes.forEach(wallMesh => {
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const edges = new THREE.EdgesGeometry(boxGeo);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+        const helper = new THREE.LineSegments(edges, lineMat);
+        
+        // Copy transform from wall mesh
+        helper.position.copy(wallMesh.position);
+        helper.rotation.copy(wallMesh.rotation);
+        helper.scale.copy(wallMesh.scale);
+        
+        scene.add(helper);
+        wallColliderHelpers.push(helper);
+      });
+    }
 
     // Props
     MAP_PROPS.forEach(prop => {
