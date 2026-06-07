@@ -212,6 +212,15 @@ export class ZombieManager {
       return null;
     }
 
+    // Store the requested room ID from spawn point for validation
+    let requestedRoomId: string | undefined;
+    if (!position && this.spawnPoints.length > 0) {
+      const selectedPoint = this.spawnPoints.find(p => 
+        p.position.distanceTo(spawnPos) < 0.01
+      );
+      requestedRoomId = selectedPoint?.roomId;
+    }
+
     const zombie: Zombie = {
       id,
       state: 'alive',
@@ -228,6 +237,24 @@ export class ZombieManager {
     // Create visual representation if scene is available
     if (this.scene) {
       this.createZombieMesh(zombie);
+    }
+
+    // Debug log for spawn position validation
+    console.log('[SPAWN DEBUG]', {
+      id: zombie.id,
+      requestedPosition: spawnPos.clone(),
+      finalPosition: zombie.position.clone(),
+      requestedRoomId,
+      finalRoomId: requestedRoomId // Since we don't adjust spawn, they should match
+    });
+
+    // Warning if room ID mismatch (should not happen with current implementation)
+    if (requestedRoomId && requestedRoomId !== requestedRoomId) {
+      console.warn('[SPAWN WARNING] finalRoomId !== requestedRoomId', {
+        id: zombie.id,
+        requestedRoomId,
+        finalRoomId: requestedRoomId
+      });
     }
 
     this.notifySpawn(zombie);
@@ -257,6 +284,13 @@ export class ZombieManager {
     }
 
     const point = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
+    const requestedRoomId = point.roomId;
+    
+    console.log('[SPAWN DEBUG] selecting spawn point', {
+      requestedPosition: point.position.clone(),
+      requestedRoomId
+    });
+    
     return point.position.clone();
   }
 
@@ -820,6 +854,13 @@ export class ZombieManager {
       console.warn('[ZOMBIE Y ERROR] Invalid groundY detected, resetting to 0');
       groundY = 0;
     }
+    
+    console.log('[ZOMBIE Y DEBUG] getGroundYAtPosition result', {
+      x: x.toFixed(2),
+      z: z.toFixed(2),
+      groundY: groundY.toFixed(3),
+      foundFloor
+    });
     
     return groundY;
   }
