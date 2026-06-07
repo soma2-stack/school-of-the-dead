@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
 import { logger } from './logger';
+import { INITIAL_ROOMS, ROOM_GAPS, type Room } from '../game/mapConfig';
 
 // ============================================================================
 // Configuration
@@ -103,6 +104,10 @@ export interface Zombie {
   // Collision and tracking fields
   stuckTimer?: number;
   lastPosition?: THREE.Vector3;
+  // Room/path tracking fields
+  currentRoomId?: string;
+  targetRoomId?: string;
+  doorwayTarget?: THREE.Vector3;
   // Debug visualization
   collisionHelper?: THREE.Mesh;
 }
@@ -512,6 +517,71 @@ export class ZombieManager {
       }
       zombie.lastPosition.copy(zombie.position);
 
+      // --- ROOM/PATH TRACKING ---
+      // Determine zombie's current room and player's room for doorway-aware pathing
+      const zombieRoom = this.getRoomAtPos(zombie.position.x, zombie.position.z, zombie.position.y);
+      const playerRoom = this.getRoomAtPos(playerPosition.x, playerPosition.z, playerPosition.y);
+      
+      zombie.currentRoomId = zombieRoom?.id;
+      
+      // Determine target position based on room relationship
+      let targetPosition: THREE.Vector3;
+      let targetType: 'player' | 'doorway' = 'player';
+      let doorwayTarget: THREE.Vector3 | null = null;
+      
+      if (zombieRoom && playerRoom && zombieRoom.id === playerRoom.id) {
+        // Same room: chase player directly
+        targetPosition = playerPosition;
+        targetType = 'player';
+      } else if (zombieRoom && playerRoom) {
+        // Different rooms: find doorway target toward player
+        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom);
+        if (doorwayTarget) {
+          targetPosition = doorwayTarget;
+          targetType = 'doorway';
+          zombie.doorwayTarget = doorwayTarget.clone();
+          zombie.targetRoomId = playerRoom.id;
+        } else {
+          // No valid path found - use player position but zombie will be blocked by walls
+          targetPosition = playerPosition;
+          targetType = 'player';
+          zombie.targetRoomId = undefined;
+        }
+      } else {
+        // Unknown room situation - fall back to player position
+        targetPosition = playerPosition;
+        targetType = 'player';
+      }
+      
+      // Log target changes only (not every frame)
+      const prevTargetType = (zombie as any)._prevTargetType;
+      const prevTargetRoom = (zombie as any)._prevTargetRoom;
+      if (prevTargetType !== targetType || prevTargetRoom !== zombie.targetRoomId) {
+        if (targetType === 'doorway') {
+          logger.zombies.info('[ZOMBIE PATH] different room, using doorway target', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id,
+            targetRoomId: zombie.targetRoomId,
+            doorwayTarget: zombie.doorwayTarget
+          });
+        } else if (prevTargetType === 'doorway' && targetType === 'player') {
+          logger.zombies.info('[ZOMBIE PATH] same room, chasing player', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id
+          });
+        } else if (!doorwayTarget && targetType === 'player' && zombieRoom?.id !== playerRoom?.id) {
+          logger.zombies.warn('[ZOMBIE PATH] no valid path found', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id
+          });
+        }
+        (zombie as any)._prevTargetType = targetType;
+        (zombie as any)._prevTargetRoom = zombie.targetRoomId;
+      }
+
       // --- BEHAVIOR LOGIC ---
       const distanceToPlayer = zombie.position.distanceTo(playerPosition);
       
@@ -521,10 +591,10 @@ export class ZombieManager {
           zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
         }
       } else {
-        // Chase mode: move toward player
+        // Chase mode: move toward target (player or doorway)
         
         // 1. Calculate desired chase movement (XZ plane ONLY)
-        chaseMove.subVectors(playerPosition, zombie.position);
+        chaseMove.subVectors(targetPosition, zombie.position);
         chaseMove.y = 0; // CRITICAL: No vertical component
         if (chaseMove.lengthSq() > 0.001) {
           chaseMove.normalize().multiplyScalar(zombie.config.speed * deltaTime);
@@ -856,6 +926,132 @@ export class ZombieManager {
     }
     
     return groundY;
+  }
+
+  /**
+   * Get the room at a given XZ position.
+   * Uses INITIAL_ROOMS to determine which room contains the position.
+   * 
+   * @param x - X position
+   * @param z - Z position
+   * @param y - Y position (for multi-floor maps)
+   * @returns Room object if found, null otherwise
+   */
+  private getRoomAtPos(x: number, z: number, y: number = 0): Room | null {
+    for (const room of INITIAL_ROOMS) {
+      // Check if position is within room bounds on XZ plane
+      const xMin = room.cx - room.w / 2;
+      const xMax = room.cx + room.w / 2;
+      const zMin = room.cz - room.d / 2;
+      const zMax = room.cz + room.d / 2;
+      
+      if (x >= xMin && x <= xMax && z >= zMin && z <= zMax) {
+        // For multi-floor rooms, also check Y elevation
+        const floorY = room.floorY ?? 0;
+        const roomHeight = room.h ?? 10;
+        const yMin = floorY;
+        const yMax = floorY + roomHeight;
+        
+        if (y >= yMin && y <= yMax) {
+          return room;
+        } else if (room.floorY === undefined || room.h === undefined) {
+          // If room doesn't specify floor/height, assume it's valid at any Y
+          return room;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find a doorway target to path toward when zombie and player are in different rooms.
+   * Uses ROOM_GAPS to find connections between rooms.
+   * 
+   * @param zombieRoom - The zombie's current room
+   * @param playerRoom - The player's current room
+   * @returns Doorway center position if found, null otherwise
+   */
+  private findDoorwayTarget(zombieRoom: Room, playerRoom: Room): THREE.Vector3 | null {
+    // Simple approach: find a gap in zombieRoom that leads toward playerRoom
+    // In a full pathfinding system, this would use A* or similar
+    
+    const gaps = ROOM_GAPS[zombieRoom.id];
+    if (!gaps || gaps.length === 0) {
+      return null;
+    }
+
+    // Find the gap closest to the player's room center
+    let bestGap: (typeof gaps)[number] | null = null;
+    let bestDistance = Infinity;
+
+    for (const gap of gaps) {
+      // Calculate doorway center based on room and gap side
+      let doorX = zombieRoom.cx;
+      let doorZ = zombieRoom.cz;
+      const halfW = zombieRoom.w / 2;
+      const halfD = zombieRoom.d / 2;
+
+      switch (gap.side) {
+        case 'N':
+          doorZ = zombieRoom.cz - halfD;
+          doorX = gap.center;
+          break;
+        case 'S':
+          doorZ = zombieRoom.cz + halfD;
+          doorX = gap.center;
+          break;
+        case 'E':
+          doorX = zombieRoom.cx + halfW;
+          doorZ = gap.center;
+          break;
+        case 'W':
+          doorX = zombieRoom.cx - halfW;
+          doorZ = gap.center;
+          break;
+      }
+
+      // Distance from doorway to player room center
+      const dx = doorX - playerRoom.cx;
+      const dz = doorZ - playerRoom.cz;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestGap = gap;
+      }
+    }
+
+    if (!bestGap) {
+      return null;
+    }
+
+    // Calculate final doorway position
+    let doorX = zombieRoom.cx;
+    let doorZ = zombieRoom.cz;
+    const halfW = zombieRoom.w / 2;
+    const halfD = zombieRoom.d / 2;
+
+    switch (bestGap.side) {
+      case 'N':
+        doorZ = zombieRoom.cz - halfD;
+        doorX = bestGap.center;
+        break;
+      case 'S':
+        doorZ = zombieRoom.cz + halfD;
+        doorX = bestGap.center;
+        break;
+      case 'E':
+        doorX = zombieRoom.cx + halfW;
+        doorZ = bestGap.center;
+        break;
+      case 'W':
+        doorX = zombieRoom.cx - halfW;
+        doorZ = bestGap.center;
+        break;
+    }
+
+    // Use zombie's current Y (floor level)
+    return new THREE.Vector3(doorX, zombieRoom.floorY ?? 0, doorZ);
   }
 
   private checkPlayerCollision(zombie: Zombie, playerPosition: THREE.Vector3): boolean {
