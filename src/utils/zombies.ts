@@ -221,12 +221,15 @@ export class ZombieManager {
       requestedRoomId = selectedPoint?.roomId;
     }
 
+    // EXACT SPAWN TEST: Use the exact spawn point position without any adjustment
+    const finalSpawnPos = spawnPos.clone();
+
     const zombie: Zombie = {
       id,
       state: 'alive',
       health: this.config.health,
       maxHealth: this.config.health,
-      position: spawnPos.clone(),
+      position: finalSpawnPos.clone(),
       config: { ...this.config },
       spawnTime: Date.now(),
       lastDamageTime: 0,
@@ -239,23 +242,13 @@ export class ZombieManager {
       this.createZombieMesh(zombie);
     }
 
-    // Debug log for spawn position validation
-    console.log('[SPAWN DEBUG]', {
+    // Debug log for exact spawn placement test
+    console.log('[SPAWN EXACT TEST]', {
       id: zombie.id,
-      requestedPosition: spawnPos.clone(),
+      spawnPoint: spawnPos.clone(),
       finalPosition: zombie.position.clone(),
-      requestedRoomId,
-      finalRoomId: requestedRoomId // Since we don't adjust spawn, they should match
+      roomId: requestedRoomId
     });
-
-    // Warning if room ID mismatch (should not happen with current implementation)
-    if (requestedRoomId && requestedRoomId !== requestedRoomId) {
-      console.warn('[SPAWN WARNING] finalRoomId !== requestedRoomId', {
-        id: zombie.id,
-        requestedRoomId,
-        finalRoomId: requestedRoomId
-      });
-    }
 
     this.notifySpawn(zombie);
     return zombie;
