@@ -272,8 +272,15 @@ export class ZombieManager {
     });
 
     const mesh = new THREE.Mesh(geometry, material);
+    
+    // Determine ground Y at spawn position
+    const spawnY = zombie.position.y;
     mesh.position.copy(zombie.position);
-    mesh.position.y += zombie.config.height / 2; // Position on ground
+    mesh.position.y = spawnY + zombie.config.height / 2; // Position on ground
+    
+    // CRITICAL: Ensure mesh is visible and not frustum culled prematurely
+    mesh.visible = true;
+    mesh.frustumCulled = false;
     
     // Add simple eyes to indicate front direction
     const eyeGeometry = new THREE.SphereGeometry(0.2, 4, 4);
@@ -285,6 +292,9 @@ export class ZombieManager {
     leftEye.position.set(-0.4, zombie.config.height * 0.7, zombie.config.radius);
     rightEye.position.set(0.4, zombie.config.height * 0.7, zombie.config.radius);
     
+    leftEye.frustumCulled = false;
+    rightEye.frustumCulled = false;
+    
     mesh.add(leftEye);
     mesh.add(rightEye);
 
@@ -293,6 +303,18 @@ export class ZombieManager {
 
     // Create collision helper for debug visualization
     this.createCollisionHelper(zombie);
+    
+    // Debug log for visibility verification
+    console.log('[ZOMBIE VISIBILITY DEBUG] spawned', {
+      id: zombie.id,
+      logicalPosition: zombie.position.clone(),
+      meshPosition: mesh.position.clone(),
+      meshVisible: mesh.visible,
+      meshParent: mesh.parent?.type,
+      inScene: this.scene?.children.includes(mesh),
+      spawnY,
+      finalMeshY: mesh.position.y
+    });
   }
 
   private createCollisionHelper(zombie: Zombie): void {
@@ -315,6 +337,10 @@ export class ZombieManager {
     const helper = new THREE.Mesh(geometry, material);
     helper.position.copy(zombie.position);
     helper.position.y += zombie.config.height / 2;
+    
+    // Ensure collision helper is visible and not frustum culled
+    helper.visible = true;
+    helper.frustumCulled = false;
     
     this.scene.add(helper);
     zombie.collisionHelper = helper;
@@ -498,6 +524,15 @@ export class ZombieManager {
 
         // 4. Lock Y to ground height - CRITICAL: Never allow wall collision to change Y
         const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        
+        // Debug log for Y position
+        console.log('[ZOMBIE Y DEBUG]', {
+          id: zombie.id,
+          oldY: oldY.toFixed(3),
+          computedGroundY: groundY.toFixed(3),
+          newPositionY: zombie.position.y.toFixed(3)
+        });
+        
         zombie.position.y = groundY;
 
         // Safety check: reject any vertical climbing
@@ -506,11 +541,25 @@ export class ZombieManager {
           zombie.position.y = groundY;
         }
 
-        // Update mesh
+        // Update mesh - CRITICAL: sync visual mesh with logical position every frame
         if (zombie.mesh) {
           zombie.mesh.position.copy(zombie.position);
-          zombie.mesh.position.y += zombie.config.height / 2;
+          zombie.mesh.position.y = groundY + zombie.config.height / 2;
           zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
+          
+          // Desync check
+          const logicalPos = zombie.position;
+          const meshPos = zombie.mesh.position;
+          const dx = logicalPos.x - meshPos.x;
+          const dz = logicalPos.z - meshPos.z;
+          const distXZ = Math.sqrt(dx * dx + dz * dz);
+          if (distXZ > 0.1) {
+            console.warn('[ZOMBIE DESYNC] mesh does not match logic position', {
+              id: zombie.id,
+              logical: logicalPos.clone(),
+              mesh: meshPos.clone()
+            });
+          }
         }
         
         // Update collision helper visualization
@@ -758,6 +807,18 @@ export class ZombieManager {
           foundFloor = true;
         }
       }
+    }
+    
+    // Safety check: ensure we return a valid number
+    if (!foundFloor) {
+      // No floor found - log warning but return default ground level
+      console.warn('[ZOMBIE Y ERROR] No floor found at position', { x, z, defaultingTo: groundY });
+    }
+    
+    // Ensure groundY is never NaN or undefined
+    if (isNaN(groundY) || groundY === undefined) {
+      console.warn('[ZOMBIE Y ERROR] Invalid groundY detected, resetting to 0');
+      groundY = 0;
     }
     
     return groundY;
