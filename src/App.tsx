@@ -1155,19 +1155,26 @@ export default function App() {
     INITIAL_ROOMS.forEach(r => buildRoom(r));
     setStairDebugData(stairDebugDataArray);
 
-    // Create wall collider debug visualization helpers
+    // Create wall collider debug visualization helpers (red wireframes)
     const wallColliderHelpers: THREE.Mesh[] = [];
     if (showWallColliders) {
       wallColliderMeshes.forEach(wallMesh => {
-        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const box = new THREE.Box3().setFromObject(wallMesh);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        
+        const boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
         const edges = new THREE.EdgesGeometry(boxGeo);
-        const lineMat = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+        const lineMat = new THREE.LineBasicMaterial({ 
+          color: 0xff0000, // Red for wall colliders
+          transparent: true, 
+          opacity: 0.6 
+        });
         const helper = new THREE.LineSegments(edges, lineMat);
         
-        // Copy transform from wall mesh
-        helper.position.copy(wallMesh.position);
+        // Position at center of the box
+        box.getCenter(helper.position);
         helper.rotation.copy(wallMesh.rotation);
-        helper.scale.copy(wallMesh.scale);
         
         scene.add(helper);
         wallColliderHelpers.push(helper);
