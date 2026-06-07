@@ -12,20 +12,22 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
+*.so
+*.egg-info/
+.eggs/
+
+# Virtual environments
 venv/
 .venv/
-.ENV
-.python-version
+env/
+.env/
 
 # Logs
 *.log
 
-# Environment variables
-.env
-.env.local
-.env.*
+# OS generated files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
@@ -33,14 +35,19 @@ venv/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
+
+# Environment variables
+.env*
+!.env.example
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
 
 # Compressed files
 *.zip
@@ -61,4 +68,66 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# PyTest
+.pytest_cache/
+
+# Gradle
+.gradle/
+build/
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.hprof
+hs_err_pid*
+
+# C/C++
+*.o
+*.a
+*.obj
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.out
+*.pdb
+*.ilk
+
+# Rust
+Cargo.lock
+target/
+
+# Node.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ruby
+*.gem
+.bundle/
+.ruby-version
+.rubocop.yml
+
+# Julia
+julia-*/
+
+# Zig
+zig*/
 ```

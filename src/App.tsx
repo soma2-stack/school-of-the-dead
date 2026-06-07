@@ -28,18 +28,10 @@ import {
 } from './game/mapConfig';
 import { PLAYER_EYE_HEIGHT, PLAYER_RADIUS } from './game/playerConfig';
 import { getProceduralTexture } from './game/proceduralTextures';
-
-// ============================================================================
-// HELPER HOOKS
-// ============================================================================
-
-function useLatestRef<T>(value: T) {
-  const ref = useRef(value);
-  useEffect(() => {
-    ref.current = value;
-  }, [value]);
-  return ref;
-}
+import { useLatestRef } from './hooks/useLatestRef';
+import { useDebugLighting } from './hooks/useDebugLighting';
+import { useDebugAuditHelpers, type DebugAuditDeps } from './hooks/useDebugAuditHelpers';
+import { useDebugOverlayActions, type DebugOverlayActionsDeps } from './hooks/useDebugOverlayActions';
 
 // ============================================================================
 // SCENE BUILDING HELPERS
@@ -147,139 +139,42 @@ export default function App() {
   const debugLightingBrightnessRef = useLatestRef<number>(debugLightingBrightness);
 
   // ==========================================================================
-  // DEBUG/AUDIT HELPER FUNCTIONS (Extracted from handleKeyDown for maintainability)
+  // DEBUG/AUDIT HELPER FUNCTIONS (Extracted into hook)
   // ==========================================================================
 
-  const runFloorAudit = () => {
-    const auditor = floorAuditorRef.current;
-    auditor.initialize(INITIAL_ROOMS, ROOM_GAPS);
-    const report = auditor.runAudit();
-    setFloorAuditIssues(report.issues);
-    setFloorDebugMode(prev => !prev);
-    setCurrentFloorIssueIndex(-1);
-    if ((window as any).DEBUG_VERBOSE) {
-      console.log(`[FloorIntegrityAudit] Debug mode ${!floorDebugModeRef.current ? 'enabled' : 'disabled'}: ${report.totalIssuesFound} issues found`);
-    }
-  };
-
-  const teleportToNextFloorIssue = () => {
-    const issues = floorAuditIssuesRef.current;
-    const currentIndex = currentFloorIssueIndexRef.current;
-    if (issues.length > 0) {
-      const nextIndex = (currentIndex + 1) % issues.length;
-      const issue = issues[nextIndex];
-      
-      // Teleport player to issue location
-      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-      yaw.current = Math.PI; // Face the issue
-      setCurrentFloorIssueIndex(nextIndex);
-      if ((window as any).DEBUG_VERBOSE) {
-        console.log(`[FloorIntegrityAudit] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.cause} in ${issue.roomName}`);
-      }
-    }
-  };
-
-  const runConnectivityAudit = () => {
-    const auditor = connectivityAuditorRef.current;
-    auditor.initialize(INITIAL_ROOMS, ROOM_GAPS, 'starter');
-    const report = auditor.runAudit();
-    const issues = auditor.getIssues();
-    setConnectivityIssues(issues);
-    setConnectivityReport(report);
-    setConnectivityDebugMode(true);
-    setCurrentConnectivityIssueIndex(-1);
-    if ((window as any).DEBUG_VERBOSE) {
-      console.log(`[MapConnectivityAudit] Audit complete: ${report.totalIssues} issues found`);
-      console.log(`  - Connected Rooms: ${report.totalConnectedRooms}`);
-      console.log(`  - Disconnected Rooms: ${report.disconnectedRooms.length}`);
-      console.log(`  - Void Exposures: ${report.voidExposures.length}`);
-      console.log(`  - Missing Walls: ${report.missingWalls.length}`);
-      console.log(`  - Missing Ceilings: ${report.missingCeilings.length}`);
-      console.log(`  - Navigation Breaks: ${report.navigationBreaks.length}`);
-    }
-  };
-
-  const teleportToNextConnectivityIssue = () => {
-    const issues = connectivityIssuesRef.current;
-    const currentIndex = currentConnectivityIssueIndexRef.current;
-    if (issues.length > 0) {
-      const nextIndex = (currentIndex + 1) % issues.length;
-      const issue = issues[nextIndex];
-      
-      // Teleport player to issue location
-      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-      yaw.current = Math.PI; // Face the issue
-      setCurrentConnectivityIssueIndex(nextIndex);
-      if ((window as any).DEBUG_VERBOSE) {
-        console.log(`[MapConnectivityAudit] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
-      }
-    }
-  };
-
-  const scanCurrentRoomForValidation = () => {
-    const validator = mapValidatorRef.current;
-    
-    // Get current room name based on player position
-    const px = playerPos.current.x;
-    const pz = playerPos.current.z;
-    let currentRoomName: string | undefined;
-    
-    for (const room of INITIAL_ROOMS) {
-      const halfW = room.w / 2;
-      const halfD = room.d / 2;
-      if (px >= room.cx - halfW && px <= room.cx + halfW &&
-          pz >= room.cz - halfD && pz <= room.cz + halfD) {
-        currentRoomName = room.name;
-        break;
-      }
-    }
-    
-    validator.setData(INITIAL_ROOMS, ROOM_GAPS, doorsRef.current);
-    validator.enable(currentRoomName);
-    const issues = validator.getIssues();
-    setValidationIssues(issues);
-    setValidationModeEnabled(true);
-    setCurrentIssueIndex(-1);
-    if ((window as any).DEBUG_VERBOSE) {
-      console.log(`[RoomSealValidator] Scan complete: ${issues.length} issues found${currentRoomName ? ` in ${currentRoomName}` : ''}`);
-    }
-  };
-
-  const teleportToNextValidationIssue = () => {
-    const validator = mapValidatorRef.current;
-    const issues = validationIssuesRef.current;
-    const currentIndex = currentIssueIndexRef.current;
-    
-    if (issues.length > 0) {
-      const nextIndex = (currentIndex + 1) % issues.length;
-      const issue = issues[nextIndex];
-      
-      // Teleport player to issue location
-      playerPos.current.set(issue.location[0], issue.location[1] + 2, issue.location[2] + 5);
-      yaw.current = Math.PI; // Face the issue
-      setCurrentIssueIndex(nextIndex);
-      if ((window as any).DEBUG_VERBOSE) {
-        console.log(`[RoomSealValidator] Teleported to issue ${nextIndex + 1}/${issues.length}: ${issue.description} in ${issue.roomName}`);
-      }
-    }
-  };
-
-  const toggleValidationMode = () => {
-    const validator = mapValidatorRef.current;
-    validator.setData(INITIAL_ROOMS, ROOM_GAPS, doorsRef.current);
-    const enabled = validator.toggle();
-    setValidationModeEnabled(enabled);
-    if (enabled) {
-      const issues = validator.getIssues();
-      setValidationIssues(issues);
-    } else {
-      setValidationIssues([]);
-      setCurrentIssueIndex(-1);
-    }
-    if ((window as any).DEBUG_VERBOSE) {
-      console.log(`[MapValidator] Validation mode ${enabled ? 'enabled' : 'disabled'}`);
-    }
-  };
+  const {
+    runFloorAudit,
+    teleportToNextFloorIssue,
+    runConnectivityAudit,
+    teleportToNextConnectivityIssue,
+    scanCurrentRoomForValidation,
+    teleportToNextValidationIssue,
+    toggleValidationMode,
+  } = useDebugAuditHelpers({
+    floorAuditorRef,
+    connectivityAuditorRef,
+    mapValidatorRef,
+    floorAuditIssuesRef,
+    connectivityIssuesRef,
+    validationIssuesRef,
+    currentFloorIssueIndexRef,
+    currentConnectivityIssueIndexRef,
+    currentIssueIndexRef,
+    floorDebugModeRef,
+    playerPos,
+    yaw,
+    doorsRef,
+    setFloorAuditIssues,
+    setFloorDebugMode,
+    setCurrentFloorIssueIndex,
+    setConnectivityIssues,
+    setConnectivityReport,
+    setConnectivityDebugMode,
+    setCurrentConnectivityIssueIndex,
+    setValidationIssues,
+    setValidationModeEnabled,
+    setCurrentIssueIndex,
+  });
 
   // Zombie manager ref
   const zombieManagerRef = useRef<ZombieManager | null>(null);
@@ -287,199 +182,29 @@ export default function App() {
   // Weapon manager ref
   const weaponManagerRef = useRef<WeaponManager | null>(null);
 
-  // Debug Lighting toggle function (defined at component scope for JSX access)
-  const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
-  const originalAmbientIntensityRef = useRef<number>(1.0);
-  
-  const toggleDebugLighting = () => {
-    const enabled = !debugLightingEnabledRef.current;
-    setDebugLightingEnabled(enabled);
-    if (ambientLightRef.current) {
-      if (enabled) {
-        originalAmbientIntensityRef.current = ambientLightRef.current.intensity;
-        ambientLightRef.current.intensity = debugLightingBrightnessRef.current;
-        console.log('[DEBUG LIGHTING] ON - Brightness:', debugLightingBrightnessRef.current);
-      } else {
-        ambientLightRef.current.intensity = originalAmbientIntensityRef.current;
-        console.log('[DEBUG LIGHTING] OFF');
-      }
-    }
-  };
+  // Debug lighting hook
+  const { ambientLightRef, originalAmbientIntensityRef, toggleDebugLighting } = useDebugLighting({
+    setDebugLightingEnabled,
+    debugLightingEnabledRef,
+    debugLightingBrightnessRef,
+  });
 
-  // ============================================================================
-  // DEBUG OVERLAY HELPER FUNCTIONS
-  // ============================================================================
-
-  const addPlayerPoints = (amount: number) => {
-    console.log('[APP] onAddPoints called with amount:', amount);
-    const pointsManager = getPointsManager();
-    const playerId = 'player1';
-    
-    // Ensure player is registered
-    if (!pointsManager.hasPlayer(playerId)) {
-      console.log('[APP] Registering player:', playerId);
-      pointsManager.registerPlayer(playerId);
-    }
-    
-    const currentState = pointsManager.getPlayerState(playerId);
-    console.log('[APP] Points BEFORE add:', currentState?.currentPoints ?? 0);
-    
-    const result = pointsManager.adjustPoints(playerId, amount, 'manual_adjustment');
-    console.log('[APP] adjustPoints result:', result);
-    
-    const newState = pointsManager.getPlayerState(playerId);
-    console.log('[APP] Points AFTER add:', newState?.currentPoints ?? 0);
-  };
-
-  const setPlayerPoints = (amount: number) => {
-    console.log('[APP] onSetPoints called with amount:', amount);
-    const pointsManager = getPointsManager();
-    const playerId = 'player1';
-    
-    if (!pointsManager.hasPlayer(playerId)) {
-      pointsManager.registerPlayer(playerId);
-    }
-    
-    const currentState = pointsManager.getPlayerState(playerId);
-    const currentPoints = currentState?.currentPoints ?? 0;
-    const delta = amount - currentPoints;
-    
-    console.log('[APP] Setting points from', currentPoints, 'to', amount, '(delta:', delta, ')');
-    const result = pointsManager.adjustPoints(playerId, delta, 'manual_adjustment');
-    console.log('[APP] adjustPoints result:', result);
-  };
-
-  const startDebugRound = (round: number) => {
-    console.log('[ROUND TRACE] ENTER onStartRound handler in App.tsx');
-    console.log('[ROUND TRACE] onStartRound called with round:', round);
-    const roundManager = getRoundManager();
-    console.log('[ROUND TRACE] RoundManager instance:', roundManager);
-    console.log('[ROUND TRACE] RoundManager state before start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
-    console.log('[ROUND TRACE] Calling roundManager.startRound() with:', round);
-    roundManager.startRound(round);
-    console.log('[ROUND TRACE] RoundManager state after start:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
-    // Update React state to reflect changes
-    setRoundState({
-      round: roundManager.getCurrentRound(),
-      zombiesAlive: roundManager.getZombiesRemaining(),
-      spawnStatus: roundManager.getState(),
-    });
-  };
-
-  const goToNextDebugRound = () => {
-    console.log('[ROUND FLOW] NEXT ROUND button clicked');
-    console.log('[APP] onNextRound called');
-    const roundManager = getRoundManager();
-    const currentRound = roundManager.getCurrentRound();
-    console.log('[APP] Current round before next:', currentRound, 'state:', roundManager.getState());
-    console.log('[ROUND FLOW] Calling roundManager.forceNextRound()');
-    roundManager.forceNextRound();
-    console.log('[APP] Current round after next:', roundManager.getCurrentRound(), 'state:', roundManager.getState());
-    setRoundState({
-      round: roundManager.getCurrentRound(),
-      zombiesAlive: roundManager.getZombiesRemaining(),
-      spawnStatus: roundManager.getState(),
-    });
-  };
-
-  const goToPreviousDebugRound = () => {
-    console.log('[APP] onPreviousRound called');
-    const roundManager = getRoundManager();
-    const currentRound = roundManager.getCurrentRound();
-    console.log('[APP] Current round before prev:', currentRound);
-    // No previousRound method exists - manually decrement if possible
-    const newRound = Math.max(1, currentRound - 1);
-    // We can't directly set the round, so we just update React state for display
-    // The actual round manager doesn't support going backwards
-    console.log('[APP] Cannot go to previous round via RoundManager (not supported). Display only:', newRound);
-    setRoundState({
-      round: newRound,
-      zombiesAlive: roundManager.getZombiesRemaining(),
-      spawnStatus: roundManager.getState(),
-    });
-  };
-
-  const forceEndDebugRound = () => {
-    console.log('[ROUND FLOW] FORCE END ROUND button clicked');
-    console.log('[APP] onForceEndRound called');
-    const roundManager = getRoundManager();
-    console.log('[ROUND FLOW] Calling roundManager.endRound()');
-    roundManager.endRound();
-    setRoundState({
-      round: roundManager.getCurrentRound(),
-      zombiesAlive: roundManager.getZombiesRemaining(),
-      spawnStatus: roundManager.getState(),
-    });
-  };
-
-  const spawnCurrentDebugWave = () => {
-    console.log('[ROUND FLOW] SPAWN CURRENT WAVE button clicked (handler)');
-    console.log('[APP] onSpawnCurrentWave called');
-    const roundManager = getRoundManager();
-    const zombieManager = zombieManagerRef.current;
-    
-    // LOG STATE BEFORE SPAWNING
-    console.log('[ROUND TRACE] Before spawn - current state:', roundManager.getState());
-    console.log('[ROUND TRACE] Before spawn - current round:', roundManager.getCurrentRound());
-    
-    if (zombieManager) {
-      // FIX: If round is idle, start it first
-      if (roundManager.getState() === 'idle') {
-        console.log('[ROUND TRACE] Round is idle, calling startRound() before spawning');
-        roundManager.startRound(roundManager.getCurrentRound());
-        console.log('[ROUND TRACE] After startRound() - new state:', roundManager.getState());
-      }
-      
-      // spawnCurrentWave doesn't exist on RoundManager - spawn based on round config
-      const totalZombies = RoundManager.calculateZombieCount(roundManager.getCurrentRound());
-      console.log('[ROUND FLOW] Spawning', totalZombies, 'zombies for round', roundManager.getCurrentRound());
-      for (let i = 0; i < totalZombies; i++) {
-        zombieManager.spawnZombie();
-        roundManager.registerZombieSpawn();
-      }
-      setRoundState({
-        round: roundManager.getCurrentRound(),
-        zombiesAlive: roundManager.getZombiesRemaining(),
-        spawnStatus: roundManager.getState(),
-      });
-    }
-  };
-
-  const killAllDebugZombies = () => {
-    console.log('[APP] onKillAllZombies called');
-    const zombieManager = zombieManagerRef.current;
-    const roundManager = getRoundManager();
-    if (zombieManager) {
-      zombieManager.clearAllZombies();
-      // Kill all remaining zombies in round manager
-      const remaining = roundManager.getZombiesRemaining();
-      for (let i = 0; i < remaining; i++) {
-        roundManager.registerZombieKill();
-      }
-      setRoundState({
-        round: roundState.round,
-        zombiesAlive: roundManager.getZombiesRemaining(),
-        spawnStatus: roundManager.getState(),
-      });
-    }
-  };
-
-  const spawnDebugZombies = (count: number) => {
-    console.log('[APP] onSpawnZombie called with count:', count);
-    const zombieManager = zombieManagerRef.current;
-    const roundManager = getRoundManager();
-    if (zombieManager) {
-      for (let i = 0; i < count; i++) {
-        zombieManager.spawnZombie();
-        roundManager.registerZombieSpawn();
-      }
-      setRoundState({
-        round: roundState.round,
-        zombiesAlive: roundManager.getZombiesRemaining(),
-        spawnStatus: roundManager.getState(),
-      });
-    }
-  };
+  // Debug overlay actions hook
+  const {
+    addPlayerPoints,
+    setPlayerPoints,
+    startDebugRound,
+    goToNextDebugRound,
+    goToPreviousDebugRound,
+    forceEndDebugRound,
+    spawnCurrentDebugWave,
+    killAllDebugZombies,
+    spawnDebugZombies,
+  } = useDebugOverlayActions({
+    zombieManagerRef,
+    setRoundState,
+    roundState,
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
