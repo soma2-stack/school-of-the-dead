@@ -28,6 +28,10 @@ export const ZOMBIE_MIN_SEPARATION = 0.9; // Minimum distance between zombie cen
 export const ZOMBIE_SEPARATION_STRENGTH = 0.6; // How strongly to push apart
 export const ZOMBIE_MAX_SEPARATION_PER_FRAME = 0.08; // Max separation movement per frame
 
+// Movement substepping configuration for swept collision
+export const ZOMBIE_MAX_STEP_SIZE = 0.1; // Maximum movement per substep to prevent clipping
+export const ZOMBIE_MAX_SUBSTEPS = 10; // Maximum number of substeps per frame
+
 // Debug configuration
 export let SHOW_WALL_COLLIDERS = false;
 export function toggleWallColliderDebug(): boolean {
@@ -450,12 +454,37 @@ export class ZombieManager {
         if (zombie.stuckTimer > ZOMBIE_STUCK_THRESHOLD) {
           logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
           
-          // Recovery: Reposition on XZ plane only, Y stays locked to ground
-          zombie.position.x += (Math.random() - 0.5) * 2;
-          zombie.position.z += (Math.random() - 0.5) * 2;
-          zombie.position.y = oldY; // Keep Y unchanged
+          // Recovery: Try small candidate offsets and only apply if collision-free
+          const oldX = zombie.position.x;
+          const oldZ = zombie.position.z;
+          const recoveryCandidates = [
+            new THREE.Vector3(oldX + 0.3, oldZ, oldY),
+            new THREE.Vector3(oldX - 0.3, oldZ, oldY),
+            new THREE.Vector3(oldX, oldZ + 0.3, oldY),
+            new THREE.Vector3(oldX, oldZ - 0.3, oldY),
+            new THREE.Vector3(oldX + 0.2, oldZ + 0.2, oldY),
+            new THREE.Vector3(oldX - 0.2, oldZ - 0.2, oldY),
+            new THREE.Vector3(oldX + 0.2, oldZ - 0.2, oldY),
+            new THREE.Vector3(oldX - 0.2, oldZ + 0.2, oldY),
+          ];
+          
+          let recoveryApplied = false;
+          for (const candidate of recoveryCandidates) {
+            if (!this.collidesWithWalls2D(candidate, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+              zombie.position.x = candidate.x;
+              zombie.position.z = candidate.z;
+              zombie.position.y = this.getGroundYAtPosition(candidate.x, candidate.z, mapObjects);
+              recoveryApplied = true;
+              break;
+            }
+          }
+          
+          if (!recoveryApplied) {
+            logger.zombies.warn(`[ZOMBIE STUCK] No valid recovery position found for zombie ${zombie.id}. Leaving in place.`);
+          } else {
+            logger.zombies.info(`[PATH DEBUG] Recovery applied for Zombie ${zombie.id}`);
+          }
           zombie.stuckTimer = 0;
-          logger.zombies.info(`[PATH DEBUG] Recovery Triggered for Zombie ${zombie.id}`);
         }
       } else {
         zombie.stuckTimer = 0;
@@ -526,50 +555,78 @@ export class ZombieManager {
           chaseMove.z + separation.z
         );
 
-        // 3. Apply wall collision with axis-separated movement
+        // 3. Apply wall collision with swept collision using substeps
+        // This prevents clipping through walls when movement distance is large
         if (mapObjects.length > 0) {
-          // Try X movement first
-          attemptX.copy(zombie.position);
-          attemptX.x += totalMove.x;
-          attemptX.y = oldY; // Lock Y
-            
-          if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-            zombie.position.x = attemptX.x;
-            if (window.DEBUG_VERBOSE) {
-              logger.zombies.debug(`[ZOMBIE COLLISION] slide X allowed for zombie ${zombie.id}`);
-            }
-          } else {
-            if (window.DEBUG_VERBOSE) {
-              logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (X) for zombie ${zombie.id}`);
-            }
-          }
-
-          // Try Z movement from current position (after X was potentially applied)
-          attemptZ.copy(zombie.position);
-          attemptZ.z += totalMove.z;
-          attemptZ.y = oldY; // Lock Y
-            
-          if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-            zombie.position.z = attemptZ.z;
-            if (window.DEBUG_VERBOSE) {
-              logger.zombies.debug(`[ZOMBIE COLLISION] slide Z allowed for zombie ${zombie.id}`);
-            }
-          } else {
-            if (window.DEBUG_VERBOSE) {
-              logger.zombies.debug(`[ZOMBIE COLLISION] blocked by wall (Z) for zombie ${zombie.id}`);
-            }
-          }
-
-          // Check if both axes were blocked
-          const newX = zombie.position.x;
-          const newZ = zombie.position.z;
-          const movedX = Math.abs(newX - oldPos.x);
-          const movedZ = Math.abs(newZ - oldPos.z);
+          const moveLength = Math.sqrt(totalMove.x * totalMove.x + totalMove.z * totalMove.z);
+          const numSteps = Math.min(
+            Math.ceil(moveLength / ZOMBIE_MAX_STEP_SIZE),
+            ZOMBIE_MAX_SUBSTEPS
+          );
           
-          if (movedX < 0.001 && movedZ < 0.001 && (Math.abs(totalMove.x) > 0.001 || Math.abs(totalMove.z) > 0.001)) {
-            if (window.DEBUG_VERBOSE) {
-              logger.zombies.debug(`[ZOMBIE COLLISION] movement fully blocked for zombie ${zombie.id}`);
+          if (numSteps > 1) {
+            // Substep the movement to prevent clipping
+            const stepMove = totalMove.clone().divideScalar(numSteps);
+            
+            for (let step = 0; step < numSteps; step++) {
+              // Try X movement for this substep
+              attemptX.copy(zombie.position);
+              attemptX.x += stepMove.x;
+              attemptX.y = oldY; // Lock Y
+                
+              if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+                zombie.position.x = attemptX.x;
+              }
+
+              // Try Z movement for this substep
+              attemptZ.copy(zombie.position);
+              attemptZ.z += stepMove.z;
+              attemptZ.y = oldY; // Lock Y
+                
+              if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+                zombie.position.z = attemptZ.z;
+              }
             }
+          } else {
+            // Single step movement (original behavior for small moves)
+            // Try X movement first
+            attemptX.copy(zombie.position);
+            attemptX.x += totalMove.x;
+            attemptX.y = oldY; // Lock Y
+            
+            if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+              zombie.position.x = attemptX.x;
+            }
+
+            // Try Z movement from current position (after X was potentially applied)
+            attemptZ.copy(zombie.position);
+            attemptZ.z += totalMove.z;
+            attemptZ.y = oldY; // Lock Y
+            
+            if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+              zombie.position.z = attemptZ.z;
+            }
+          }
+
+          // Final collision check: if final position still collides, revert to old position
+          // This handles corner cases where separate X/Z movement allows slipping around corners
+          const finalPos = new THREE.Vector3(zombie.position.x, oldY, zombie.position.z);
+          if (this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+            zombie.position.x = oldPos.x;
+            zombie.position.z = oldPos.z;
+          }
+
+          // Clip debug warning (only when clipping actually happens)
+          const clippedThroughWall = this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects) && 
+                                     (Math.abs(zombie.position.x - oldPos.x) > 0.01 || Math.abs(zombie.position.z - oldPos.z) > 0.01);
+          if (clippedThroughWall) {
+            console.warn('[ZOMBIE CLIP DEBUG]', {
+              zombieId: zombie.id,
+              oldPosition: oldPos.clone(),
+              attemptedPosition: finalPos.clone(),
+              finalPosition: zombie.position.clone(),
+              wallColliderType: 'wall/door/prop'
+            });
           }
         } else {
           // No map objects, apply movement directly
@@ -620,8 +677,8 @@ export class ZombieManager {
             }
           }
         }
-        
-        // Update collision helper visualization
+
+        // Update collision helper visualization (only when debug enabled)
         this.updateCollisionHelper(zombie);
       }
 
@@ -633,160 +690,6 @@ export class ZombieManager {
 
     // Clean up dead zombies
     deadZombies.forEach(id => this.removeZombie(id));
-  }
-
-  /**
-   * Check for wall collisions and resolve them by sliding along walls.
-   * Returns true if collision occurred, false otherwise.
-   * If collision occurs, newPosition is set to the resolved position.
-   * 
-   * IMPORTANT: Collision resolution only happens on XZ plane.
-   * Y position is never modified by collision response to prevent
-   * zombies from climbing over walls.
-   */
-  private checkWallCollision(
-    zombie: Zombie,
-    moveStep: THREE.Vector3,
-    mapObjects: THREE.Object3D[],
-    raycaster: THREE.Raycaster,
-    rayOrigin: THREE.Vector3,
-    wallNormal: THREE.Vector3,
-    slideDirection: THREE.Vector3,
-    newPosition: THREE.Vector3
-  ): boolean {
-    let hasCollision = false;
-    
-    // Store Y position before collision - this must never change
-    const yPositionBefore = zombie.position.y;
-    
-    // Calculate proposed new position (XZ only for movement, Y stays same)
-    newPosition.copy(zombie.position);
-    newPosition.x += moveStep.x;
-    newPosition.z += moveStep.z;
-    // IMPORTANT: Do NOT add moveStep.y - zombies stay grounded
-    
-    // Raycast in the direction of movement from multiple points around the zombie
-    // to detect walls more reliably
-    const rayDirections = [
-      moveStep.clone().normalize(), // Forward
-    ];
-    
-    // Add side rays for better coverage
-    const sideOffset = new THREE.Vector3(-moveStep.z, 0, moveStep.x).normalize();
-    rayDirections.push(
-      sideOffset.clone().multiplyScalar(ZOMBIE_SLIDE_FACTOR).add(moveStep.clone().normalize()).normalize()
-    );
-    rayDirections.push(
-      sideOffset.clone().multiplyScalar(-ZOMBIE_SLIDE_FACTOR).add(moveStep.clone().normalize()).normalize()
-    );
-    
-    for (const rayDir of rayDirections) {
-      // Raycast from zombie center height, but keep ray horizontal (no Y component)
-      rayOrigin.copy(zombie.position);
-      rayOrigin.y += 1; // Raycast from center height
-      
-      // Ensure ray direction is purely horizontal (XZ plane only)
-      const horizontalRayDir = rayDir.clone();
-      horizontalRayDir.y = 0;
-      if (horizontalRayDir.lengthSq() < 0.001) {
-        continue; // Skip if no horizontal movement
-      }
-      horizontalRayDir.normalize();
-      
-      raycaster.set(rayOrigin, horizontalRayDir);
-      raycaster.far = moveStep.length() + ZOMBIE_COLLISION_RADIUS;
-      
-      const intersects = raycaster.intersectObjects(mapObjects, true);
-      
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        const distanceToHit = hit.distance;
-        
-        // Log collision attempt details
-        logger.zombies.debug(`[WALL COLLISION] Zombie ${zombie.id}:`);
-        logger.zombies.debug(`  Position: (${zombie.position.x.toFixed(2)}, ${zombie.position.y.toFixed(2)}, ${zombie.position.z.toFixed(2)})`);
-        logger.zombies.debug(`  Attempted Position: (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)}, ${newPosition.z.toFixed(2)})`);
-        logger.zombies.debug(`  Wall Hit at distance: ${distanceToHit.toFixed(2)}`);
-        
-        // Check if we would hit the wall during this movement
-        if (distanceToHit < moveStep.length()) {
-          hasCollision = true;
-          
-          // Get wall normal in world space
-          wallNormal.copy(hit.face?.normal || new THREE.Vector3(0, 1, 0));
-          if (hit.object.matrixWorld) {
-            wallNormal.transformDirection(hit.object.matrixWorld).normalize();
-          }
-          
-          // CRITICAL: Zero out Y component of wall normal - we only care about XZ collision
-          wallNormal.y = 0;
-          if (wallNormal.lengthSq() > 0.001) {
-            wallNormal.normalize();
-          } else {
-            // If normal becomes zero after removing Y, use a default horizontal normal
-            wallNormal.set(horizontalRayDir.z, 0, -horizontalRayDir.x);
-          }
-          
-          // Calculate penetration depth into the wall
-          const penetrationDepth = (ZOMBIE_COLLISION_RADIUS - distanceToHit);
-          logger.zombies.debug(`  Penetration Depth: ${penetrationDepth.toFixed(2)}`);
-          logger.zombies.debug(`  Y Position Before: ${yPositionBefore.toFixed(2)}`);
-          
-          // Calculate slide direction: project movement onto the wall plane (XZ only)
-          // First, get the horizontal movement vector
-          const horizontalMove = new THREE.Vector3(moveStep.x, 0, moveStep.z);
-          const dot = horizontalMove.dot(wallNormal);
-          
-          // Only slide if moving towards the wall
-          if (dot < 0) {
-            // Remove the component of movement that goes into the wall
-            slideDirection.copy(horizontalMove).sub(wallNormal.clone().multiplyScalar(dot));
-            
-            // Normalize and scale to original horizontal speed
-            if (slideDirection.lengthSq() > 0.001) {
-              slideDirection.normalize().multiplyScalar(horizontalMove.length());
-            } else {
-              // No valid slide direction - wall is perpendicular to movement
-              slideDirection.set(0, 0, 0);
-            }
-            
-            // Move the zombie to just before the wall, then slide
-            const safeDistance = Math.max(0, distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5);
-            if (safeDistance > 0) {
-              newPosition.copy(zombie.position);
-              newPosition.add(horizontalRayDir.clone().multiplyScalar(safeDistance));
-              newPosition.x += slideDirection.x;
-              newPosition.z += slideDirection.z;
-            } else {
-              // Very close to wall, just slide along it (or stop if no slide possible)
-              newPosition.copy(zombie.position);
-              newPosition.x += slideDirection.x;
-              newPosition.z += slideDirection.z;
-            }
-            
-            logger.zombies.debug(`  [COLLISION] Zombie ${zombie.id} hit wall, sliding along normal`);
-          } else {
-            // Moving away from wall or parallel, just stop before it
-            newPosition.copy(zombie.position);
-            newPosition.add(horizontalRayDir.clone().multiplyScalar(Math.max(0, distanceToHit - ZOMBIE_COLLISION_RADIUS * 0.5)));
-          }
-          
-          // CRITICAL: Ensure Y position never changes - zombies must remain grounded
-          newPosition.y = yPositionBefore;
-          logger.zombies.debug(`  Y Position After: ${newPosition.y.toFixed(2)}`);
-          
-          // Check if zombie is attempting vertical movement (should be rejected)
-          if (Math.abs(newPosition.y - yPositionBefore) > 0.001) {
-            logger.zombies.warn(`[REJECTED] Zombie ${zombie.id} attempted vertical movement from ${yPositionBefore.toFixed(2)} to ${newPosition.y.toFixed(2)}`);
-            newPosition.y = yPositionBefore;
-          }
-          
-          break; // Handle first collision only
-        }
-      }
-    }
-    
-    return hasCollision;
   }
 
   /**
