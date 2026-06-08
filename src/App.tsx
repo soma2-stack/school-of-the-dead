@@ -729,6 +729,7 @@ export default function App() {
         if (newHealth <= 0) {
           isDeadRef.current = true;
           setIsDead(true);
+          playSound('game_over');
         }
         
         return newHealth;
