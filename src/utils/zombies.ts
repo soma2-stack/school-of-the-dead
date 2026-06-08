@@ -132,6 +132,14 @@ export type ZombieEventCallback = (zombie: Zombie) => void;
 export type ZombieDamageCallback = (zombie: Zombie, damage: number, playerId: string) => void;
 export type ZombieKillCallback = (zombie: Zombie, playerId: string) => void;
 
+// Particle effect types
+interface ParticleEffect {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  lifetime: number;
+  maxLifetime: number;
+}
+
 // ============================================================================
 // Zombie Manager Class
 // ============================================================================
@@ -147,6 +155,9 @@ export class ZombieManager {
   private onDeathCallbacks: ZombieKillCallback[] = [];
   private onDamageCallbacks: ZombieDamageCallback[] = [];
   private onPlayerDamageCallbacks: ((damage: number, zombie: Zombie) => void)[] = [];
+  
+  // Particle effects
+  private activeParticles: ParticleEffect[] = [];
 
   constructor(scene?: THREE.Scene, config: Partial<ZombieConfig> = {}) {
     this.config = { ...DEFAULT_ZOMBIE_CONFIG, ...config };
@@ -161,6 +172,182 @@ export class ZombieManager {
 
   setScene(scene: THREE.Scene): void {
     this.scene = scene;
+  }
+
+  // ==========================================================================
+  // Particle Effects System
+  // ==========================================================================
+
+  private spawnHitParticles(position: THREE.Vector3, count: number = 6, color: number = 0xffaa00, speed: number = 3, lifetime: number = 0.3): void {
+    if (!this.scene) return;
+
+    for (let i = 0; i < count; i++) {
+      const size = 0.15 + Math.random() * 0.15;
+      const geometry = new THREE.SphereGeometry(size, 4, 4);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.position.y += 2 + Math.random() * 1.5; // Chest/head area
+      
+      // Random outward velocity
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * speed,
+        (Math.random() - 0.3) * speed,
+        (Math.random() - 0.5) * speed
+      );
+
+      this.scene.add(mesh);
+      this.activeParticles.push({
+        mesh,
+        velocity,
+        lifetime: 0,
+        maxLifetime: lifetime,
+      });
+    }
+  }
+
+  private spawnDeathParticles(position: THREE.Vector3, count: number = 12, color: number = 0x8b0000, speed: number = 5, lifetime: number = 0.5): void {
+    if (!this.scene) return;
+
+    for (let i = 0; i < count; i++) {
+      const size = 0.2 + Math.random() * 0.25;
+      const geometry = new THREE.SphereGeometry(size, 4, 4);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.95,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.position.y += 1 + Math.random() * 2;
+      
+      // More explosive outward velocity
+      const angle = Math.random() * Math.PI * 2;
+      const verticalSpeed = Math.random() * speed * 0.8;
+      const horizontalSpeed = Math.random() * speed;
+      
+      const velocity = new THREE.Vector3(
+        Math.cos(angle) * horizontalSpeed,
+        verticalSpeed,
+        Math.sin(angle) * horizontalSpeed
+      );
+
+      this.scene.add(mesh);
+      this.activeParticles.push({
+        mesh,
+        velocity,
+        lifetime: 0,
+        maxLifetime: lifetime,
+      });
+    }
+  }
+
+  updateParticles(deltaTime: number): void {
+    if (!this.scene || this.activeParticles.length === 0) return;
+
+    const toRemove: number[] = [];
+
+    for (let i = 0; i < this.activeParticles.length; i++) {
+      const particle = this.activeParticles[i];
+      particle.lifetime += deltaTime;
+
+      // Update position
+      particle.mesh.position.addScaledVector(particle.velocity, deltaTime);
+      
+      // Apply gravity
+      particle.velocity.y -= 9.8 * deltaTime;
+
+      // Fade out based on lifetime
+      const alpha = 1 - (particle.lifetime / particle.maxLifetime);
+      if (particle.mesh.material instanceof THREE.MeshBasicMaterial) {
+        particle.mesh.material.opacity = alpha * 0.9;
+      }
+
+      // Mark for removal if expired
+      if (particle.lifetime >= particle.maxLifetime) {
+        toRemove.push(i);
+      }
+    }
+
+    // Remove expired particles (in reverse order to maintain indices)
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      const index = toRemove[i];
+      const particle = this.activeParticles[index];
+      this.scene.remove(particle.mesh);
+      particle.mesh.geometry.dispose();
+      if (Array.isArray(particle.mesh.material)) {
+        particle.mesh.material.forEach(m => m.dispose());
+      } else {
+        particle.mesh.material.dispose();
+      }
+      this.activeParticles.splice(index, 1);
+    }
+  }
+
+  clearParticles(): void {
+    if (!this.scene) return;
+    
+    for (const particle of this.activeParticles) {
+      this.scene.remove(particle.mesh);
+      particle.mesh.geometry.dispose();
+      if (Array.isArray(particle.mesh.material)) {
+        particle.mesh.material.forEach(m => m.dispose());
+      } else {
+        particle.mesh.material.dispose();
+      }
+    }
+    this.activeParticles = [];
+  }
+
+  // ==========================================================================
+  // Zombie Hit Flash Effect
+  // ==========================================================================
+
+  private flashZombieHit(zombie: Zombie): void {
+    if (!zombie.mesh || !this.scene) return;
+
+    // Store original material
+    const originalMaterial = zombie.mesh.material.clone();
+    
+    // Create flash material (bright red)
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.7,
+    });
+
+    // Apply flash to main mesh and all children
+    const materialsToRestore: { mesh: THREE.Mesh; original: THREE.Material }[] = [];
+    
+    zombie.mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        materialsToRestore.push({
+          mesh: child,
+          original: child.material.clone(),
+        });
+        child.material = flashMaterial;
+      }
+    });
+
+    // Restore after 100ms
+    setTimeout(() => {
+      if (!zombie.mesh || zombie.state !== 'alive') return;
+      
+      materialsToRestore.forEach(({ mesh, original }) => {
+        if (mesh.parent === zombie.mesh || mesh === zombie.mesh) {
+          mesh.material = original;
+        }
+      });
+      
+      // Dispose flash material
+      flashMaterial.dispose();
+    }, 100);
   }
 
   // ==========================================================================
@@ -1430,8 +1617,13 @@ export class ZombieManager {
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state !== 'alive') return false;
 
+    // Apply damage
     zombie.health -= damage;
     zombie.lastDamageTime = Date.now();
+
+    // Visual feedback: flash and particles on hit
+    this.flashZombieHit(zombie);
+    this.spawnHitParticles(zombie.position);
 
     this.notifyDamage(zombie, damage, playerId);
 
@@ -1448,6 +1640,9 @@ export class ZombieManager {
     if (!zombie || zombie.state === 'dead') return false;
 
     zombie.state = 'dead';
+
+    // Visual feedback: death burst particles
+    this.spawnDeathParticles(zombie.position);
 
     // Award points
     const pointsManager = getPointsManager();
