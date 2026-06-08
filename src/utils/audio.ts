@@ -33,7 +33,9 @@ class AudioSynth {
       osc.start(t);
       osc.stop(t + 0.06);
     } catch (e) {
-      console.warn('Audio click play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio click play failed', e);
+      }
     }
   }
 
@@ -63,7 +65,9 @@ class AudioSynth {
         osc.stop(t + idx * 0.08 + 0.3);
       });
     } catch (e) {
-      console.warn('Audio unlock play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio unlock play failed', e);
+      }
     }
   }
 
@@ -95,7 +99,9 @@ class AudioSynth {
       osc1.stop(t + 0.26);
       osc2.stop(t + 0.26);
     } catch (e) {
-      console.warn('Audio denied play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio denied play failed', e);
+      }
     }
   }
 
@@ -121,7 +127,9 @@ class AudioSynth {
       osc.start(t);
       osc.stop(t + 0.11);
     } catch (e) {
-      console.warn('Audio points play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio points play failed', e);
+      }
     }
   }
 
@@ -213,7 +221,9 @@ class AudioSynth {
       osc.start(t);
       osc.stop(t + 0.12);
     } catch (e) {
-      console.warn('Audio pistol shot play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio pistol shot play failed', e);
+      }
     }
   }
 
@@ -251,7 +261,9 @@ class AudioSynth {
         osc2.stop(0.12);
       }, 80);
     } catch (e) {
-      console.warn('Audio reload play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio reload play failed', e);
+      }
     }
   }
 
@@ -275,7 +287,9 @@ class AudioSynth {
       osc.start(t);
       osc.stop(t + 0.12);
     } catch (e) {
-      console.warn('Audio zombie hit play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio zombie hit play failed', e);
+      }
     }
   }
 
@@ -321,7 +335,9 @@ class AudioSynth {
       noiseGain.connect(this.ctx.destination);
       noise.start(t);
     } catch (e) {
-      console.warn('Audio zombie death play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio zombie death play failed', e);
+      }
     }
   }
 
@@ -351,7 +367,9 @@ class AudioSynth {
         osc.stop(t + idx * 0.08 + 0.25);
       });
     } catch (e) {
-      console.warn('Audio powerup pickup play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio powerup pickup play failed', e);
+      }
     }
   }
 
@@ -384,7 +402,9 @@ class AudioSynth {
       osc1.stop(t + 0.55);
       osc2.stop(t + 0.55);
     } catch (e) {
-      console.warn('Audio round start play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio round start play failed', e);
+      }
     }
   }
 
@@ -408,7 +428,9 @@ class AudioSynth {
       osc.start(t);
       osc.stop(t + 0.3);
     } catch (e) {
-      console.warn('Audio player hurt play failed', e);
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio player hurt play failed', e);
+      }
     }
   }
 }
@@ -460,7 +482,9 @@ export function playSound(soundName: string): void {
       sound.playPlayerHurt();
       break;
     default:
-      console.warn(`Unknown sound: ${soundName}`);
+      if (window.DEBUG_VERBOSE) {
+        console.warn(`Unknown sound: ${soundName}`);
+      }
   }
 }
 
