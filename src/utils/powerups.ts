@@ -85,7 +85,7 @@ export class PowerUpManager {
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(position);
-    mesh.position.y = position.y + 0.5; // Slightly above ground
+    mesh.position.y = position.y + 1.5; // Chest height
 
     this.scene.add(mesh);
 
@@ -129,10 +129,23 @@ export class PowerUpManager {
       const time = Date.now() / 1000;
       pickup.mesh.rotation.y += deltaTime * 2;
       pickup.mesh.rotation.z = Math.sin(time * 3) * 0.1;
-      pickup.mesh.position.y = pickup.position.y + 0.5 + Math.sin(time * 2) * 0.15;
+      pickup.mesh.position.y =
+        pickup.position.y + 1.5 + Math.sin(time * 2) * 0.15;
 
-      // Check collection distance
-      const distance = pickup.mesh.position.distanceTo(playerPosition);
+      // Check collection distance (XZ only, ignore Y)
+      const dx = pickup.mesh.position.x - playerPosition.x;
+      const dz = pickup.mesh.position.z - playerPosition.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+
+      if (window.DEBUG_VERBOSE) {
+        console.log('[POWERUP TEST]', {
+          pickupId: pickup.id,
+          pickupPos: pickup.mesh.position.clone(),
+          playerPos: playerPosition.clone(),
+          distance,
+        });
+      }
+
       if (distance <= MAX_AMMO_COLLECT_DISTANCE) {
         this.collectPickup(pickup);
         toRemove.push(id);
