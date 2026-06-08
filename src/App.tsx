@@ -746,7 +746,7 @@ export default function App() {
 
     // Initialize Power-Up Manager
     powerUpManagerRef.current = getPowerUpManager(scene);
-    logger.system.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
+    logger.game.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
