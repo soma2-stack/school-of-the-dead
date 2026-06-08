@@ -214,6 +214,9 @@ export default function App() {
   // Power-up manager ref
   const powerUpManagerRef = useRef<PowerUpManager | null>(null);
 
+  // Guard to prevent double-starting Round 1 (React StrictMode / hot reload)
+  const hasAutoStartedRoundRef = useRef(false);
+
   // Debug lighting hook
   const { ambientLightRef, originalAmbientIntensityRef, toggleDebugLighting } = useDebugLighting({
     setDebugLightingEnabled,
@@ -750,6 +753,16 @@ export default function App() {
     // Initialize Power-Up Manager
     powerUpManagerRef.current = getPowerUpManager(scene);
     logger.game.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
+
+    // Auto-start Round 1 once all managers are initialized
+    if (!hasAutoStartedRoundRef.current) {
+      hasAutoStartedRoundRef.current = true;
+      const roundManager = getRoundManager();
+      if (roundManager.getState() === "idle") {
+        logger.rounds.info('Auto-starting Round 1');
+        roundManager.startRound();
+      }
+    }
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
