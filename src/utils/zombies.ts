@@ -755,6 +755,51 @@ export class ZombieManager {
               zombie.position.z = nextPos.z;
             } else {
               // Blocked: stop instead of sliding sideways
+              // Add debug logging to identify what's blocking the doorway
+              if (window.DEBUG_VERBOSE) {
+                const blockingObjects: Array<{
+                  name: string;
+                  colliderType: string;
+                  isOpen?: boolean;
+                  blocksZombies?: boolean;
+                  isCollidable?: boolean;
+                  position: THREE.Vector3;
+                  boxMin: THREE.Vector3;
+                  boxMax: THREE.Vector3;
+                }> = [];
+                
+                for (const obj of mapObjects) {
+                  const box = new THREE.Box3().setFromObject(obj);
+                  const expandedBox = new THREE.Box3(
+                    new THREE.Vector3(box.min.x - ZOMBIE_COLLISION_RADIUS, box.min.y, box.min.z - ZOMBIE_COLLISION_RADIUS),
+                    new THREE.Vector3(box.max.x + ZOMBIE_COLLISION_RADIUS, box.max.y, box.max.z + ZOMBIE_COLLISION_RADIUS)
+                  );
+                  
+                  if (nextPos.x >= expandedBox.min.x && nextPos.x <= expandedBox.max.x &&
+                      nextPos.z >= expandedBox.min.z && nextPos.z <= expandedBox.max.z) {
+                    const wallHeight = box.max.y - box.min.y;
+                    if (wallHeight > ZOMBIE_MAX_CLIMB_HEIGHT) {
+                      blockingObjects.push({
+                        name: obj.name || 'unnamed',
+                        colliderType: obj.userData.colliderType || 'unknown',
+                        isOpen: obj.userData.isOpen,
+                        blocksZombies: obj.userData.blocksZombies,
+                        isCollidable: obj.userData.isCollidable,
+                        position: obj.position.clone(),
+                        boxMin: box.min.clone(),
+                        boxMax: box.max.clone()
+                      });
+                    }
+                  }
+                }
+                
+                console.log('[ZOMBIE DOOR BLOCKED]', {
+                  zombieId: zombie.id,
+                  nextPos: nextPos.clone(),
+                  blockingObjects
+                });
+              }
+              
               zombie.position.x = oldPos.x;
               zombie.position.z = oldPos.z;
             }
@@ -1168,34 +1213,40 @@ export class ZombieManager {
 
     // Calculate doorway center position using world coordinates
     // Return single center point at the doorway opening (no entry/exit phases)
+    // Use a small inside-room offset so target is not exactly on the wall line
     const halfW = zombieRoom.w / 2;
     const halfD = zombieRoom.d / 2;
     const floorY = zombieRoom.floorY ?? 0;
     let targetX = zombieRoom.cx;
     let targetZ = zombieRoom.cz;
+    const doorwayOffset = 0.75; // Small offset to avoid wall collider edge
 
     switch (bestGap.side) {
       case 'N': {
         // N wall is at localZ = +halfD, so worldZ = cz + halfD
+        // Target slightly inside the room (south of the wall)
         targetX = zombieRoom.cx + bestGap.center;
-        targetZ = zombieRoom.cz + halfD;
+        targetZ = zombieRoom.cz + halfD - doorwayOffset;
         break;
       }
       case 'S': {
         // S wall is at localZ = -halfD, so worldZ = cz - halfD
+        // Target slightly inside the room (north of the wall)
         targetX = zombieRoom.cx + bestGap.center;
-        targetZ = zombieRoom.cz - halfD;
+        targetZ = zombieRoom.cz - halfD + doorwayOffset;
         break;
       }
       case 'E': {
         // E wall is at localX = +halfW, so worldX = cx + halfW
-        targetX = zombieRoom.cx + halfW;
+        // Target slightly inside the room (west of the wall)
+        targetX = zombieRoom.cx + halfW - doorwayOffset;
         targetZ = zombieRoom.cz + bestGap.center;
         break;
       }
       case 'W': {
         // W wall is at localX = -halfW, so worldX = cx - halfW
-        targetX = zombieRoom.cx - halfW;
+        // Target slightly inside the room (east of the wall)
+        targetX = zombieRoom.cx - halfW + doorwayOffset;
         targetZ = zombieRoom.cz + bestGap.center;
         break;
       }
