@@ -13,6 +13,7 @@ import { createGeometryInspector, GeometryInspector } from './utils/GeometryInsp
 import { getZombieManager, ZombieManager, getZombieCountForRound, setWallColliderDebug, toggleWallColliderDebug } from './utils/zombies';
 import { getRoundManager, RoundManager } from './utils/rounds';
 import { getWeaponManager, WeaponManager } from './utils/weapons';
+import { getPowerUpManager, PowerUpManager } from './utils/powerups';
 import { Crosshair } from './utils/Crosshair';
 import { logger } from './utils/logger';
 import { WeaponUI } from './utils/WeaponUI';
@@ -208,6 +209,9 @@ export default function App() {
   
   // Weapon manager ref
   const weaponManagerRef = useRef<WeaponManager | null>(null);
+
+  // Power-up manager ref
+  const powerUpManagerRef = useRef<PowerUpManager | null>(null);
 
   // Debug lighting hook
   const { ambientLightRef, originalAmbientIntensityRef, toggleDebugLighting } = useDebugLighting({
@@ -675,6 +679,9 @@ export default function App() {
         console.log('Zombie killed:', zombie.id, 'by player:', playerId);
       }
       setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
+
+      // Maybe drop Max Ammo power-up
+      powerUpManagerRef.current?.maybeDropMaxAmmo(zombie.position);
     });
 
     // Handle player damage events
@@ -736,6 +743,10 @@ export default function App() {
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
     logger.weapon.info('WeaponManager initialized:', weaponManagerRef.current !== null);
+
+    // Initialize Power-Up Manager
+    powerUpManagerRef.current = getPowerUpManager(scene);
+    logger.system.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1741,6 +1752,11 @@ export default function App() {
           const debugData = zombieManagerRef.current.getDebugData(playerPos.current);
           setZombieDebugData(debugData);
         }
+      }
+
+      // Update power-ups
+      if (powerUpManagerRef.current) {
+        powerUpManagerRef.current.update(dt, playerPos.current);
       }
 
       camera.position.copy(playerPos.current);
