@@ -26,6 +26,7 @@ __pycache__/
 *.pyd
 
 # Compiled files
+*.class
 *.o
 *.obj
 *.exe
@@ -53,14 +54,6 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-
-# System files
-.DS_Store
-Thumbs.db
 
 # Coverage
 coverage/
@@ -70,4 +63,8 @@ htmlcov/
 # Testing
 .mypy_cache/
 .pytest_cache/
+
+# System
+.DS_Store
+Thumbs.db
 ```

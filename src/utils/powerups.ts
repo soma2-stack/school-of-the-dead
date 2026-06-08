@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { getWeaponManager } from './weapons';
 import { getZombieManager } from './zombies';
+import { getPointsManager } from './points';
 
 // ============================================================================
 // Configuration
@@ -23,6 +24,7 @@ export enum PowerUpType {
   MAX_AMMO = 'max_ammo',
   INSTA_KILL = 'insta_kill',
   NUKE = 'nuke',
+  DOUBLE_POINTS = 'double_points',
 }
 
 // ============================================================================
@@ -86,16 +88,18 @@ export class PowerUpManager {
       console.log(`[POWERUP] Power-up drop triggered! Position:`, position.clone());
     }
 
-    // Randomly choose between Max Ammo, Insta-Kill, and Nuke (33% each)
+    // Randomly choose between Max Ammo, Insta-Kill, Nuke, and Double Points (25% each)
     const rand = Math.random();
     let type: PowerUpType;
     
-    if (rand < 0.33) {
+    if (rand < 0.25) {
       type = PowerUpType.MAX_AMMO;
-    } else if (rand < 0.66) {
+    } else if (rand < 0.5) {
       type = PowerUpType.INSTA_KILL;
-    } else {
+    } else if (rand < 0.75) {
       type = PowerUpType.NUKE;
+    } else {
+      type = PowerUpType.DOUBLE_POINTS;
     }
 
     switch (type) {
@@ -107,6 +111,9 @@ export class PowerUpManager {
         break;
       case PowerUpType.NUKE:
         this.spawnNukePickup(position.clone());
+        break;
+      case PowerUpType.DOUBLE_POINTS:
+        this.spawnDoublePointsPickup(position.clone());
         break;
     }
   }
@@ -342,6 +349,83 @@ export class PowerUpManager {
     }
   }
 
+  private spawnDoublePointsPickup(position: THREE.Vector3): void {
+    if (!this.scene) return;
+
+    const id = `powerup_${Date.now()}_${this.pickupIdCounter++}`;
+
+    // Create a group to hold all pickup elements
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.position.y = position.y + 1.5; // Chest height
+
+    // Create glowing gold/yellow cube for double points
+    const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      emissive: 0xffd700,
+      emissiveIntensity: 0.7,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
+    group.add(mesh);
+
+    // Add point light for glow effect
+    const light = new THREE.PointLight(0xffd700, 1.5, 4);
+    light.position.set(0, 0.3, 0);
+    group.add(light);
+
+    // Create text sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 28px Arial';
+      ctx.fillStyle = '#ffd700';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('DOUBLE POINTS', canvas.width / 2, canvas.height / 2);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const textSprite = new THREE.Sprite(spriteMaterial);
+    textSprite.position.set(0, 1, 0);
+    textSprite.scale.set(2.5, 0.5, 1);
+    group.add(textSprite);
+
+    this.scene.add(group);
+
+    const pickup: PowerUpPickup = {
+      id,
+      type: PowerUpType.DOUBLE_POINTS,
+      group,
+      mesh,
+      textSprite,
+      position: position.clone(),
+      spawnTime: Date.now(),
+      despawnTimeoutId: null,
+      collected: false,
+    };
+
+    this.pickups.set(id, pickup);
+
+    // Set despawn timeout
+    pickup.despawnTimeoutId = setTimeout(() => {
+      this.removePickup(id);
+    }, POWER_UP_DESPAWN_TIME * 1000);
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[POWERUP] Double Points pickup spawned: ${id}`);
+    }
+  }
+
   // ==========================================================================
   // Update Loop
   // ==========================================================================
@@ -426,6 +510,13 @@ export class PowerUpManager {
 
       if (window.DEBUG_VERBOSE) {
         console.log(`[POWERUP] Nuke triggered - killing all zombies`);
+      }
+    } else if (pickup.type === PowerUpType.DOUBLE_POINTS) {
+      // Apply double points effect
+      this.applyDoublePoints();
+
+      if (window.DEBUG_VERBOSE) {
+        console.log(`[POWERUP] Double Points activated for 30 seconds`);
       }
     }
   }
@@ -520,6 +611,15 @@ export class PowerUpManager {
       // Kill zombie without spawning power-ups
       zombieManager.killZombie(zombie.id, 'player1', true);
     }
+  }
+
+  // ==========================================================================
+  // Double Points Effect
+  // ==========================================================================
+
+  applyDoublePoints(): void {
+    const pointsManager = getPointsManager();
+    pointsManager.setPointMultiplier(2, 30000); // 30 seconds
   }
 
   // ==========================================================================
