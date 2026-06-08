@@ -433,6 +433,43 @@ class AudioSynth {
       }
     }
   }
+
+  // Game over - dramatic descending death sound
+  playGameOver() {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      // Dramatic descending death tone
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'square';
+      osc1.frequency.setValueAtTime(200, t);
+      osc2.frequency.setValueAtTime(198, t); // Slight detune
+      osc1.frequency.exponentialRampToValueAtTime(50, t + 1.0);
+      osc2.frequency.exponentialRampToValueAtTime(48, t + 1.0);
+
+      gain.gain.setValueAtTime(0.15, t);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.start(t);
+      osc2.start(t);
+      osc1.stop(t + 1.3);
+      osc2.stop(t + 1.3);
+    } catch (e) {
+      if (window.DEBUG_VERBOSE) {
+        console.warn('Audio game over play failed', e);
+      }
+    }
+  }
 }
 
 export const sound = new AudioSynth();
@@ -480,6 +517,9 @@ export function playSound(soundName: string): void {
       break;
     case 'player_hurt':
       sound.playPlayerHurt();
+      break;
+    case 'game_over':
+      sound.playGameOver();
       break;
     default:
       if (window.DEBUG_VERBOSE) {

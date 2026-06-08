@@ -1475,10 +1475,7 @@ export default function App() {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
-      // Play pistol shot sound
-      playSound('pistol_shot');
-      
-      // Use weapon manager to fire
+      // Use weapon manager to fire (weapon manager plays the pistol shot sound internally)
       logger.input.info('Calling weaponManager.fire()');
       const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
@@ -2278,8 +2275,76 @@ export default function App() {
       {isDead && (
         <div className="absolute inset-0 flex items-center justify-center z-[999999] bg-black/80">
           <div className="text-center">
-            <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">YOU DIED</div>
-            <div className="text-xl text-gray-400 font-mono">Refresh to restart</div>
+            <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">GAME OVER</div>
+            <div className="text-xl text-gray-400 font-mono mb-2">Round Reached: {roundManagerRef.current?.getCurrentRound() || 1}</div>
+            <div className="text-xl text-gray-400 font-mono mb-6">Final Points: {getPointsManager().getPoints('player1')}</div>
+            <button
+              onClick={() => {
+                // Reset health
+                setCurrentHealth(100);
+                currentHealthRef.current = 100;
+                setIsDead(false);
+                isDeadRef.current = false;
+                
+                // Reset points to 500
+                const pointsManager = getPointsManager();
+                pointsManager.setPlayerPoints('player1', 500);
+                
+                // Refill weapon ammo
+                const weaponManager = getWeaponManager();
+                weaponManager.refillAmmo();
+                
+                // Clear all zombies
+                const zombieManager = getZombieManager();
+                zombieManager.clearAllZombies();
+                
+                // Clear power-up pickups and reset effects
+                const powerUpManager = getPowerUpManager();
+                powerUpManager.destroy();
+                
+                // Reset round manager to round 1 idle
+                const roundManager = getRoundManager();
+                roundManager.reset();
+                
+                // Clear old banner/HUD state
+                setRoundBannerMessage('ROUND 1 STARTING IN');
+                setRoundBannerCountdown(5);
+                setRoundBannerColor('#ff0000');
+                
+                // Start Round 1 with 5-second countdown
+                if (autoStartTimeoutRef.current) {
+                  clearTimeout(autoStartTimeoutRef.current);
+                }
+                if (roundBannerTimerRef.current) {
+                  clearInterval(roundBannerTimerRef.current);
+                }
+                
+                autoStartTimeoutRef.current = setTimeout(() => {
+                  if (roundManager.getState() === 'idle') {
+                    logger.rounds.info('Auto-starting Round 1 after restart');
+                    roundManager.startRound();
+                  }
+                  autoStartTimeoutRef.current = null;
+                }, 5000);
+                
+                roundBannerTimerRef.current = setInterval(() => {
+                  setRoundBannerCountdown(prev => {
+                    const next = (prev ?? 5) - 1;
+                    if (next <= 0) {
+                      if (roundBannerTimerRef.current) {
+                        clearInterval(roundBannerTimerRef.current);
+                        roundBannerTimerRef.current = null;
+                      }
+                      return 0;
+                    }
+                    return next;
+                  });
+                }, 1000);
+              }}
+              className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-bold font-mono text-lg rounded cursor-pointer transition-colors"
+            >
+              RESTART
+            </button>
           </div>
         </div>
       )}
