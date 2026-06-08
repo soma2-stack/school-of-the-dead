@@ -21,7 +21,9 @@ export const MAX_AMMO_COLLECT_DISTANCE = 2; // units for player collection
 export interface PowerUpPickup {
   id: string;
   type: 'max_ammo';
+  group: THREE.Group;
   mesh: THREE.Mesh;
+  textSprite: THREE.Sprite;
   position: THREE.Vector3;
   spawnTime: number;
   despawnTimeoutId: ReturnType<typeof setTimeout> | null;
@@ -75,24 +77,60 @@ export class PowerUpManager {
 
     const id = `powerup_${Date.now()}_${this.pickupIdCounter++}`;
 
-    // Create glowing green sphere/cube for max ammo
-    const geometry = new THREE.SphereGeometry(0.4, 16, 16);
-    const material = new THREE.MeshBasicMaterial({
+    // Create a group to hold all pickup elements
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.position.y = position.y + 1.5; // Chest height
+
+    // Create glowing green cube for max ammo
+    const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    const material = new THREE.MeshStandardMaterial({
       color: 0x00ff00,
+      emissive: 0x00ff00,
+      emissiveIntensity: 0.5,
       transparent: true,
       opacity: 0.9,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(position);
-    mesh.position.y = position.y + 1.5; // Chest height
+    mesh.position.set(0, 0, 0);
+    group.add(mesh);
 
-    this.scene.add(mesh);
+    // Add point light for glow effect
+    const light = new THREE.PointLight(0x00ff00, 1, 3);
+    light.position.set(0, 0.3, 0);
+    group.add(light);
+
+    // Create text sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 32px Arial';
+      ctx.fillStyle = '#00ff00';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('MAX AMMO', canvas.width / 2, canvas.height / 2);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const textSprite = new THREE.Sprite(spriteMaterial);
+    textSprite.position.set(0, 1, 0);
+    textSprite.scale.set(2, 0.5, 1);
+    group.add(textSprite);
+
+    this.scene.add(group);
 
     const pickup: PowerUpPickup = {
       id,
       type: 'max_ammo',
+      group,
       mesh,
+      textSprite,
       position: position.clone(),
       spawnTime: Date.now(),
       despawnTimeoutId: null,
@@ -127,14 +165,14 @@ export class PowerUpManager {
 
       // Rotate and bob animation
       const time = Date.now() / 1000;
-      pickup.mesh.rotation.y += deltaTime * 2;
-      pickup.mesh.rotation.z = Math.sin(time * 3) * 0.1;
-      pickup.mesh.position.y =
+      pickup.group.rotation.y += deltaTime * 2;
+      pickup.group.rotation.z = Math.sin(time * 3) * 0.1;
+      pickup.group.position.y =
         pickup.position.y + 1.5 + Math.sin(time * 2) * 0.15;
 
       // Check collection distance (XZ only, ignore Y)
-      const dx = pickup.mesh.position.x - playerPosition.x;
-      const dz = pickup.mesh.position.z - playerPosition.z;
+      const dx = pickup.group.position.x - playerPosition.x;
+      const dz = pickup.group.position.z - playerPosition.z;
       const distance = Math.sqrt(dx * dx + dz * dz);
 
       if (window.DEBUG_VERBOSE) {
@@ -197,15 +235,21 @@ export class PowerUpManager {
       pickup.despawnTimeoutId = null;
     }
 
-    // Remove mesh from scene
-    if (this.scene && pickup.mesh) {
-      this.scene.remove(pickup.mesh);
+    // Remove group from scene
+    if (this.scene && pickup.group) {
+      this.scene.remove(pickup.group);
+      
+      // Dispose mesh geometry and material
       pickup.mesh.geometry.dispose();
       if (Array.isArray(pickup.mesh.material)) {
         pickup.mesh.material.forEach(m => m.dispose());
       } else {
         pickup.mesh.material.dispose();
       }
+      
+      // Dispose text sprite texture and material
+      pickup.textSprite.material.map?.dispose();
+      pickup.textSprite.material.dispose();
     }
 
     this.pickups.delete(id);
