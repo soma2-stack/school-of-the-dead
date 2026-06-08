@@ -842,6 +842,8 @@ export default function App() {
       collider.rotation.copy(doorMesh.rotation);
       scene.add(collider);
       collider.userData.colliderType = "door";
+      collider.userData.isOpen = door.isOpen; // Sync open state to collider
+      collider.userData.blocksZombies = false; // Open doors don't block zombies by default
       door.collider = collider;
       doorColliderMap.set(collider, door);
     });
@@ -1518,6 +1520,10 @@ export default function App() {
       } else if (!hoveredDoor.isOpen) {
         // Open the door
         hoveredDoor.isOpen = true;
+        // Update collider to reflect open state
+        if (hoveredDoor.collider) {
+          hoveredDoor.collider.userData.isOpen = true;
+        }
         if (hoveredDoor.mesh) {
           // Slide door open based on axis
           const openOffset = hoveredDoor.w * 0.6;

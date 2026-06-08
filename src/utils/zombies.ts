@@ -37,14 +37,25 @@ export const ZOMBIE_MAX_SUBSTEPS = 10; // Maximum number of substeps per frame
 export const ZOMBIE_STUCK_RECOVERY_MAX_DISTANCE = 0.25; // Maximum nudge distance for stuck recovery
 export const ZOMBIE_TELEPORT_GUARD_MARGIN = 0.3; // Extra margin for teleport detection
 
+// Doorway pathing configuration
+export const ZOMBIE_DOORWAY_OFFSET = 1.5; // Offset from wall for doorway entry/exit targets
+
 // Debug configuration
 export let SHOW_WALL_COLLIDERS = false;
+export let SHOW_ZOMBIE_PATHING = false;
 export function toggleWallColliderDebug(): boolean {
   SHOW_WALL_COLLIDERS = !SHOW_WALL_COLLIDERS;
   return SHOW_WALL_COLLIDERS;
 }
 export function setWallColliderDebug(enabled: boolean): void {
   SHOW_WALL_COLLIDERS = enabled;
+}
+export function toggleZombiePathingDebug(): boolean {
+  SHOW_ZOMBIE_PATHING = !SHOW_ZOMBIE_PATHING;
+  return SHOW_ZOMBIE_PATHING;
+}
+export function setZombiePathingDebug(enabled: boolean): void {
+  SHOW_ZOMBIE_PATHING = enabled;
 }
 
 // Global debug verbose flag for detailed logging
@@ -108,6 +119,7 @@ export interface Zombie {
   currentRoomId?: string;
   targetRoomId?: string;
   doorwayTarget?: THREE.Vector3;
+  doorwayPhase?: 'entry' | 'exit';
   // Debug visualization
   collisionHelper?: THREE.Mesh;
 }
@@ -414,14 +426,65 @@ export class ZombieManager {
     zombie.collisionHelper = undefined;
   }
 
-  private updateCollisionHelper(zombie: Zombie): void {
-    if (!zombie.collisionHelper || !this.scene) return;
+  private updateCollisionHelper(zombie: Zombie, doorwayTarget?: THREE.Vector3 | null): void {
+    if (!this.scene) return;
 
-    zombie.collisionHelper.position.copy(zombie.position);
-    zombie.collisionHelper.position.y += zombie.config.height / 2;
-    
-    // Update visibility based on debug toggle
-    zombie.collisionHelper.visible = SHOW_WALL_COLLIDERS;
+    // Update collision helper visibility based on debug toggle
+    if (zombie.collisionHelper) {
+      zombie.collisionHelper.position.copy(zombie.position);
+      zombie.collisionHelper.position.y += zombie.config.height / 2;
+      zombie.collisionHelper.visible = SHOW_WALL_COLLIDERS;
+    }
+
+    // Debug visualization for doorway pathing (yellow entry, blue exit)
+    if (SHOW_ZOMBIE_PATHING && doorwayTarget) {
+      // Create or update doorway target visual
+      let targetDebug = (zombie as any)._doorwayTargetDebug;
+      if (!targetDebug) {
+        const geometry = new THREE.SphereGeometry(0.5, 8, 8);
+        const material = new THREE.MeshBasicMaterial({ 
+          color: 0xffff00, // Yellow for entry target
+          transparent: true,
+          opacity: 0.8
+        });
+        targetDebug = new THREE.Mesh(geometry, material);
+        targetDebug.frustumCulled = false;
+        this.scene.add(targetDebug);
+        (zombie as any)._doorwayTargetDebug = targetDebug;
+      }
+      targetDebug.position.copy(doorwayTarget);
+      targetDebug.position.y += 0.5; // Slightly above ground
+      targetDebug.visible = true;
+      
+      // Draw line from zombie to target
+      let lineDebug = (zombie as any)._doorwayLineDebug;
+      if (!lineDebug) {
+        const points = [new THREE.Vector3(), new THREE.Vector3()];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
+        lineDebug = new THREE.Line(geometry, material);
+        lineDebug.frustumCulled = false;
+        this.scene.add(lineDebug);
+        (zombie as any)._doorwayLineDebug = lineDebug;
+      }
+      const positions = lineDebug.geometry.attributes.position.array;
+      positions[0] = zombie.position.x;
+      positions[1] = zombie.position.y + zombie.config.height / 2;
+      positions[2] = zombie.position.z;
+      positions[3] = doorwayTarget.x;
+      positions[4] = doorwayTarget.y + 0.5;
+      positions[5] = doorwayTarget.z;
+      lineDebug.geometry.attributes.position.needsUpdate = true;
+      lineDebug.visible = true;
+    } else {
+      // Hide debug visuals when disabled
+      if ((zombie as any)._doorwayTargetDebug) {
+        (zombie as any)._doorwayTargetDebug.visible = false;
+      }
+      if ((zombie as any)._doorwayLineDebug) {
+        (zombie as any)._doorwayLineDebug.visible = false;
+      }
+    }
   }
 
   // ==========================================================================
@@ -524,7 +587,7 @@ export class ZombieManager {
       
       zombie.currentRoomId = zombieRoom?.id;
       
-      // Determine target position based on room relationship
+      // Determine target position based on room relationship with two-stage doorway traversal
       let targetPosition: THREE.Vector3;
       let targetType: 'player' | 'doorway' = 'player';
       let doorwayTarget: THREE.Vector3 | null = null;
@@ -533,24 +596,44 @@ export class ZombieManager {
         // Same room: chase player directly
         targetPosition = playerPosition;
         targetType = 'player';
+        // Clear doorway phase when entering same room as player
+        zombie.doorwayPhase = undefined;
       } else if (zombieRoom && playerRoom) {
-        // Different rooms: find doorway target toward player
-        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom);
+        // Different rooms: find doorway target toward player using entry/exit phases
+        const currentPhase = zombie.doorwayPhase || 'entry';
+        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, currentPhase, mapObjects);
+        
         if (doorwayTarget) {
           targetPosition = doorwayTarget;
           targetType = 'doorway';
           zombie.doorwayTarget = doorwayTarget.clone();
           zombie.targetRoomId = playerRoom.id;
+          
+          // Check if zombie is close to entry target, switch to exit phase
+          if (currentPhase === 'entry' && zombie.doorwayTarget) {
+            const distToEntry = zombie.position.distanceTo(zombie.doorwayTarget);
+            if (distToEntry < 1.0) {
+              zombie.doorwayPhase = 'exit';
+              // Recalculate target for exit phase
+              doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, 'exit', mapObjects);
+              if (doorwayTarget) {
+                targetPosition = doorwayTarget;
+                zombie.doorwayTarget = doorwayTarget.clone();
+              }
+            }
+          }
         } else {
           // No valid path found - use player position but zombie will be blocked by walls
           targetPosition = playerPosition;
           targetType = 'player';
           zombie.targetRoomId = undefined;
+          zombie.doorwayPhase = undefined;
         }
       } else {
         // Unknown room situation - fall back to player position
         targetPosition = playerPosition;
         targetType = 'player';
+        zombie.doorwayPhase = undefined;
       }
       
       // Log target changes only (not every frame)
@@ -805,7 +888,7 @@ export class ZombieManager {
       }
 
       // Update collision helper visualization (only when debug enabled)
-      this.updateCollisionHelper(zombie);
+      this.updateCollisionHelper(zombie, zombie.doorwayTarget);
     });
 
     // Clean up dead zombies
@@ -824,7 +907,8 @@ export class ZombieManager {
   private collidesWithWalls2D(
     position: THREE.Vector3,
     radius: number,
-    mapObjects: THREE.Object3D[]
+    mapObjects: THREE.Object3D[],
+    ignoreOpenDoors: boolean = false
   ): boolean {
     const testPos = new THREE.Vector3(position.x, 0, position.z);
     
@@ -837,6 +921,23 @@ export class ZombieManager {
       // Filter by colliderType: only walls, doors, and props block movement
       const colliderType = obj.userData.colliderType;
       if (colliderType !== 'wall' && colliderType !== 'door' && colliderType !== 'prop') {
+        continue;
+      }
+      
+      // Skip open/passable doors
+      // Doors only block if they are explicitly closed/locked (blocksZombies === true)
+      if (colliderType === 'door') {
+        const isOpen = obj.userData.isOpen === true;
+        const blocksZombies = obj.userData.blocksZombies === true;
+        
+        // If door is open OR doesn't explicitly block zombies, skip it
+        if (isOpen || !blocksZombies) {
+          continue;
+        }
+      }
+      
+      // Also skip open doors if ignoreOpenDoors is true (for doorway targeting)
+      if (ignoreOpenDoors && colliderType === 'door' && obj.userData.isOpen === true) {
         continue;
       }
       
@@ -969,9 +1070,16 @@ export class ZombieManager {
    * 
    * @param zombieRoom - The zombie's current room
    * @param playerRoom - The player's current room
-   * @returns Doorway center position if found, null otherwise
+   * @param phase - 'entry' or 'exit' phase of doorway traversal
+   * @param mapObjects - Array of map objects for collision checking
+   * @returns Doorway target position if found, null otherwise
    */
-  private findDoorwayTarget(zombieRoom: Room, playerRoom: Room): THREE.Vector3 | null {
+  private findDoorwayTarget(
+    zombieRoom: Room,
+    playerRoom: Room,
+    phase: 'entry' | 'exit' = 'entry',
+    mapObjects: THREE.Object3D[] = []
+  ): THREE.Vector3 | null {
     // Simple approach: find a gap in zombieRoom that leads toward playerRoom
     // In a full pathfinding system, this would use A* or similar
     
@@ -1025,33 +1133,140 @@ export class ZombieManager {
       return null;
     }
 
-    // Calculate final doorway position
-    let doorX = zombieRoom.cx;
-    let doorZ = zombieRoom.cz;
+    // Calculate entry and exit positions with offsets
+    let entryX = zombieRoom.cx;
+    let entryZ = zombieRoom.cz;
+    let exitX = zombieRoom.cx;
+    let exitZ = zombieRoom.cz;
     const halfW = zombieRoom.w / 2;
     const halfD = zombieRoom.d / 2;
+    const floorY = zombieRoom.floorY ?? 0;
 
     switch (bestGap.side) {
-      case 'N':
-        doorZ = zombieRoom.cz - halfD;
-        doorX = bestGap.center;
+      case 'N': {
+        const wallZ = zombieRoom.cz - halfD;
+        entryX = bestGap.center;
+        entryZ = wallZ + ZOMBIE_DOORWAY_OFFSET; // Inside room
+        exitX = bestGap.center;
+        exitZ = wallZ - ZOMBIE_DOORWAY_OFFSET; // Outside room
         break;
-      case 'S':
-        doorZ = zombieRoom.cz + halfD;
-        doorX = bestGap.center;
+      }
+      case 'S': {
+        const wallZ = zombieRoom.cz + halfD;
+        entryX = bestGap.center;
+        entryZ = wallZ - ZOMBIE_DOORWAY_OFFSET; // Inside room
+        exitX = bestGap.center;
+        exitZ = wallZ + ZOMBIE_DOORWAY_OFFSET; // Outside room
         break;
-      case 'E':
-        doorX = zombieRoom.cx + halfW;
-        doorZ = bestGap.center;
+      }
+      case 'E': {
+        const wallX = zombieRoom.cx + halfW;
+        entryX = wallX - ZOMBIE_DOORWAY_OFFSET; // Inside room
+        entryZ = bestGap.center;
+        exitX = wallX + ZOMBIE_DOORWAY_OFFSET; // Outside room
+        exitZ = bestGap.center;
         break;
-      case 'W':
-        doorX = zombieRoom.cx - halfW;
-        doorZ = bestGap.center;
+      }
+      case 'W': {
+        const wallX = zombieRoom.cx - halfW;
+        entryX = wallX + ZOMBIE_DOORWAY_OFFSET; // Inside room
+        entryZ = bestGap.center;
+        exitX = wallX - ZOMBIE_DOORWAY_OFFSET; // Outside room
+        exitZ = bestGap.center;
         break;
+      }
     }
 
-    // Use zombie's current Y (floor level)
-    return new THREE.Vector3(doorX, zombieRoom.floorY ?? 0, doorZ);
+    // Validate targets are collision-free using passed mapObjects
+    // Use ignoreOpenDoors=true to allow pathing through open doorways
+    const entryPos = new THREE.Vector3(entryX, floorY, entryZ);
+    const exitPos = new THREE.Vector3(exitX, floorY, exitZ);
+    
+    // Check if entry/exit are blocked (ignoring open doors)
+    const entryBlocked = this.collidesWithWalls2D(entryPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+    const exitBlocked = this.collidesWithWalls2D(exitPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+    
+    // If entry is blocked by something other than an open door, try to adjust
+    if (entryBlocked) {
+      const adjustedEntry = this.adjustPositionForCollision(entryPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+      if (adjustedEntry) {
+        entryPos.copy(adjustedEntry);
+      } else {
+        // Could not find valid entry point - doorway may be truly blocked
+        if (window.DEBUG_VERBOSE) {
+          console.log('[ZOMBIE PATH] doorway entry target blocked', { zombieRoom: zombieRoom.id });
+        }
+        return null;
+      }
+    }
+    
+    // If exit is blocked by something other than an open door, try to adjust
+    if (exitBlocked) {
+      const adjustedExit = this.adjustPositionForCollision(exitPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+      if (adjustedExit) {
+        exitPos.copy(adjustedExit);
+      } else {
+        // Could not find valid exit point - doorway may be truly blocked
+        if (window.DEBUG_VERBOSE) {
+          console.log('[ZOMBIE PATH] doorway exit target blocked', { zombieRoom: zombieRoom.id });
+        }
+        return null;
+      }
+    }
+    
+    // Debug log for doorway selection
+    if (window.DEBUG_VERBOSE) {
+      console.log('[ZOMBIE DOORWAY DEBUG]', {
+        zombieRoom: zombieRoom.id,
+        playerRoom: playerRoom.id,
+        phase,
+        entryPos: entryPos.clone(),
+        exitPos: exitPos.clone(),
+        entryBlocked,
+        exitBlocked,
+        gapSide: bestGap.side
+      });
+    }
+    
+    // Return the appropriate phase target
+    if (phase === 'entry') {
+      return entryPos;
+    } else {
+      return exitPos;
+    }
+
+  }
+  /**
+   * Adjust a position to avoid wall collisions by testing nearby offsets.
+   * @param position - The position to adjust
+   * @param radius - Zombie collision radius
+   * @param mapObjects - Array of map objects for collision checking
+   * @returns Adjusted position if found, null otherwise
+   */
+  private adjustPositionForCollision(
+    position: THREE.Vector3,
+    radius: number,
+    mapObjects: THREE.Object3D[],
+    ignoreOpenDoors: boolean = false
+  ): THREE.Vector3 | null {
+    const directions = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0.707, 0, 0.707),
+      new THREE.Vector3(-0.707, 0, 0.707),
+      new THREE.Vector3(0.707, 0, -0.707),
+      new THREE.Vector3(-0.707, 0, -0.707)
+    ];
+
+    for (const dir of directions) {
+      const testPos = position.clone().add(dir.multiplyScalar(0.5));
+      if (!this.collidesWithWalls2D(testPos, radius, mapObjects, ignoreOpenDoors)) {
+        return testPos;
+      }
+    }
+    return null;
   }
 
   private checkPlayerCollision(zombie: Zombie, playerPosition: THREE.Vector3): boolean {
