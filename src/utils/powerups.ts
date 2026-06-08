@@ -10,9 +10,18 @@ import { getWeaponManager } from './weapons';
 // Configuration
 // ============================================================================
 
-export const MAX_AMMO_DROP_CHANCE = 0.2; // 20% chance to drop on zombie death
-export const MAX_AMMO_DESPAWN_TIME = 20; // seconds before despawn
-export const MAX_AMMO_COLLECT_DISTANCE = 2; // units for player collection
+export const POWER_UP_DROP_CHANCE = 0.2; // 20% chance to drop on zombie death
+export const POWER_UP_DESPAWN_TIME = 20; // seconds before despawn
+export const POWER_UP_COLLECT_DISTANCE = 2; // units for player collection
+
+// ============================================================================
+// Power-Up Types
+// ============================================================================
+
+export enum PowerUpType {
+  MAX_AMMO = 'max_ammo',
+  INSTA_KILL = 'insta_kill',
+}
 
 // ============================================================================
 // Types
@@ -20,7 +29,7 @@ export const MAX_AMMO_COLLECT_DISTANCE = 2; // units for player collection
 
 export interface PowerUpPickup {
   id: string;
-  type: 'max_ammo';
+  type: PowerUpType;
   group: THREE.Group;
   mesh: THREE.Mesh;
   textSprite: THREE.Sprite;
@@ -38,11 +47,17 @@ export class PowerUpManager {
   private scene: THREE.Scene | null;
   private pickups: Map<string, PowerUpPickup>;
   private pickupIdCounter: number;
+  
+  // Insta-Kill state
+  private instaKillActive: boolean;
+  private instaKillEndTime: number;
 
   constructor(scene?: THREE.Scene) {
     this.scene = scene || null;
     this.pickups = new Map();
     this.pickupIdCounter = 0;
+    this.instaKillActive = false;
+    this.instaKillEndTime = 0;
   }
 
   setScene(scene: THREE.Scene): void {
@@ -50,26 +65,33 @@ export class PowerUpManager {
   }
 
   // ==========================================================================
-  // Max Ammo Drop
+  // Power-Up Drop
   // ==========================================================================
 
-  maybeDropMaxAmmo(position: THREE.Vector3): void {
+  maybeDropPowerUp(position: THREE.Vector3): void {
     if (!this.scene) return;
 
     // Roll for drop chance
     const roll = Math.random();
-    if (roll > MAX_AMMO_DROP_CHANCE) {
+    if (roll > POWER_UP_DROP_CHANCE) {
       if (window.DEBUG_VERBOSE) {
-        console.log(`[POWERUP] Max ammo drop rolled ${roll.toFixed(2)}, no drop (need <= ${MAX_AMMO_DROP_CHANCE})`);
+        console.log(`[POWERUP] Drop rolled ${roll.toFixed(2)}, no drop (need <= ${POWER_UP_DROP_CHANCE})`);
       }
       return;
     }
 
     if (window.DEBUG_VERBOSE) {
-      console.log(`[POWERUP] Max ammo drop triggered! Position:`, position.clone());
+      console.log(`[POWERUP] Power-up drop triggered! Position:`, position.clone());
     }
 
-    this.spawnMaxAmmoPickup(position.clone());
+    // Randomly choose between Max Ammo and Insta-Kill (50/50)
+    const isMaxAmmo = Math.random() < 0.5;
+    
+    if (isMaxAmmo) {
+      this.spawnMaxAmmoPickup(position.clone());
+    } else {
+      this.spawnInstaKillPickup(position.clone());
+    }
   }
 
   private spawnMaxAmmoPickup(position: THREE.Vector3): void {
@@ -127,7 +149,7 @@ export class PowerUpManager {
 
     const pickup: PowerUpPickup = {
       id,
-      type: 'max_ammo',
+      type: PowerUpType.MAX_AMMO,
       group,
       mesh,
       textSprite,
@@ -142,10 +164,87 @@ export class PowerUpManager {
     // Set despawn timeout
     pickup.despawnTimeoutId = setTimeout(() => {
       this.removePickup(id);
-    }, MAX_AMMO_DESPAWN_TIME * 1000);
+    }, POWER_UP_DESPAWN_TIME * 1000);
 
     if (window.DEBUG_VERBOSE) {
       console.log(`[POWERUP] Max ammo pickup spawned: ${id}`);
+    }
+  }
+
+  private spawnInstaKillPickup(position: THREE.Vector3): void {
+    if (!this.scene) return;
+
+    const id = `powerup_${Date.now()}_${this.pickupIdCounter++}`;
+
+    // Create a group to hold all pickup elements
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.position.y = position.y + 1.5; // Chest height
+
+    // Create glowing red cube for insta-kill
+    const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff0000,
+      emissive: 0xff0000,
+      emissiveIntensity: 0.5,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
+    group.add(mesh);
+
+    // Add point light for glow effect
+    const light = new THREE.PointLight(0xff0000, 1, 3);
+    light.position.set(0, 0.3, 0);
+    group.add(light);
+
+    // Create text sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 32px Arial';
+      ctx.fillStyle = '#ff0000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('INSTA KILL', canvas.width / 2, canvas.height / 2);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const textSprite = new THREE.Sprite(spriteMaterial);
+    textSprite.position.set(0, 1, 0);
+    textSprite.scale.set(2, 0.5, 1);
+    group.add(textSprite);
+
+    this.scene.add(group);
+
+    const pickup: PowerUpPickup = {
+      id,
+      type: PowerUpType.INSTA_KILL,
+      group,
+      mesh,
+      textSprite,
+      position: position.clone(),
+      spawnTime: Date.now(),
+      despawnTimeoutId: null,
+      collected: false,
+    };
+
+    this.pickups.set(id, pickup);
+
+    // Set despawn timeout
+    pickup.despawnTimeoutId = setTimeout(() => {
+      this.removePickup(id);
+    }, POWER_UP_DESPAWN_TIME * 1000);
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[POWERUP] Insta-kill pickup spawned: ${id}`);
     }
   }
 
@@ -178,13 +277,13 @@ export class PowerUpManager {
       if (window.DEBUG_VERBOSE) {
         console.log('[POWERUP TEST]', {
           pickupId: pickup.id,
-          pickupPos: pickup.mesh.position.clone(),
+          pickupPos: pickup.group.position.clone(),
           playerPos: playerPosition.clone(),
           distance,
         });
       }
 
-      if (distance <= MAX_AMMO_COLLECT_DISTANCE) {
+      if (distance <= POWER_UP_COLLECT_DISTANCE) {
         this.collectPickup(pickup);
         toRemove.push(id);
       }
@@ -209,15 +308,24 @@ export class PowerUpManager {
     pickup.collected = true;
 
     if (window.DEBUG_VERBOSE) {
-      console.log(`[POWERUP] Max ammo collected: ${pickup.id}`);
+      console.log(`[POWERUP] ${pickup.type} collected: ${pickup.id}`);
     }
 
-    // Call weapon manager to refill ammo
-    const weaponManager = getWeaponManager();
-    weaponManager.refillAmmo();
+    if (pickup.type === PowerUpType.MAX_AMMO) {
+      // Call weapon manager to refill ammo
+      const weaponManager = getWeaponManager();
+      weaponManager.refillAmmo();
 
-    if (window.DEBUG_VERBOSE) {
-      console.log(`[POWERUP] Ammo refilled via Max Ammo pickup`);
+      if (window.DEBUG_VERBOSE) {
+        console.log(`[POWERUP] Ammo refilled via Max Ammo pickup`);
+      }
+    } else if (pickup.type === PowerUpType.INSTA_KILL) {
+      // Apply insta-kill effect
+      this.applyInstaKill();
+
+      if (window.DEBUG_VERBOSE) {
+        console.log(`[POWERUP] Insta-kill activated for 30 seconds`);
+      }
     }
   }
 
@@ -260,6 +368,34 @@ export class PowerUpManager {
   }
 
   // ==========================================================================
+  // Insta-Kill Effect
+  // ==========================================================================
+
+  applyInstaKill(): void {
+    this.instaKillActive = true;
+    this.instaKillEndTime = Date.now() + 30000; // 30 seconds from now
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[POWERUP] Insta-kill activated until ${new Date(this.instaKillEndTime).toLocaleTimeString()}`);
+    }
+  }
+
+  isInstaKillActive(): boolean {
+    const now = Date.now();
+    
+    // Check if insta-kill is still active
+    if (this.instaKillActive && now >= this.instaKillEndTime) {
+      // Time expired, deactivate
+      this.instaKillActive = false;
+      if (window.DEBUG_VERBOSE) {
+        console.log('[POWERUP] Insta-kill expired');
+      }
+    }
+    
+    return this.instaKillActive;
+  }
+
+  // ==========================================================================
   // Cleanup
   // ==========================================================================
 
@@ -269,6 +405,8 @@ export class PowerUpManager {
     }
     this.pickups.clear();
     this.scene = null;
+    this.instaKillActive = false;
+    this.instaKillEndTime = 0;
   }
 }
 

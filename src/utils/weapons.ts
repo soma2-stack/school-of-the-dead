@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { getPointsManager } from './points';
+import { getPowerUpManager } from './powerups';
 
 // ============================================================================
 // Configuration
@@ -162,18 +163,32 @@ export class WeaponManager {
           }
 
           // Deal damage AFTER awarding hit points
-          const damage = this.weapon.config.damage;
+          let damage = this.weapon.config.damage;
+          
+          // Check for Insta-Kill power-up
+          try {
+            const powerUpManager = getPowerUpManager();
+            if (powerUpManager.isInstaKillActive()) {
+              damage = hitZombie.health;
+              if (window.DEBUG_VERBOSE) {
+                console.log('[WEAPON] Insta-kill active! Setting damage to zombie health:', damage);
+              }
+            }
+          } catch {
+            // power-up manager not initialized, use normal damage
+          }
+          
           zombieManager.damageZombie(hitZombie.id, damage, playerId);
           
           if (window.DEBUG_VERBOSE) {
-            console.log('[WEAPON] Hit zombie', hitZombie.id);
+            console.log('[WEAPON] Hit zombie', hitZombie.id, 'for', damage, 'damage');
           }
         }
 
         return {
           success: true,
           hitZombieId: hitZombie.id,
-          damageDealt: this.weapon.config.damage,
+          damageDealt: damage,
         };
       }
     }

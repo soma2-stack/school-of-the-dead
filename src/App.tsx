@@ -680,8 +680,8 @@ export default function App() {
       }
       setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
 
-      // Maybe drop Max Ammo power-up
-      powerUpManagerRef.current?.maybeDropMaxAmmo(zombie.position);
+      // Maybe drop power-up
+      powerUpManagerRef.current?.maybeDropPowerUp(zombie.position);
     });
 
     // Handle player damage events
