@@ -610,9 +610,10 @@ export class ZombieManager {
           zombie.targetRoomId = playerRoom.id;
           
           // Check if zombie is close to entry target, switch to exit phase
+          // Use larger threshold (2.5) so zombies commit through doorway before switching
           if (currentPhase === 'entry' && zombie.doorwayTarget) {
             const distToEntry = zombie.position.distanceTo(zombie.doorwayTarget);
-            if (distToEntry < 1.0) {
+            if (distToEntry < 2.5) {
               zombie.doorwayPhase = 'exit';
               // Recalculate target for exit phase
               doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, 'exit', mapObjects);
@@ -686,8 +687,12 @@ export class ZombieManager {
         }
 
         // 2. Calculate zombie-to-zombie separation (XZ plane ONLY)
+        // When targeting a doorway, reduce separation to prevent sliding along walls
         separation.set(0, 0, 0);
         let neighborCount = 0;
+        
+        // Only apply full separation when not targeting a doorway
+        const isTargetingDoorway = targetType === 'doorway';
         
         this.zombies.forEach((other, otherId) => {
           if (otherId === id || other.state !== 'alive') return;
@@ -703,8 +708,10 @@ export class ZombieManager {
             const pushZ = dz / distXZ;
             const pushStrength = (ZOMBIE_MIN_SEPARATION - distXZ) / ZOMBIE_MIN_SEPARATION;
             
-            separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
-            separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
+            // Reduce separation when targeting doorway to prevent sliding
+            const sepMultiplier = isTargetingDoorway ? 0.15 : 1.0;
+            separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH * sepMultiplier;
+            separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH * sepMultiplier;
             neighborCount++;
           }
         });
