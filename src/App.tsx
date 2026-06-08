@@ -674,14 +674,16 @@ export default function App() {
     });
 
     // Handle zombie death events
-    zombieManagerRef.current.onDeath((zombie, playerId) => {
+    zombieManagerRef.current.onDeath((zombie, playerId, skipPowerUpDrop) => {
       if (window.DEBUG_VERBOSE) {
         console.log('Zombie killed:', zombie.id, 'by player:', playerId);
       }
       setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
 
-      // Maybe drop power-up
-      powerUpManagerRef.current?.maybeDropPowerUp(zombie.position);
+      // Maybe drop power-up (only if not skipped by nuke)
+      if (!skipPowerUpDrop) {
+        powerUpManagerRef.current?.maybeDropPowerUp(zombie.position);
+      }
     });
 
     // Handle player damage events

@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { getWeaponManager } from './weapons';
+import { getZombieManager } from './zombies';
 
 // ============================================================================
 // Configuration
@@ -21,6 +22,7 @@ export const POWER_UP_COLLECT_DISTANCE = 2; // units for player collection
 export enum PowerUpType {
   MAX_AMMO = 'max_ammo',
   INSTA_KILL = 'insta_kill',
+  NUKE = 'nuke',
 }
 
 // ============================================================================
@@ -84,13 +86,28 @@ export class PowerUpManager {
       console.log(`[POWERUP] Power-up drop triggered! Position:`, position.clone());
     }
 
-    // Randomly choose between Max Ammo and Insta-Kill (50/50)
-    const isMaxAmmo = Math.random() < 0.5;
+    // Randomly choose between Max Ammo, Insta-Kill, and Nuke (33% each)
+    const rand = Math.random();
+    let type: PowerUpType;
     
-    if (isMaxAmmo) {
-      this.spawnMaxAmmoPickup(position.clone());
+    if (rand < 0.33) {
+      type = PowerUpType.MAX_AMMO;
+    } else if (rand < 0.66) {
+      type = PowerUpType.INSTA_KILL;
     } else {
-      this.spawnInstaKillPickup(position.clone());
+      type = PowerUpType.NUKE;
+    }
+
+    switch (type) {
+      case PowerUpType.MAX_AMMO:
+        this.spawnMaxAmmoPickup(position.clone());
+        break;
+      case PowerUpType.INSTA_KILL:
+        this.spawnInstaKillPickup(position.clone());
+        break;
+      case PowerUpType.NUKE:
+        this.spawnNukePickup(position.clone());
+        break;
     }
   }
 
@@ -248,6 +265,83 @@ export class PowerUpManager {
     }
   }
 
+  private spawnNukePickup(position: THREE.Vector3): void {
+    if (!this.scene) return;
+
+    const id = `powerup_${Date.now()}_${this.pickupIdCounter++}`;
+
+    // Create a group to hold all pickup elements
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.position.y = position.y + 1.5; // Chest height
+
+    // Create glowing orange cube for nuke
+    const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xff8800,
+      emissive: 0xff8800,
+      emissiveIntensity: 0.7,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
+    group.add(mesh);
+
+    // Add point light for glow effect
+    const light = new THREE.PointLight(0xff8800, 1.5, 4);
+    light.position.set(0, 0.3, 0);
+    group.add(light);
+
+    // Create text sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 32px Arial';
+      ctx.fillStyle = '#ff8800';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('NUKE', canvas.width / 2, canvas.height / 2);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const textSprite = new THREE.Sprite(spriteMaterial);
+    textSprite.position.set(0, 1, 0);
+    textSprite.scale.set(2, 0.5, 1);
+    group.add(textSprite);
+
+    this.scene.add(group);
+
+    const pickup: PowerUpPickup = {
+      id,
+      type: PowerUpType.NUKE,
+      group,
+      mesh,
+      textSprite,
+      position: position.clone(),
+      spawnTime: Date.now(),
+      despawnTimeoutId: null,
+      collected: false,
+    };
+
+    this.pickups.set(id, pickup);
+
+    // Set despawn timeout
+    pickup.despawnTimeoutId = setTimeout(() => {
+      this.removePickup(id);
+    }, POWER_UP_DESPAWN_TIME * 1000);
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[POWERUP] Nuke pickup spawned: ${id}`);
+    }
+  }
+
   // ==========================================================================
   // Update Loop
   // ==========================================================================
@@ -326,6 +420,13 @@ export class PowerUpManager {
       if (window.DEBUG_VERBOSE) {
         console.log(`[POWERUP] Insta-kill activated for 30 seconds`);
       }
+    } else if (pickup.type === PowerUpType.NUKE) {
+      // Trigger nuke - kill all zombies
+      this.triggerNuke();
+
+      if (window.DEBUG_VERBOSE) {
+        console.log(`[POWERUP] Nuke triggered - killing all zombies`);
+      }
     }
   }
 
@@ -393,6 +494,32 @@ export class PowerUpManager {
     }
     
     return this.instaKillActive;
+  }
+
+  // ==========================================================================
+  // Nuke Effect
+  // ==========================================================================
+
+  triggerNuke(): void {
+    const zombieManager = getZombieManager();
+    if (!zombieManager) {
+      if (window.DEBUG_VERBOSE) {
+        console.log('[POWERUP] No zombie manager available for nuke');
+      }
+      return;
+    }
+
+    // Get all alive zombies and kill them
+    const aliveZombies = zombieManager.getAliveZombies();
+    
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[POWERUP] Nuke killing ${aliveZombies.length} zombies`);
+    }
+
+    for (const zombie of aliveZombies) {
+      // Kill zombie without spawning power-ups
+      zombieManager.killZombie(zombie.id, 'player1', true);
+    }
   }
 
   // ==========================================================================
