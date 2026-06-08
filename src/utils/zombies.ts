@@ -337,16 +337,28 @@ export class ZombieManager {
 
     // Restore after 100ms
     setTimeout(() => {
-      if (!zombie.mesh || zombie.state !== 'alive') return;
+      if (!zombie.mesh || zombie.state !== 'alive') {
+        // Zombie died before restore, dispose cloned originals to prevent memory leak
+        materialsToRestore.forEach(({ original }) => original.dispose());
+        flashMaterial.dispose();
+        return;
+      }
       
       materialsToRestore.forEach(({ mesh, original }) => {
         if (mesh.parent === zombie.mesh || mesh === zombie.mesh) {
           mesh.material = original;
+        } else {
+          // Mesh was detached, dispose the clone
+          original.dispose();
         }
       });
       
       // Dispose flash material
       flashMaterial.dispose();
+      
+      if (window.DEBUG_VERBOSE) {
+        console.log('[VISUAL] Zombie hit flash restored');
+      }
     }, 100);
   }
 

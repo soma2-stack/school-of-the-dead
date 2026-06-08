@@ -1725,6 +1725,7 @@ export default function App() {
       // Update zombies AI
       if (zombieManagerRef.current) {
         zombieManagerRef.current.update(dt, playerPos.current, collidableObjects);
+        zombieManagerRef.current.updateParticles(dt);
         
         // Throttled zombie debug data update (4 times per second = 250ms)
         if (now - lastZombieDebugUpdate.current > 250) {
