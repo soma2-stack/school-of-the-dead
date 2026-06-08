@@ -119,7 +119,6 @@ export interface Zombie {
   currentRoomId?: string;
   targetRoomId?: string;
   doorwayTarget?: THREE.Vector3;
-  doorwayPhase?: 'entry' | 'exit';
   // Debug visualization
   collisionHelper?: THREE.Mesh;
 }
@@ -504,7 +503,6 @@ export class ZombieManager {
     const oldPos = new THREE.Vector3();
     const attemptX = new THREE.Vector3();
     const attemptZ = new THREE.Vector3();
-    const groundYVec = new THREE.Vector3();
     
     this.zombies.forEach((zombie, id) => {
       if (zombie.state !== 'alive') return;
@@ -517,11 +515,103 @@ export class ZombieManager {
       oldPos.copy(zombie.position);
       const oldY = zombie.position.y;
 
+      // --- ROOM/PATH TRACKING ---
+      // Determine zombie's current room and player's room for doorway-aware pathing
+      const zombieRoom = this.getRoomAtPos(zombie.position.x, zombie.position.z, zombie.position.y);
+      const playerRoom = this.getRoomAtPos(playerPosition.x, playerPosition.z, playerPosition.y);
+      
+      zombie.currentRoomId = zombieRoom?.id;
+      
+      // Determine target position based on room relationship with two-stage doorway traversal
+      let targetPosition: THREE.Vector3;
+      let targetType: 'player' | 'doorway' = 'player';
+      let doorwayTarget: THREE.Vector3 | null = null;
+      
+      if (zombieRoom && playerRoom && zombieRoom.id === playerRoom.id) {
+        // Same room: chase player directly
+        targetPosition = playerPosition;
+        targetType = 'player';
+        // Clear doorway target when entering same room as player
+        zombie.doorwayTarget = undefined;
+      } else if (zombieRoom && playerRoom) {
+        // Different rooms: find doorway target toward player (single point, no phases)
+        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, mapObjects);
+        
+        if (doorwayTarget) {
+          targetPosition = doorwayTarget;
+          targetType = 'doorway';
+          zombie.doorwayTarget = doorwayTarget.clone();
+          zombie.targetRoomId = playerRoom.id;
+          
+          // Track distance to target for stuck detection
+          const distToTarget = zombie.position.distanceTo(doorwayTarget);
+          (zombie as any)._lastDistToTarget = distToTarget;
+        } else {
+          // No valid path found - use player position but zombie will be blocked by walls
+          targetPosition = playerPosition;
+          targetType = 'player';
+          zombie.targetRoomId = undefined;
+          zombie.doorwayTarget = undefined;
+        }
+      } else {
+        // Unknown room situation - fall back to player position
+        targetPosition = playerPosition;
+        targetType = 'player';
+        zombie.doorwayTarget = undefined;
+      }
+      
+      // Log target changes only (not every frame)
+      const prevTargetType = (zombie as any)._prevTargetType;
+      const prevTargetRoom = (zombie as any)._prevTargetRoom;
+      const prevDoorwayTarget = (zombie as any)._prevDoorwayTarget;
+      
+      // Reset doorway distance tracking when the target changes
+      if (prevDoorwayTarget && doorwayTarget && !prevDoorwayTarget.equals(doorwayTarget)) {
+        (zombie as any)._lastDistToTarget = undefined;
+        (zombie as any)._doorwayStuckTime = 0;
+      } else if (prevTargetType !== targetType || prevTargetRoom !== zombie.targetRoomId) {
+        // Target type or room changed - reset tracking
+        (zombie as any)._lastDistToTarget = undefined;
+        (zombie as any)._doorwayStuckTime = 0;
+      }
+      
+      if (prevTargetType !== targetType || prevTargetRoom !== zombie.targetRoomId) {
+        if (targetType === 'doorway') {
+          logger.zombies.info('[ZOMBIE PATH] different room, using doorway target', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id,
+            targetRoomId: zombie.targetRoomId,
+            doorwayTarget: zombie.doorwayTarget
+          });
+        } else if (prevTargetType === 'doorway' && targetType === 'player') {
+          logger.zombies.info('[ZOMBIE PATH] same room, chasing player', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id
+          });
+        } else if (!doorwayTarget && targetType === 'player' && zombieRoom?.id !== playerRoom?.id) {
+          logger.zombies.warn('[ZOMBIE PATH] no valid path found', {
+            zombieId: zombie.id,
+            zombieRoomId: zombieRoom?.id,
+            playerRoomId: playerRoom?.id
+          });
+        }
+        (zombie as any)._prevTargetType = targetType;
+        (zombie as any)._prevTargetRoom = zombie.targetRoomId;
+      }
+      (zombie as any)._prevDoorwayTarget = doorwayTarget ? doorwayTarget.clone() : null;
+
       // --- STUCK DETECTION ---
+      // Must run AFTER targetType is calculated
       const distanceMoved = zombie.position.distanceTo(zombie.lastPosition);
       const isMoving = distanceMoved > 0.05;
+      
+      // CRITICAL: Disable stuck recovery completely when targeting a doorway
+      // Doorway zombies should either move forward or stop/bunch, not nudge around
+      const isTargetingDoorway = targetType === 'doorway';
 
-      if (!isMoving && zombie.state === 'alive') {
+      if (!isMoving && zombie.state === 'alive' && !isTargetingDoorway) {
         zombie.stuckTimer += deltaTime;
         if (zombie.stuckTimer > ZOMBIE_STUCK_THRESHOLD) {
           logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
@@ -580,121 +670,6 @@ export class ZombieManager {
       }
       zombie.lastPosition.copy(zombie.position);
 
-      // --- ROOM/PATH TRACKING ---
-      // Determine zombie's current room and player's room for doorway-aware pathing
-      const zombieRoom = this.getRoomAtPos(zombie.position.x, zombie.position.z, zombie.position.y);
-      const playerRoom = this.getRoomAtPos(playerPosition.x, playerPosition.z, playerPosition.y);
-      
-      zombie.currentRoomId = zombieRoom?.id;
-      
-      // Determine target position based on room relationship with two-stage doorway traversal
-      let targetPosition: THREE.Vector3;
-      let targetType: 'player' | 'doorway' = 'player';
-      let doorwayTarget: THREE.Vector3 | null = null;
-      
-      if (zombieRoom && playerRoom && zombieRoom.id === playerRoom.id) {
-        // Same room: chase player directly
-        targetPosition = playerPosition;
-        targetType = 'player';
-        // Clear doorway phase when entering same room as player
-        zombie.doorwayPhase = undefined;
-      } else if (zombieRoom && playerRoom) {
-        // Different rooms: find doorway target toward player using entry/exit phases
-        const currentPhase = zombie.doorwayPhase || 'entry';
-        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, currentPhase, mapObjects);
-        
-        if (doorwayTarget) {
-          targetPosition = doorwayTarget;
-          targetType = 'doorway';
-          zombie.doorwayTarget = doorwayTarget.clone();
-          zombie.targetRoomId = playerRoom.id;
-          
-          // Track distance to target for stuck detection
-          const distToTarget = zombie.position.distanceTo(doorwayTarget);
-          const prevDistToTarget = (zombie as any)._lastDistToTarget ?? distToTarget;
-          const notGettingCloser = distToTarget >= prevDistToTarget - 0.01;
-          (zombie as any)._lastDistToTarget = distToTarget;
-          
-          // Track time not getting closer for forced phase switch
-          if (notGettingCloser && currentPhase === 'entry') {
-            const stuckTime = ((zombie as any)._doorwayStuckTime || 0) + deltaTime;
-            (zombie as any)._doorwayStuckTime = stuckTime;
-            
-            // If stuck for 1.5 seconds and exit target is valid, force switch to exit phase
-            if (stuckTime > 1.5) {
-              const exitTarget = this.findDoorwayTarget(zombieRoom, playerRoom, 'exit', mapObjects);
-              if (exitTarget) {
-                zombie.doorwayPhase = 'exit';
-                targetPosition = exitTarget;
-                zombie.doorwayTarget = exitTarget.clone();
-                (zombie as any)._doorwayStuckTime = 0;
-                logger.zombies.info('[ZOMBIE DOORWAY] Force switched to exit phase due to stuck', {
-                  zombieId: zombie.id,
-                  stuckTime
-                });
-              }
-            }
-          } else {
-            (zombie as any)._doorwayStuckTime = 0;
-          }
-          
-          // Check if zombie is close to entry target, switch to exit phase
-          // Use larger threshold (2.5) so zombies commit through doorway before switching
-          if (currentPhase === 'entry' && zombie.doorwayTarget) {
-            const distToEntry = zombie.position.distanceTo(zombie.doorwayTarget);
-            if (distToEntry < 2.5) {
-              zombie.doorwayPhase = 'exit';
-              // Recalculate target for exit phase
-              doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, 'exit', mapObjects);
-              if (doorwayTarget) {
-                targetPosition = doorwayTarget;
-                zombie.doorwayTarget = doorwayTarget.clone();
-              }
-            }
-          }
-        } else {
-          // No valid path found - use player position but zombie will be blocked by walls
-          targetPosition = playerPosition;
-          targetType = 'player';
-          zombie.targetRoomId = undefined;
-          zombie.doorwayPhase = undefined;
-        }
-      } else {
-        // Unknown room situation - fall back to player position
-        targetPosition = playerPosition;
-        targetType = 'player';
-        zombie.doorwayPhase = undefined;
-      }
-      
-      // Log target changes only (not every frame)
-      const prevTargetType = (zombie as any)._prevTargetType;
-      const prevTargetRoom = (zombie as any)._prevTargetRoom;
-      if (prevTargetType !== targetType || prevTargetRoom !== zombie.targetRoomId) {
-        if (targetType === 'doorway') {
-          logger.zombies.info('[ZOMBIE PATH] different room, using doorway target', {
-            zombieId: zombie.id,
-            zombieRoomId: zombieRoom?.id,
-            playerRoomId: playerRoom?.id,
-            targetRoomId: zombie.targetRoomId,
-            doorwayTarget: zombie.doorwayTarget
-          });
-        } else if (prevTargetType === 'doorway' && targetType === 'player') {
-          logger.zombies.info('[ZOMBIE PATH] same room, chasing player', {
-            zombieId: zombie.id,
-            zombieRoomId: zombieRoom?.id,
-            playerRoomId: playerRoom?.id
-          });
-        } else if (!doorwayTarget && targetType === 'player' && zombieRoom?.id !== playerRoom?.id) {
-          logger.zombies.warn('[ZOMBIE PATH] no valid path found', {
-            zombieId: zombie.id,
-            zombieRoomId: zombieRoom?.id,
-            playerRoomId: playerRoom?.id
-          });
-        }
-        (zombie as any)._prevTargetType = targetType;
-        (zombie as any)._prevTargetRoom = zombie.targetRoomId;
-      }
-
       // --- BEHAVIOR LOGIC ---
       const distanceToPlayer = zombie.position.distanceTo(playerPosition);
       
@@ -720,9 +695,7 @@ export class ZombieManager {
         separation.set(0, 0, 0);
         let neighborCount = 0;
         
-        // Only apply separation when NOT targeting a doorway
-        const isTargetingDoorway = targetType === 'doorway';
-        
+        // Only apply separation when NOT targeting a doorway (isTargetingDoorway defined in stuck detection)
         if (!isTargetingDoorway) {
           this.zombies.forEach((other, otherId) => {
             if (otherId === id || other.state !== 'alive') return;
@@ -1122,18 +1095,17 @@ export class ZombieManager {
 
   /**
    * Find a doorway target to path toward when zombie and player are in different rooms.
+   * Returns the center of the doorway opening (single point, no phases).
    * Uses ROOM_GAPS to find connections between rooms.
    * 
    * @param zombieRoom - The zombie's current room
    * @param playerRoom - The player's current room
-   * @param phase - 'entry' or 'exit' phase of doorway traversal
    * @param mapObjects - Array of map objects for collision checking
    * @returns Doorway target position if found, null otherwise
    */
   private findDoorwayTarget(
     zombieRoom: Room,
     playerRoom: Room,
-    phase: 'entry' | 'exit' = 'entry',
     mapObjects: THREE.Object3D[] = []
   ): THREE.Vector3 | null {
     // Simple approach: find a gap in zombieRoom that leads toward playerRoom
@@ -1149,7 +1121,8 @@ export class ZombieManager {
     let bestDistance = Infinity;
 
     for (const gap of gaps) {
-      // Calculate doorway center based on room and gap side
+      // Calculate doorway center in world space based on room and gap side
+      // Match the same convention as App.tsx door placement
       let doorX = zombieRoom.cx;
       let doorZ = zombieRoom.cz;
       const halfW = zombieRoom.w / 2;
@@ -1157,20 +1130,24 @@ export class ZombieManager {
 
       switch (gap.side) {
         case 'N':
-          doorZ = zombieRoom.cz - halfD;
-          doorX = gap.center;
+          // N wall is at localZ = +halfD, so worldZ = cz + halfD
+          doorZ = zombieRoom.cz + halfD;
+          doorX = zombieRoom.cx + gap.center;
           break;
         case 'S':
-          doorZ = zombieRoom.cz + halfD;
-          doorX = gap.center;
+          // S wall is at localZ = -halfD, so worldZ = cz - halfD
+          doorZ = zombieRoom.cz - halfD;
+          doorX = zombieRoom.cx + gap.center;
           break;
         case 'E':
+          // E wall is at localX = +halfW, so worldX = cx + halfW
           doorX = zombieRoom.cx + halfW;
-          doorZ = gap.center;
+          doorZ = zombieRoom.cz + gap.center;
           break;
         case 'W':
+          // W wall is at localX = -halfW, so worldX = cx - halfW
           doorX = zombieRoom.cx - halfW;
-          doorZ = gap.center;
+          doorZ = zombieRoom.cz + gap.center;
           break;
       }
 
@@ -1189,82 +1166,57 @@ export class ZombieManager {
       return null;
     }
 
-    // Calculate entry and exit positions with offsets
-    let entryX = zombieRoom.cx;
-    let entryZ = zombieRoom.cz;
-    let exitX = zombieRoom.cx;
-    let exitZ = zombieRoom.cz;
+    // Calculate doorway center position using world coordinates
+    // Return single center point at the doorway opening (no entry/exit phases)
     const halfW = zombieRoom.w / 2;
     const halfD = zombieRoom.d / 2;
     const floorY = zombieRoom.floorY ?? 0;
+    let targetX = zombieRoom.cx;
+    let targetZ = zombieRoom.cz;
 
     switch (bestGap.side) {
       case 'N': {
-        const wallZ = zombieRoom.cz - halfD;
-        entryX = bestGap.center;
-        entryZ = wallZ + ZOMBIE_DOORWAY_OFFSET; // Inside room
-        exitX = bestGap.center;
-        exitZ = wallZ - ZOMBIE_DOORWAY_OFFSET; // Outside room
+        // N wall is at localZ = +halfD, so worldZ = cz + halfD
+        targetX = zombieRoom.cx + bestGap.center;
+        targetZ = zombieRoom.cz + halfD;
         break;
       }
       case 'S': {
-        const wallZ = zombieRoom.cz + halfD;
-        entryX = bestGap.center;
-        entryZ = wallZ - ZOMBIE_DOORWAY_OFFSET; // Inside room
-        exitX = bestGap.center;
-        exitZ = wallZ + ZOMBIE_DOORWAY_OFFSET; // Outside room
+        // S wall is at localZ = -halfD, so worldZ = cz - halfD
+        targetX = zombieRoom.cx + bestGap.center;
+        targetZ = zombieRoom.cz - halfD;
         break;
       }
       case 'E': {
-        const wallX = zombieRoom.cx + halfW;
-        entryX = wallX - ZOMBIE_DOORWAY_OFFSET; // Inside room
-        entryZ = bestGap.center;
-        exitX = wallX + ZOMBIE_DOORWAY_OFFSET; // Outside room
-        exitZ = bestGap.center;
+        // E wall is at localX = +halfW, so worldX = cx + halfW
+        targetX = zombieRoom.cx + halfW;
+        targetZ = zombieRoom.cz + bestGap.center;
         break;
       }
       case 'W': {
-        const wallX = zombieRoom.cx - halfW;
-        entryX = wallX + ZOMBIE_DOORWAY_OFFSET; // Inside room
-        entryZ = bestGap.center;
-        exitX = wallX - ZOMBIE_DOORWAY_OFFSET; // Outside room
-        exitZ = bestGap.center;
+        // W wall is at localX = -halfW, so worldX = cx - halfW
+        targetX = zombieRoom.cx - halfW;
+        targetZ = zombieRoom.cz + bestGap.center;
         break;
       }
     }
 
-    // Validate targets are collision-free using passed mapObjects
+    // Validate target is collision-free using passed mapObjects
     // Use ignoreOpenDoors=true to allow pathing through open doorways
-    const entryPos = new THREE.Vector3(entryX, floorY, entryZ);
-    const exitPos = new THREE.Vector3(exitX, floorY, exitZ);
+    const targetPos = new THREE.Vector3(targetX, floorY, targetZ);
     
-    // Check if entry/exit are blocked (ignoring open doors)
-    const entryBlocked = this.collidesWithWalls2D(entryPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
-    const exitBlocked = this.collidesWithWalls2D(exitPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+    // Check if target is blocked (ignoring open doors)
+    const targetBlocked = this.collidesWithWalls2D(targetPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
     
-    // If entry is blocked by something other than an open door, try to adjust
-    if (entryBlocked) {
-      const adjustedEntry = this.adjustPositionForCollision(entryPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
-      if (adjustedEntry) {
-        entryPos.copy(adjustedEntry);
+    // If target is blocked by something other than an open door, try to adjust
+    if (targetBlocked) {
+      const adjustedTarget = this.adjustPositionForCollision(targetPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
+      if (adjustedTarget) {
+        targetPos.copy(adjustedTarget);
       } else {
-        // Could not find valid entry point - doorway may be truly blocked
+        // Could not find valid target point - doorway may be truly blocked
         if (window.DEBUG_VERBOSE) {
-          console.log('[ZOMBIE PATH] doorway entry target blocked', { zombieRoom: zombieRoom.id });
-        }
-        return null;
-      }
-    }
-    
-    // If exit is blocked by something other than an open door, try to adjust
-    if (exitBlocked) {
-      const adjustedExit = this.adjustPositionForCollision(exitPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true);
-      if (adjustedExit) {
-        exitPos.copy(adjustedExit);
-      } else {
-        // Could not find valid exit point - doorway may be truly blocked
-        if (window.DEBUG_VERBOSE) {
-          console.log('[ZOMBIE PATH] doorway exit target blocked', { zombieRoom: zombieRoom.id });
+          console.log('[ZOMBIE PATH] doorway target blocked', { zombieRoom: zombieRoom.id });
         }
         return null;
       }
@@ -1275,21 +1227,12 @@ export class ZombieManager {
       console.log('[ZOMBIE DOORWAY DEBUG]', {
         zombieRoom: zombieRoom.id,
         playerRoom: playerRoom.id,
-        phase,
-        entryPos: entryPos.clone(),
-        exitPos: exitPos.clone(),
-        entryBlocked,
-        exitBlocked,
+        targetPos: targetPos.clone(),
         gapSide: bestGap.side
       });
     }
     
-    // Return the appropriate phase target
-    if (phase === 'entry') {
-      return entryPos;
-    } else {
-      return exitPos;
-    }
+    return targetPos;
 
   }
   /**
