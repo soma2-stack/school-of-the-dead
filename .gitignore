@@ -2,61 +2,38 @@
 # Build artifacts
 dist/
 build/
-*.o
-*.obj
-*.out
+target/
 
 # Dependencies
 node_modules/
 venv/
 .venv/
 __pycache__/
-*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.gradle/
 
-# Logs and temp files
-*.log
-*.tmp
+# Editor/IDE files
+.vscode/
+.idea/
 *.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# System
-.DS_Store
-Thumbs.db
-
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Python specific
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-
-# TypeScript/JavaScript build output
-*.js.map
-*.tsbuildinfo
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
+# System files
+.DS_Store
+Thumbs.db
 ```
