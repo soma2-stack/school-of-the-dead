@@ -20,7 +20,7 @@ export interface WeaponConfig {
 
 export const STARTER_PISTOL_CONFIG: WeaponConfig = {
   name: 'School Pistol',
-  damage: 100,
+  damage: 35,
   fireRate: 0.25,
   magazine: -1,
   ammo: -1,
@@ -143,44 +143,42 @@ export class WeaponManager {
 
       if (hitZombie) {
         console.log(`[WEAPON] Zombie ID: ${hitZombie.id}`);
-        console.log('[WEAPON] Calling damageZombie');
+        console.log('[WEAPON] Checking zombie state:', hitZombie.state);
 
-        // Store previous health to detect kill
-        const previousHealth = hitZombie.health;
+        // Only award points and deal damage if zombie is alive
+        if (hitZombie.state === 'alive') {
+          // Award bullet hit points IMMEDIATELY before applying damage
+          const pointsManager = getPointsManager();
+          console.log('[POINTS] Before bulletHit - playerId:', playerId);
+          const beforeState = pointsManager.getPlayerState(playerId);
+          console.log('[POINTS] Before:', beforeState?.currentPoints ?? 0);
+          const hitResult = pointsManager.addBulletHit(playerId);
+          console.log('[POINTS] addBulletHit result:', hitResult);
+          const afterState = pointsManager.getPlayerState(playerId);
+          console.log('[POINTS] After:', afterState?.currentPoints ?? 0);
+          console.log('[WEAPON] Awarded 10 points for bullet hit');
 
-        // Deal damage
-        const damage = this.weapon.config.damage;
-        const damageResult = zombieManager.damageZombie(hitZombie.id, damage, playerId);
-        
-        console.log('[WEAPON] Damage applied successfully');
-        console.log('[WEAPON] Hit zombie', hitZombie.id);
+          if (window.DEBUG_VERBOSE) {
+            console.log("[POINT TEST] bullet hit awarded", hitResult);
+            console.log("[POINT TEST] points after hit", getPointsManager().getPoints(playerId));
+          }
 
-        // Award hit points
-        const pointsManager = getPointsManager();
-        console.log('[POINTS] Before bulletHit - playerId:', playerId);
-        const beforeState = pointsManager.getPlayerState(playerId);
-        console.log('[POINTS] Before:', beforeState?.currentPoints ?? 0);
-        const hitResult = pointsManager.addBulletHit(playerId);
-        console.log('[POINTS] addBulletHit result:', hitResult);
-        const afterState = pointsManager.getPlayerState(playerId);
-        console.log('[POINTS] After:', afterState?.currentPoints ?? 0);
-        console.log('[WEAPON] Awarded 10 points');
+          console.log('[WEAPON] Calling damageZombie');
 
-        // Check if kill happened (health was > 0 before damage, now <= 0)
-        if (previousHealth > 0 && previousHealth <= damage) {
-          console.log('[WEAPON] Zombie killed', hitZombie.id);
-          // Award kill bonus points
-          const killResult = pointsManager.addZombieKill(playerId);
-          console.log('[POINTS] addZombieKill result:', killResult);
-          const afterKillState = pointsManager.getPlayerState(playerId);
-          console.log('[POINTS] After kill bonus:', afterKillState?.currentPoints ?? 0);
-          console.log('[WEAPON] Awarded 100 kill bonus');
+          // Deal damage AFTER awarding hit points
+          const damage = this.weapon.config.damage;
+          zombieManager.damageZombie(hitZombie.id, damage, playerId);
+          
+          console.log('[WEAPON] Damage applied successfully');
+          console.log('[WEAPON] Hit zombie', hitZombie.id);
+        } else {
+          console.log('[WEAPON] Zombie is not alive, skipping hit');
         }
 
         return {
           success: true,
           hitZombieId: hitZombie.id,
-          damageDealt: damage,
+          damageDealt: this.weapon.config.damage,
         };
       } else {
         console.log('[WEAPON] Could not find zombie for mesh');
