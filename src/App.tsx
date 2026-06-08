@@ -2277,7 +2277,7 @@ export default function App() {
         <div className="absolute inset-0 flex items-center justify-center z-[999999] bg-black/80">
           <div className="text-center">
             <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">GAME OVER</div>
-            <div className="text-xl text-gray-400 font-mono mb-2">Round Reached: {roundManagerRef.current?.getCurrentRound() || 1}</div>
+            <div className="text-xl text-gray-400 font-mono mb-2">Round Reached: {roundState.round}</div>
             <div className="text-xl text-gray-400 font-mono mb-6">Final Points: {getPointsManager().getPoints('player1')}</div>
             <button
               onClick={() => {
