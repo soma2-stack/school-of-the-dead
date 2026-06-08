@@ -17,7 +17,10 @@ import { getPowerUpManager, PowerUpManager } from './utils/powerups';
 import { Crosshair } from './utils/Crosshair';
 import { logger } from './utils/logger';
 import { WeaponUI } from './utils/WeaponUI';
+import { PowerUpHUD } from './components/PowerUpHUD';
+import { RoundBanner } from './components/RoundBanner';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
+import { playSound } from './utils/audio';
 import {
   Room,
   INITIAL_ROOMS,
@@ -108,6 +111,11 @@ export default function App() {
     zombiesAlive: 0,
     spawnStatus: 'idle'
   });
+  
+  // Round banner UI state
+  const [roundBannerMessage, setRoundBannerMessage] = useState<string>('');
+  const [roundBannerCountdown, setRoundBannerCountdown] = useState<number | undefined>(undefined);
+  const [roundBannerColor, setRoundBannerColor] = useState<string>('#ffffff');
   
   // Player health state
   const maxHealth = 100;
@@ -212,6 +220,17 @@ export default function App() {
 
   // Power-up manager ref
   const powerUpManagerRef = useRef<PowerUpManager | null>(null);
+
+  // Guard to prevent double-starting Round 1 (React StrictMode / hot reload)
+  const hasAutoStartedRoundRef = useRef(false);
+  
+  // Timeout ref for delayed round start
+  const autoStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs for round banner countdown timers
+  const roundStartCountdownRef = useRef<number>(5);
+  const intermissionCountdownRef = useRef<number>(10);
+  const roundBannerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Debug lighting hook
   const { ambientLightRef, originalAmbientIntensityRef, toggleDebugLighting } = useDebugLighting({
@@ -692,6 +711,9 @@ export default function App() {
         console.log('Player damaged:', damage, 'by zombie:', zombie.id);
       }
       
+      // Play hurt sound
+      playSound('player_hurt');
+      
       // Don't process damage if already dead
       if (isDeadRef.current) return;
       
@@ -722,6 +744,17 @@ export default function App() {
     logger.rounds.debug('Subscribing to onRoundStart in App.tsx');
     roundManager.onRoundStart((roundNumber) => {
       logger.rounds.info('Round start event received in App.tsx for round', roundNumber);
+      
+      // Show "ROUND X" banner
+      setRoundBannerMessage(`ROUND ${roundNumber}`);
+      setRoundBannerCountdown(undefined);
+      setRoundBannerColor('#00ff00'); // Green for round start
+      
+      // Hide banner after 2 seconds
+      setTimeout(() => {
+        setRoundBannerMessage('');
+      }, 2000);
+      
       logger.rounds.debug('zombieManagerRef.current:', zombieManagerRef.current);
       const zombieManager = zombieManagerRef.current;
       if (zombieManager) {
@@ -742,6 +775,55 @@ export default function App() {
       }
     });
 
+    // Subscribe to round end events
+    roundManager.onRoundEnd((roundNumber) => {
+      logger.rounds.info('Round end event received for round', roundNumber);
+      
+      // Show "ROUND COMPLETE" banner
+      setRoundBannerMessage('ROUND COMPLETE');
+      setRoundBannerCountdown(undefined);
+      setRoundBannerColor('#00ffff'); // Cyan for round complete
+      
+      // Hide banner after 2 seconds
+      setTimeout(() => {
+        setRoundBannerMessage('');
+      }, 2000);
+    });
+
+    // Subscribe to state change events for intermission countdown
+    roundManager.onStateChange((data) => {
+      logger.rounds.debug('Round state changed:', data.state);
+      
+      if (data.state === 'intermission') {
+        // Start intermission countdown
+        intermissionCountdownRef.current = 10;
+        setRoundBannerMessage('NEXT ROUND IN');
+        setRoundBannerCountdown(intermissionCountdownRef.current);
+        setRoundBannerColor('#ffff00'); // Yellow for intermission
+        
+        // Clear any existing timer
+        if (roundBannerTimerRef.current) {
+          clearInterval(roundBannerTimerRef.current);
+        }
+        
+        // Update countdown every second
+        roundBannerTimerRef.current = setInterval(() => {
+          intermissionCountdownRef.current -= 1;
+          if (intermissionCountdownRef.current <= 0) {
+            setRoundBannerCountdown(0);
+          } else {
+            setRoundBannerCountdown(intermissionCountdownRef.current);
+          }
+        }, 1000);
+      } else {
+        // Clear intermission timer when leaving intermission state
+        if (roundBannerTimerRef.current) {
+          clearInterval(roundBannerTimerRef.current);
+          roundBannerTimerRef.current = null;
+        }
+      }
+    });
+
     // Initialize Weapon Manager
     weaponManagerRef.current = getWeaponManager(scene);
     logger.weapon.info('WeaponManager initialized:', weaponManagerRef.current !== null);
@@ -749,6 +831,46 @@ export default function App() {
     // Initialize Power-Up Manager
     powerUpManagerRef.current = getPowerUpManager(scene);
     logger.game.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
+
+    // Auto-start Round 1 once all managers are initialized (with 5 second delay)
+    if (!hasAutoStartedRoundRef.current) {
+      hasAutoStartedRoundRef.current = true;
+
+      // Show initial countdown banner
+      roundStartCountdownRef.current = 5;
+      setRoundBannerMessage('ROUND 1 STARTING IN');
+      setRoundBannerCountdown(roundStartCountdownRef.current);
+      setRoundBannerColor('#ff0000'); // Red for starting soon
+
+      autoStartTimeoutRef.current = setTimeout(() => {
+        const roundManager = getRoundManager();
+
+        if (roundManager.getState() === "idle") {
+          logger.rounds.info('Auto-starting Round 1');
+          roundManager.startRound();
+        }
+
+        autoStartTimeoutRef.current = null;
+      }, 5000);
+
+      // Update countdown every second - store in ref for proper cleanup
+      if (roundBannerTimerRef.current) {
+        clearInterval(roundBannerTimerRef.current);
+      }
+      
+      roundBannerTimerRef.current = setInterval(() => {
+        roundStartCountdownRef.current -= 1;
+        if (roundStartCountdownRef.current <= 0) {
+          if (roundBannerTimerRef.current) {
+            clearInterval(roundBannerTimerRef.current);
+            roundBannerTimerRef.current = null;
+          }
+          setRoundBannerCountdown(0);
+        } else {
+          setRoundBannerCountdown(roundStartCountdownRef.current);
+        }
+      }, 1000);
+    }
 
     // Create door renderer to spawn visible meshes for all doors
     const doorRenderer = createDoorRenderer('default', scene);
@@ -1352,6 +1474,9 @@ export default function App() {
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
+      
+      // Play pistol shot sound
+      playSound('pistol_shot');
       
       // Use weapon manager to fire
       logger.input.info('Calling weaponManager.fire()');
@@ -2091,6 +2216,18 @@ export default function App() {
     window.addEventListener('keydown', handleInteractionKey);
 
     return () => {
+      // Clear auto-start timeout if pending
+      if (autoStartTimeoutRef.current) {
+        clearTimeout(autoStartTimeoutRef.current);
+        autoStartTimeoutRef.current = null;
+      }
+
+      // Clear round banner timer if active
+      if (roundBannerTimerRef.current) {
+        clearInterval(roundBannerTimerRef.current);
+        roundBannerTimerRef.current = null;
+      }
+
       cancelAnimationFrame(animId);
       resizeObs.disconnect();
       canvas.removeEventListener('click', handleClick);
@@ -2152,6 +2289,18 @@ export default function App() {
 
       {/* Weapon UI */}
       {isPointerLocked && !isDead && <WeaponUI />}
+
+      {/* Power-Up HUD */}
+      <PowerUpHUD />
+
+      {/* Round Banner UI */}
+      {roundBannerMessage && (
+        <RoundBanner 
+          message={roundBannerMessage} 
+          countdown={roundBannerCountdown} 
+          color={roundBannerColor} 
+        />
+      )}
 
       <div ref={mountRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
         <canvas ref={canvasRef} className="block w-full h-full" style={{ pointerEvents: 'auto' }} />

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getPowerUpManager } from './powerups';
+import { playSound } from './audio';
 
 // ============================================================================
 // Configuration
@@ -123,6 +124,9 @@ export class WeaponManager {
     // Decrease magazine ammo (uses 1 bullet even if it misses)
     this.weapon.currentMagazine -= 1;
 
+    // Play pistol shot sound
+    playSound('pistol_shot');
+
     if (window.DEBUG_VERBOSE) {
       console.log(`[WEAPON] Fired! Magazine: ${this.weapon.currentMagazine}/${this.weapon.reserveAmmo}`);
     }
@@ -151,6 +155,9 @@ export class WeaponManager {
       );
 
       if (hitZombie) {
+        // Deal damage AFTER awarding hit points
+        let damage = this.weapon.config.damage;
+
         // Only award points and deal damage if zombie is alive
         if (hitZombie.state === 'alive') {
           // Award bullet hit points IMMEDIATELY before applying damage
@@ -162,9 +169,6 @@ export class WeaponManager {
             console.log("[POINT TEST] points after hit", getPointsManager().getPoints(playerId));
           }
 
-          // Deal damage AFTER awarding hit points
-          let damage = this.weapon.config.damage;
-          
           // Check for Insta-Kill power-up
           try {
             const powerUpManager = getPowerUpManager();
@@ -231,6 +235,9 @@ export class WeaponManager {
 
     // Start reload
     this.weapon.isReloading = true;
+
+    // Play reload sound
+    playSound('reload');
 
     if (window.DEBUG_VERBOSE) {
       console.log(`[WEAPON] Reloading... (${this.weapon.config.reloadTime}s)`);
