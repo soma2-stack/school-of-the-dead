@@ -10,7 +10,7 @@ import { getFloorAuditor, getDebugFloorData, FloorIssue, renderFloorDebug } from
 import { getConnectivityAuditor, ConnectivityIssue, DebugVisualizationData as ConnectivityDebugData } from './utils/MapConnectivityAudit';
 import { getDoorAuditor, DoorAuditReport, DoorConnection } from './utils/DoorConnectivityAudit';
 import { createGeometryInspector, GeometryInspector } from './utils/GeometryInspector';
-import { getZombieManager, ZombieManager, getZombieCountForRound } from './utils/zombies';
+import { getZombieManager, ZombieManager, getZombieCountForRound, setWallColliderDebug, toggleWallColliderDebug } from './utils/zombies';
 import { getRoundManager, RoundManager } from './utils/rounds';
 import { getWeaponManager, WeaponManager } from './utils/weapons';
 import { Crosshair } from './utils/Crosshair';
@@ -87,6 +87,9 @@ export default function App() {
   
   // Debug wireframe ref for DEBUG_FLOORS test
   const debugWireframeRef = useRef<THREE.LineSegments | null>(null);
+  
+  // Wall collider debug state
+  const [showWallColliders, setShowWallColliders] = useState<boolean>(false);
   
   // Not Enough Points feedback state
   const [showNotEnoughPoints, setShowNotEnoughPoints] = useState<boolean>(false);
@@ -623,11 +626,11 @@ export default function App() {
     // Initialize Zombie Manager
     zombieManagerRef.current = getZombieManager(scene);
     
-    // Set up spawn points (starter room area)
+    // Set up spawn points (starter room area) - safe positions away from walls
     zombieManagerRef.current.setSpawnPoints([
-      { x: 20, y: 0, z: -40, roomId: 'starter' },
-      { x: -20, y: 0, z: -40, roomId: 'starter' },
-      { x: 0, y: 0, z: -60, roomId: 'starter' },
+      { x: 10, y: 0, z: -40, roomId: 'starter' },
+      { x: 25, y: 0, z: -45, roomId: 'starter' },
+      { x: 17.5, y: 0, z: -55, roomId: 'starter' },
     ]);
 
     // Handle zombie spawn events
@@ -838,6 +841,9 @@ export default function App() {
       collider.position.copy(doorMesh.position);
       collider.rotation.copy(doorMesh.rotation);
       scene.add(collider);
+      collider.userData.colliderType = "door";
+      collider.userData.isOpen = door.isOpen; // Sync open state to collider
+      collider.userData.blocksZombies = false; // Open doors don't block zombies by default
       door.collider = collider;
       doorColliderMap.set(collider, door);
     });
@@ -850,6 +856,9 @@ export default function App() {
 
     // Collect all collidable map objects for zombie AI
     const collidableObjects: THREE.Object3D[] = [];
+    
+    // Track wall collider meshes for debug visualization
+    const wallColliderMeshes: THREE.Mesh[] = [];
     
     const wallMat = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wall_tiles') });
     const floorMatWood = new THREE.MeshLambertMaterial({ map: getProceduralTexture('wood_floor') });
@@ -909,6 +918,7 @@ export default function App() {
                   floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
                   floor.receiveShadow = true;
                   floor.userData.isCollidable = true;
+                  floor.userData.colliderType = "floor";
                   collidableObjects.push(floor);
                   scene.add(floor);
                 } else {
@@ -923,6 +933,7 @@ export default function App() {
                       floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                       floor.receiveShadow = true;
                       floor.userData.isCollidable = true;
+                      floor.userData.colliderType = "floor";
                       collidableObjects.push(floor);
                       scene.add(floor);
                     }
@@ -936,6 +947,7 @@ export default function App() {
                     floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
                     floor.receiveShadow = true;
                     floor.userData.isCollidable = true;
+                    floor.userData.colliderType = "floor";
                     collidableObjects.push(floor);
                     scene.add(floor);
                   }
@@ -955,6 +967,7 @@ export default function App() {
             floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
             floor.receiveShadow = true;
             floor.userData.isCollidable = true;
+            floor.userData.colliderType = "floor";
             collidableObjects.push(floor);
             scene.add(floor);
           }
@@ -964,6 +977,7 @@ export default function App() {
           floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
           floor.receiveShadow = true;
           floor.userData.isCollidable = true;
+          floor.userData.colliderType = "floor";
           collidableObjects.push(floor);
           scene.add(floor);
         }
@@ -974,6 +988,7 @@ export default function App() {
         const ceil = new THREE.Mesh(new THREE.BoxGeometry(r.w, ct, r.d), ceilMat);
         ceil.position.set(r.cx, r.floorY + r.h + ct / 2, r.cz);
         ceil.userData.isCollidable = true;
+        ceil.userData.colliderType = "ceiling";
         collidableObjects.push(ceil);
         scene.add(ceil);
       }
@@ -1001,7 +1016,9 @@ export default function App() {
           else below.position.set(px, r.floorY + belowH / 2, pz + segCenter);
           below.castShadow = true; below.receiveShadow = true;
           below.userData.isCollidable = true;
+          below.userData.colliderType = "wall";
           collidableObjects.push(below);
+          wallColliderMeshes.push(below);
           scene.add(below);
           if (r.h > doorH) {
             const aboveH = r.h - doorH;
@@ -1010,7 +1027,9 @@ export default function App() {
             if (rotY === 0) above.position.set(px + segCenter, r.floorY + doorH + aboveH / 2, pz);
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
             above.userData.isCollidable = true;
+            above.userData.colliderType = "wall";
             collidableObjects.push(above);
+            wallColliderMeshes.push(above);
             scene.add(above);
           }
         };
@@ -1082,6 +1101,7 @@ export default function App() {
         }
         
         collisionRamp.userData.isCollidable = true;
+        collisionRamp.userData.colliderType = "ramp";
         collidableObjects.push(collisionRamp);
         scene.add(collisionRamp);
         
@@ -1147,6 +1167,32 @@ export default function App() {
     INITIAL_ROOMS.forEach(r => buildRoom(r));
     setStairDebugData(stairDebugDataArray);
 
+    // Create wall collider debug visualization helpers (red wireframes)
+    const wallColliderHelpers: THREE.Mesh[] = [];
+    if (showWallColliders) {
+      wallColliderMeshes.forEach(wallMesh => {
+        const box = new THREE.Box3().setFromObject(wallMesh);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        
+        const boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
+        const edges = new THREE.EdgesGeometry(boxGeo);
+        const lineMat = new THREE.LineBasicMaterial({ 
+          color: 0xff0000, // Red for wall colliders
+          transparent: true, 
+          opacity: 0.6 
+        });
+        const helper = new THREE.LineSegments(edges, lineMat);
+        
+        // Position at center of the box
+        box.getCenter(helper.position);
+        helper.rotation.copy(wallMesh.rotation);
+        
+        scene.add(helper);
+        wallColliderHelpers.push(helper);
+      });
+    }
+
     // Props
     MAP_PROPS.forEach(prop => {
       const ownerRoom = INITIAL_ROOMS.find(r => r.id === prop.roomId);
@@ -1156,6 +1202,7 @@ export default function App() {
       );
       mesh.position.set(prop.cx, (ownerRoom?.floorY ?? 0) + prop.h / 2, prop.cz);
       mesh.userData.isCollidable = true;
+      mesh.userData.colliderType = "prop";
       collidableObjects.push(mesh);
       scene.add(mesh);
     });
@@ -1473,6 +1520,10 @@ export default function App() {
       } else if (!hoveredDoor.isOpen) {
         // Open the door
         hoveredDoor.isOpen = true;
+        // Update collider to reflect open state
+        if (hoveredDoor.collider) {
+          hoveredDoor.collider.userData.isOpen = true;
+        }
         if (hoveredDoor.mesh) {
           // Slide door open based on axis
           const openOffset = hoveredDoor.w * 0.6;
