@@ -535,7 +535,7 @@ export class ZombieManager {
         zombie.doorwayTarget = undefined;
       } else if (zombieRoom && playerRoom) {
         // Different rooms: find doorway target toward player (single point, no phases)
-        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, mapObjects);
+        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, mapObjects, zombie.position);
         
         if (doorwayTarget) {
           targetPosition = doorwayTarget;
@@ -1146,12 +1146,14 @@ export class ZombieManager {
    * @param zombieRoom - The zombie's current room
    * @param playerRoom - The player's current room
    * @param mapObjects - Array of map objects for collision checking
+   * @param zombiePos - Current zombie position for distance check
    * @returns Doorway target position if found, null otherwise
    */
   private findDoorwayTarget(
     zombieRoom: Room,
     playerRoom: Room,
-    mapObjects: THREE.Object3D[] = []
+    mapObjects: THREE.Object3D[] = [],
+    zombiePos?: THREE.Vector3
   ): THREE.Vector3 | null {
     // Simple approach: find a gap in zombieRoom that leads toward playerRoom
     // In a full pathfinding system, this would use A* or similar
@@ -1212,42 +1214,125 @@ export class ZombieManager {
     }
 
     // Calculate doorway center position using world coordinates
-    // Return single center point at the doorway opening (no entry/exit phases)
-    // Use a small inside-room offset so target is not exactly on the wall line
+    // Two-step approach: first target inside-room point, then pass-through point
     const halfW = zombieRoom.w / 2;
     const halfD = zombieRoom.d / 2;
     const floorY = zombieRoom.floorY ?? 0;
+    const insideOffset = 1.5;  // Offset inside the zombie's room
+    const outsideOffset = 1.0; // Offset outside, past the doorway
+    
     let targetX = zombieRoom.cx;
     let targetZ = zombieRoom.cz;
-    const doorwayOffset = 0.75; // Small offset to avoid wall collider edge
+    let doorCenterX = zombieRoom.cx;
+    let doorCenterZ = zombieRoom.cz;
 
     switch (bestGap.side) {
       case 'N': {
         // N wall is at localZ = +halfD, so worldZ = cz + halfD
-        // Target slightly inside the room (south of the wall)
-        targetX = zombieRoom.cx + bestGap.center;
-        targetZ = zombieRoom.cz + halfD - doorwayOffset;
+        doorCenterX = zombieRoom.cx + bestGap.center;
+        doorCenterZ = zombieRoom.cz + halfD;
+        
+        // Check if zombie is close to the inside target
+        const insideTargetZ = doorCenterZ - insideOffset;
+        let usePassThrough = false;
+        
+        if (zombiePos) {
+          const distToInside = Math.abs(zombiePos.z - insideTargetZ);
+          if (distToInside < 1.5) {
+            usePassThrough = true;
+          }
+        }
+        
+        if (usePassThrough) {
+          // Pass-through target: slightly outside the room (north of the wall)
+          targetX = doorCenterX;
+          targetZ = doorCenterZ + outsideOffset;
+        } else {
+          // Inside target: slightly inside the room (south of the wall)
+          targetX = doorCenterX;
+          targetZ = insideTargetZ;
+        }
         break;
       }
       case 'S': {
         // S wall is at localZ = -halfD, so worldZ = cz - halfD
-        // Target slightly inside the room (north of the wall)
-        targetX = zombieRoom.cx + bestGap.center;
-        targetZ = zombieRoom.cz - halfD + doorwayOffset;
+        doorCenterX = zombieRoom.cx + bestGap.center;
+        doorCenterZ = zombieRoom.cz - halfD;
+        
+        // Check if zombie is close to the inside target
+        const insideTargetZ = doorCenterZ + insideOffset;
+        let usePassThrough = false;
+        
+        if (zombiePos) {
+          const distToInside = Math.abs(zombiePos.z - insideTargetZ);
+          if (distToInside < 1.5) {
+            usePassThrough = true;
+          }
+        }
+        
+        if (usePassThrough) {
+          // Pass-through target: slightly outside the room (south of the wall)
+          targetX = doorCenterX;
+          targetZ = doorCenterZ - outsideOffset;
+        } else {
+          // Inside target: slightly inside the room (north of the wall)
+          targetX = doorCenterX;
+          targetZ = insideTargetZ;
+        }
         break;
       }
       case 'E': {
         // E wall is at localX = +halfW, so worldX = cx + halfW
-        // Target slightly inside the room (west of the wall)
-        targetX = zombieRoom.cx + halfW - doorwayOffset;
-        targetZ = zombieRoom.cz + bestGap.center;
+        doorCenterX = zombieRoom.cx + halfW;
+        doorCenterZ = zombieRoom.cz + bestGap.center;
+        
+        // Check if zombie is close to the inside target
+        const insideTargetX = doorCenterX - insideOffset;
+        let usePassThrough = false;
+        
+        if (zombiePos) {
+          const distToInside = Math.abs(zombiePos.x - insideTargetX);
+          if (distToInside < 1.5) {
+            usePassThrough = true;
+          }
+        }
+        
+        if (usePassThrough) {
+          // Pass-through target: slightly outside the room (east of the wall)
+          targetX = doorCenterX + outsideOffset;
+          targetZ = doorCenterZ;
+        } else {
+          // Inside target: slightly inside the room (west of the wall)
+          targetX = insideTargetX;
+          targetZ = doorCenterZ;
+        }
         break;
       }
       case 'W': {
         // W wall is at localX = -halfW, so worldX = cx - halfW
-        // Target slightly inside the room (east of the wall)
-        targetX = zombieRoom.cx - halfW + doorwayOffset;
-        targetZ = zombieRoom.cz + bestGap.center;
+        doorCenterX = zombieRoom.cx - halfW;
+        doorCenterZ = zombieRoom.cz + bestGap.center;
+        
+        // Check if zombie is close to the inside target
+        const insideTargetX = doorCenterX + insideOffset;
+        let usePassThrough = false;
+        
+        if (zombiePos) {
+          const distToInside = Math.abs(zombiePos.x - insideTargetX);
+          if (distToInside < 1.5) {
+            usePassThrough = true;
+          }
+        }
+        
+        if (usePassThrough) {
+          // Pass-through target: slightly outside the room (west of the wall)
+          targetX = doorCenterX - outsideOffset;
+          targetZ = doorCenterZ;
+        } else {
+          // Inside target: slightly inside the room (east of the wall)
+          targetX = insideTargetX;
+          targetZ = doorCenterZ;
+        }
         break;
       }
     }
