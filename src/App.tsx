@@ -108,6 +108,30 @@ export default function App() {
     spawnStatus: 'idle'
   });
   
+  // Player health state
+  const maxHealth = 100;
+  const [currentHealth, setCurrentHealth] = useState<number>(100);
+  const [isDead, setIsDead] = useState<boolean>(false);
+  const lastDamageTimeRef = useRef<number>(0);
+  const regenDelay = 5000; // 5 seconds in ms
+  const regenRate = 15; // health per second
+  
+  // Refs to mirror latest health/death state for callbacks (avoid stale closures)
+  const currentHealthRef = useRef<number>(100);
+  const isDeadRef = useRef<boolean>(false);
+  
+  // Sync refs with state after each render
+  useEffect(() => {
+    currentHealthRef.current = currentHealth;
+  }, [currentHealth]);
+  
+  useEffect(() => {
+    isDeadRef.current = isDead;
+  }, [isDead]);
+  
+  // Damage flash state
+  const [showDamageFlash, setShowDamageFlash] = useState<boolean>(false);
+  
   // Stair debug state
   const [stairVisualDebugEnabled, setStairVisualDebugEnabled] = useState<boolean>(false);
   const [stairCollisionDebugEnabled, setStairCollisionDebugEnabled] = useState<boolean>(false);
@@ -595,8 +619,10 @@ export default function App() {
       }
     }
     
-    console.log("[DOOR AUDIT] Registered");
-    console.log(typeof (window as any).runDoorAudit);
+    if (window.DEBUG_VERBOSE) {
+      console.log("[DOOR AUDIT] Registered");
+      console.log(typeof (window as any).runDoorAudit);
+    }
     
     return () => {
       delete (window as any).runDoorAudit;
@@ -604,7 +630,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    console.log("DOOR EFFECT RUNNING");
+    if (window.DEBUG_VERBOSE) {
+      console.log("DOOR EFFECT RUNNING");
+    }
     const canvas = canvasRef.current;
     const mount = mountRef.current;
     if (!canvas || !mount) return;
@@ -635,20 +663,49 @@ export default function App() {
 
     // Handle zombie spawn events
     zombieManagerRef.current.onSpawn((zombie) => {
-      console.log('Zombie spawned:', zombie.id);
+      if (window.DEBUG_VERBOSE) {
+        console.log('Zombie spawned:', zombie.id);
+      }
       setRoundState(prev => ({ ...prev, zombiesAlive: prev.zombiesAlive + 1 }));
     });
 
     // Handle zombie death events
     zombieManagerRef.current.onDeath((zombie, playerId) => {
-      console.log('Zombie killed:', zombie.id, 'by player:', playerId);
+      if (window.DEBUG_VERBOSE) {
+        console.log('Zombie killed:', zombie.id, 'by player:', playerId);
+      }
       setRoundState(prev => ({ ...prev, zombiesAlive: Math.max(0, prev.zombiesAlive - 1) }));
     });
 
     // Handle player damage events
     zombieManagerRef.current.onPlayerDamage((damage, zombie) => {
-      console.log('Player damaged:', damage, 'by zombie:', zombie.id);
-      // Could add player health system here
+      if (window.DEBUG_VERBOSE) {
+        console.log('Player damaged:', damage, 'by zombie:', zombie.id);
+      }
+      
+      // Don't process damage if already dead
+      if (isDeadRef.current) return;
+      
+      const now = performance.now();
+      lastDamageTimeRef.current = now;
+      
+      // Apply damage using functional setState to avoid stale closures
+      setCurrentHealth(prev => {
+        const newHealth = Math.max(0, prev - damage);
+        currentHealthRef.current = newHealth;
+        
+        // Check for death
+        if (newHealth <= 0) {
+          isDeadRef.current = true;
+          setIsDead(true);
+        }
+        
+        return newHealth;
+      });
+      
+      // Trigger damage flash
+      setShowDamageFlash(true);
+      setTimeout(() => setShowDamageFlash(false), 300);
     });
 
     // Subscribe to round start events for automatic zombie spawning
@@ -1243,6 +1300,12 @@ export default function App() {
       
       logger.input.debug('Pointer is locked, proceeding to fire');
       
+      // Disable shooting if player is dead
+      if (isDeadRef.current) {
+        logger.input.debug('Shooting disabled: player is dead');
+        return;
+      }
+      
       // Shooting - hitscan on left click when pointer locked
       // Use actual DOM check instead of stale state
       const isActuallyLocked = document.pointerLockElement === canvas;
@@ -1282,7 +1345,9 @@ export default function App() {
       const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
       if (result.success && result.hitZombieId) {
-        console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);
+        if (window.DEBUG_VERBOSE) {
+          console.log('Hit zombie:', result.hitZombieId, 'Health:', zombieManager.getZombie(result.hitZombieId)?.health);
+        }
       }
     };
     const handleLockChange = () => { 
@@ -1290,7 +1355,9 @@ export default function App() {
       logger.input.debug('Pointer lock changed:', locked);
       setIsPointerLocked(locked);
     };
-    console.log('[INPUT] Registering click event listener on canvas');
+    if (window.DEBUG_VERBOSE) {
+      console.log('[INPUT] Registering click event listener on canvas');
+    }
     canvas.addEventListener('click', handleClick);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('pointerlockchange', handleLockChange);
@@ -1547,15 +1614,33 @@ export default function App() {
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
+      
+      // Health regeneration logic
+      if (!isDeadRef.current && currentHealthRef.current < maxHealth) {
+        const timeSinceDamage = now - lastDamageTimeRef.current;
+        if (timeSinceDamage >= regenDelay) {
+          setCurrentHealth(prev => {
+            const newHealth = Math.min(maxHealth, prev + regenRate * dt);
+            currentHealthRef.current = newHealth;
+            return newHealth;
+          });
+        }
+      }
+      
       const keys = keysPressed.current;
       const speed = noclipRef.current ? 20 : 10;
       const fwd = new THREE.Vector3(-Math.sin(yaw.current), 0, -Math.cos(yaw.current));
       const right = new THREE.Vector3(Math.cos(yaw.current), 0, -Math.sin(yaw.current));
       let moveDir = new THREE.Vector3();
-      if (keys['KeyW'] || keys['ArrowUp']) moveDir.add(fwd);
-      if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(fwd);
-      if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(right);
-      if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(right);
+      
+      // Disable movement if player is dead (simple approach)
+      if (!isDeadRef.current) {
+        if (keys['KeyW'] || keys['ArrowUp']) moveDir.add(fwd);
+        if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(fwd);
+        if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(right);
+        if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(right);
+      }
+      
       if (moveDir.lengthSq() > 0) moveDir.normalize().multiplyScalar(speed * dt);
 
       if (noclipRef.current) {
@@ -2010,11 +2095,36 @@ export default function App() {
         <PointsDisplay playerId="player1" />
       </div>
 
+      {/* Health Display - Bottom Left */}
+      {!isDead && (
+        <div className="absolute bottom-4 left-4 z-[999998]" style={{ pointerEvents: 'none' }}>
+          <div className="bg-black/70 border border-red-500/50 px-4 py-2 rounded-lg">
+            <div className="text-xs font-mono text-red-300 mb-1">HEALTH</div>
+            <div className="text-2xl font-bold text-red-400 font-mono">{Math.ceil(currentHealth)} / {maxHealth}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Damage Flash Overlay */}
+      {showDamageFlash && (
+        <div className="absolute inset-0 bg-red-600/30 z-[999996]" style={{ pointerEvents: 'none' }} />
+      )}
+
+      {/* Death Screen */}
+      {isDead && (
+        <div className="absolute inset-0 flex items-center justify-center z-[999999] bg-black/80">
+          <div className="text-center">
+            <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">YOU DIED</div>
+            <div className="text-xl text-gray-400 font-mono">Refresh to restart</div>
+          </div>
+        </div>
+      )}
+
       {/* Crosshair */}
-      {isPointerLocked && <Crosshair />}
+      {isPointerLocked && !isDead && <Crosshair />}
 
       {/* Weapon UI */}
-      {isPointerLocked && <WeaponUI />}
+      {isPointerLocked && !isDead && <WeaponUI />}
 
       <div ref={mountRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
         <canvas ref={canvasRef} className="block w-full h-full" style={{ pointerEvents: 'auto' }} />
