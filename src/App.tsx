@@ -1431,6 +1431,14 @@ export default function App() {
         e.preventDefault();
         toggleValidationMode();
       }
+
+      // Reload weapon - Press R
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        if (!isDeadRef.current) {
+          weaponManagerRef.current?.reload();
+        }
+      }
       
       // Door interaction - Press E to purchase door (removed - handled by handleInteractionKey)
     };
