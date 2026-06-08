@@ -1,10 +1,11 @@
 /**
  * School of the Dead - Minimal Weapon System
- * Starter Pistol only - no extra features
+ * Starter Pistol with basic ammo/reload
  */
 
 import * as THREE from 'three';
 import { getPointsManager } from './points';
+import { getPowerUpManager } from './powerups';
 
 // ============================================================================
 // Configuration
@@ -14,16 +15,18 @@ export interface WeaponConfig {
   name: string;
   damage: number;
   fireRate: number; // seconds between shots
-  magazine: number; // -1 for infinite
-  ammo: number; // -1 for infinite
+  magazineSize: number;
+  maxReserveAmmo: number;
+  reloadTime: number; // seconds
 }
 
 export const STARTER_PISTOL_CONFIG: WeaponConfig = {
   name: 'School Pistol',
   damage: 35,
   fireRate: 0.25,
-  magazine: -1,
-  ammo: -1,
+  magazineSize: 8,
+  maxReserveAmmo: 64,
+  reloadTime: 1.2,
 };
 
 // ============================================================================
@@ -34,6 +37,10 @@ export interface WeaponState {
   config: WeaponConfig;
   lastFireTime: number;
   isFiring: boolean;
+  currentMagazine: number;
+  reserveAmmo: number;
+  isReloading: boolean;
+  reloadTimeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 export type FireResult = {
@@ -52,10 +59,15 @@ export class WeaponManager {
   private scene: THREE.Scene | null;
 
   constructor(scene?: THREE.Scene, config: Partial<WeaponConfig> = {}) {
+    const fullConfig = { ...STARTER_PISTOL_CONFIG, ...config };
     this.weapon = {
-      config: { ...STARTER_PISTOL_CONFIG, ...config },
+      config: fullConfig,
       lastFireTime: 0,
       isFiring: false,
+      currentMagazine: fullConfig.magazineSize,
+      reserveAmmo: fullConfig.maxReserveAmmo,
+      isReloading: false,
+      reloadTimeoutId: null,
     };
     this.scene = scene || null;
   }
@@ -69,6 +81,11 @@ export class WeaponManager {
   // ==========================================================================
 
   canFire(): boolean {
+    // Cannot fire while reloading
+    if (this.weapon.isReloading) {
+      return false;
+    }
+
     const now = Date.now();
     const timeSinceLastFire = (now - this.weapon.lastFireTime) / 1000;
 
@@ -76,12 +93,8 @@ export class WeaponManager {
       return false;
     }
 
-    // Check ammo (infinite ammo check)
-    if (this.weapon.config.ammo !== -1 && this.weapon.config.ammo <= 0) {
-      return false;
-    }
-
-    if (this.weapon.config.magazine !== -1 && this.weapon.config.magazine <= 0) {
+    // Check magazine ammo
+    if (this.weapon.currentMagazine <= 0) {
       return false;
     }
 
@@ -93,43 +106,39 @@ export class WeaponManager {
     zombieManager: any,
     playerId: string
   ): FireResult {
-    console.log('[WEAPON] Fire input received');
-    console.log('[WEAPON] weaponManager !== null:', this !== null);
+    if (window.DEBUG_VERBOSE) {
+      console.log('[WEAPON] Fire input received');
+    }
 
     if (!this.canFire()) {
-      console.log('[WEAPON] canFire() returned false');
+      if (window.DEBUG_VERBOSE) {
+        console.log('[WEAPON] canFire() returned false');
+      }
       return { success: false, reason: 'cannot_fire' };
     }
 
     this.weapon.lastFireTime = Date.now();
     this.weapon.isFiring = true;
 
-    // Decrease ammo if not infinite
-    if (this.weapon.config.ammo !== -1) {
-      this.weapon.config.ammo -= 1;
-    }
-    if (this.weapon.config.magazine !== -1) {
-      this.weapon.config.magazine -= 1;
-    }
+    // Decrease magazine ammo (uses 1 bullet even if it misses)
+    this.weapon.currentMagazine -= 1;
 
-    console.log('[WEAPON] Raycast executed');
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[WEAPON] Fired! Magazine: ${this.weapon.currentMagazine}/${this.weapon.reserveAmmo}`);
+    }
 
     // Raycast for hits
     const aliveZombies = zombieManager.getAliveZombies();
-    console.log(`[WEAPON] Alive zombies: ${aliveZombies.length}`);
     
     const zombieMeshes = aliveZombies
       .map((z: any) => z.mesh)
       .filter((mesh: THREE.Mesh): mesh is THREE.Mesh => mesh !== undefined);
     
-    console.log(`[WEAPON] Zombie meshes to test: ${zombieMeshes.length}`);
 
     const intersects = raycaster.intersectObjects(zombieMeshes, true);
-    console.log(`[WEAPON] Intersections: ${intersects.length}`);
 
     if (intersects.length > 0) {
       const hitObject = intersects[0].object;
-      console.log(`[WEAPON] Hit mesh: ${hitObject.name || hitObject.type}`);
       
       // Find the root mesh (in case we hit a child object like eyes)
       let rootMesh = hitObject;
@@ -142,46 +151,45 @@ export class WeaponManager {
       );
 
       if (hitZombie) {
-        console.log(`[WEAPON] Zombie ID: ${hitZombie.id}`);
-        console.log('[WEAPON] Checking zombie state:', hitZombie.state);
-
         // Only award points and deal damage if zombie is alive
         if (hitZombie.state === 'alive') {
           // Award bullet hit points IMMEDIATELY before applying damage
           const pointsManager = getPointsManager();
-          console.log('[POINTS] Before bulletHit - playerId:', playerId);
-          const beforeState = pointsManager.getPlayerState(playerId);
-          console.log('[POINTS] Before:', beforeState?.currentPoints ?? 0);
           const hitResult = pointsManager.addBulletHit(playerId);
-          console.log('[POINTS] addBulletHit result:', hitResult);
-          const afterState = pointsManager.getPlayerState(playerId);
-          console.log('[POINTS] After:', afterState?.currentPoints ?? 0);
-          console.log('[WEAPON] Awarded 10 points for bullet hit');
 
           if (window.DEBUG_VERBOSE) {
             console.log("[POINT TEST] bullet hit awarded", hitResult);
             console.log("[POINT TEST] points after hit", getPointsManager().getPoints(playerId));
           }
 
-          console.log('[WEAPON] Calling damageZombie');
-
           // Deal damage AFTER awarding hit points
-          const damage = this.weapon.config.damage;
+          let damage = this.weapon.config.damage;
+          
+          // Check for Insta-Kill power-up
+          try {
+            const powerUpManager = getPowerUpManager();
+            if (powerUpManager.isInstaKillActive()) {
+              damage = hitZombie.health;
+              if (window.DEBUG_VERBOSE) {
+                console.log('[WEAPON] Insta-kill active! Setting damage to zombie health:', damage);
+              }
+            }
+          } catch {
+            // power-up manager not initialized, use normal damage
+          }
+          
           zombieManager.damageZombie(hitZombie.id, damage, playerId);
           
-          console.log('[WEAPON] Damage applied successfully');
-          console.log('[WEAPON] Hit zombie', hitZombie.id);
-        } else {
-          console.log('[WEAPON] Zombie is not alive, skipping hit');
+          if (window.DEBUG_VERBOSE) {
+            console.log('[WEAPON] Hit zombie', hitZombie.id, 'for', damage, 'damage');
+          }
         }
 
         return {
           success: true,
           hitZombieId: hitZombie.id,
-          damageDealt: this.weapon.config.damage,
+          damageDealt: damage,
         };
-      } else {
-        console.log('[WEAPON] Could not find zombie for mesh');
       }
     }
 
@@ -190,6 +198,90 @@ export class WeaponManager {
     }, 100);
 
     return { success: false };
+  }
+
+  // ==========================================================================
+  // Reload
+  // ==========================================================================
+
+  reload(): boolean {
+    // Cannot reload if already reloading
+    if (this.weapon.isReloading) {
+      if (window.DEBUG_VERBOSE) {
+        console.log('[WEAPON] Already reloading');
+      }
+      return false;
+    }
+
+    // Cannot reload if magazine is already full
+    if (this.weapon.currentMagazine >= this.weapon.config.magazineSize) {
+      if (window.DEBUG_VERBOSE) {
+        console.log('[WEAPON] Magazine already full');
+      }
+      return false;
+    }
+
+    // Cannot reload if no reserve ammo
+    if (this.weapon.reserveAmmo <= 0) {
+      if (window.DEBUG_VERBOSE) {
+        console.log('[WEAPON] No reserve ammo');
+      }
+      return false;
+    }
+
+    // Start reload
+    this.weapon.isReloading = true;
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[WEAPON] Reloading... (${this.weapon.config.reloadTime}s)`);
+    }
+
+    this.weapon.reloadTimeoutId = setTimeout(() => {
+      this.completeReload();
+    }, this.weapon.config.reloadTime * 1000);
+
+    return true;
+  }
+
+  private completeReload(): void {
+    if (!this.weapon.isReloading) return;
+
+    const bulletsNeeded = this.weapon.config.magazineSize - this.weapon.currentMagazine;
+    const bulletsToLoad = Math.min(bulletsNeeded, this.weapon.reserveAmmo);
+
+    this.weapon.currentMagazine += bulletsToLoad;
+    this.weapon.reserveAmmo -= bulletsToLoad;
+    this.weapon.isReloading = false;
+    this.weapon.reloadTimeoutId = null;
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[WEAPON] Reload complete! Magazine: ${this.weapon.currentMagazine}/${this.weapon.reserveAmmo}`);
+    }
+  }
+
+  // ==========================================================================
+  // Refill Ammo (for testing/debug)
+  // ==========================================================================
+
+  refillAmmo(): void {
+    // Cancel any active reload timeout safely
+    if (this.weapon.reloadTimeoutId) {
+      clearTimeout(this.weapon.reloadTimeoutId);
+      this.weapon.reloadTimeoutId = null;
+    }
+
+    // Fill current magazine
+    this.weapon.currentMagazine = this.weapon.config.magazineSize;
+    
+    // Refill reserve ammo to max
+    this.weapon.reserveAmmo = this.weapon.config.maxReserveAmmo;
+    
+    // Cancel any active reload state
+    this.weapon.isReloading = false;
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[WEAPON] Ammo refilled! Magazine: ${this.weapon.currentMagazine}/${this.weapon.reserveAmmo}`);
+    }
   }
 
   // ==========================================================================
@@ -208,12 +300,24 @@ export class WeaponManager {
     return this.weapon.config.damage;
   }
 
-  getAmmo(): number {
-    return this.weapon.config.ammo;
+  getCurrentMagazine(): number {
+    return this.weapon.currentMagazine;
   }
 
-  getMagazine(): number {
-    return this.weapon.config.magazine;
+  getReserveAmmo(): number {
+    return this.weapon.reserveAmmo;
+  }
+
+  getMagazineSize(): number {
+    return this.weapon.config.magazineSize;
+  }
+
+  getMaxReserveAmmo(): number {
+    return this.weapon.config.maxReserveAmmo;
+  }
+
+  isCurrentlyReloading(): boolean {
+    return this.weapon.isReloading;
   }
 
   getName(): string {
@@ -225,6 +329,11 @@ export class WeaponManager {
   // ==========================================================================
 
   destroy(): void {
+    // Cancel any pending reload timeout
+    if (this.weapon.reloadTimeoutId) {
+      clearTimeout(this.weapon.reloadTimeoutId);
+      this.weapon.reloadTimeoutId = null;
+    }
     this.scene = null;
   }
 }

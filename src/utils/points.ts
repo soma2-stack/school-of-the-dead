@@ -98,11 +98,31 @@ export class PlayerPointsManager {
   private config: PointsConfig;
   private players: Map<string, PlayerPointsState>;
   private listeners: Set<PointsChangeListener>;
+  private pointMultiplier: number = 1;
+  private multiplierEndTime: number = 0;
 
   constructor(config: PointsConfig = DEFAULT_POINTS_CONFIG) {
     this.config = { ...config };
     this.players = new Map();
     this.listeners = new Set();
+  }
+
+  public setPointMultiplier(multiplier: number, durationMs: number): void {
+    this.pointMultiplier = multiplier;
+    this.multiplierEndTime = Date.now() + durationMs;
+    if (window.DEBUG_VERBOSE) {
+      console.log('[POINTS] Multiplier set to', multiplier, 'for', durationMs, 'ms');
+    }
+  }
+
+  public getPointMultiplier(): number {
+    if (Date.now() > this.multiplierEndTime && this.pointMultiplier !== 1) {
+      this.pointMultiplier = 1;
+      if (window.DEBUG_VERBOSE) {
+        console.log('[POINTS] Multiplier expired, reset to 1');
+      }
+    }
+    return this.pointMultiplier;
   }
 
   // --------------------------------------------------------------------------
@@ -261,7 +281,18 @@ export class PlayerPointsManager {
     logger.points.debug('addPoints called:', { playerId, amount, reason, playerExists: !!player });
     if (!player) return null;
 
-    if (amount <= 0) {
+    // Apply multiplier for earned points
+    const actualAmount = Math.floor(amount * this.getPointMultiplier());
+
+    if (window.DEBUG_VERBOSE) {
+      console.log("[DOUBLE POINTS TEST]", {
+        baseAmount: amount,
+        multiplier: this.getPointMultiplier(),
+        actualAmount
+      });
+    }
+
+    if (actualAmount <= 0) {
       return {
         success: false,
         previousPoints: player.currentPoints,
@@ -272,8 +303,8 @@ export class PlayerPointsManager {
     }
 
     const previousPoints = player.currentPoints;
-    player.currentPoints += amount;
-    player.totalEarned += amount;
+    player.currentPoints += actualAmount;
+    player.totalEarned += actualAmount;
     player.lastUpdated = Date.now();
     logger.points.debug('Points updated:', { previousPoints, newPoints: player.currentPoints });
 
@@ -281,7 +312,7 @@ export class PlayerPointsManager {
       success: true,
       previousPoints,
       newPoints: player.currentPoints,
-      amountChanged: amount,
+      amountChanged: actualAmount,
       reason,
     };
 

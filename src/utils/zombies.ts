@@ -130,7 +130,11 @@ export interface ZombieSpawnPoint {
 
 export type ZombieEventCallback = (zombie: Zombie) => void;
 export type ZombieDamageCallback = (zombie: Zombie, damage: number, playerId: string) => void;
-export type ZombieKillCallback = (zombie: Zombie, playerId: string) => void;
+export type ZombieKillCallback = (
+  zombie: Zombie,
+  playerId: string,
+  skipPowerUpDrop?: boolean
+) => void;
 
 // Particle effect types
 interface ParticleEffect {
@@ -417,8 +421,8 @@ export class ZombieManager {
     this.onSpawnCallbacks.forEach(cb => cb(zombie));
   }
 
-  private notifyDeath(zombie: Zombie, playerId: string): void {
-    this.onDeathCallbacks.forEach(cb => cb(zombie, playerId));
+  private notifyDeath(zombie: Zombie, playerId: string, skipPowerUpDrop = false): void {
+    this.onDeathCallbacks.forEach(cb => cb(zombie, playerId, skipPowerUpDrop));
   }
 
   private notifyDamage(zombie: Zombie, damage: number, playerId: string): void {
@@ -1646,7 +1650,7 @@ export class ZombieManager {
     return true;
   }
 
-  killZombie(zombieId: string, playerId: string): boolean {
+  killZombie(zombieId: string, playerId: string, skipPowerUpDrop: boolean = false): boolean {
     logger.zombies.info('ENTER killZombie for', zombieId);
     const zombie = this.zombies.get(zombieId);
     if (!zombie || zombie.state === 'dead') return false;
@@ -1665,7 +1669,8 @@ export class ZombieManager {
     logger.zombies.debug('Calling roundManager.registerZombieKill() from killZombie');
     roundManager.registerZombieKill();
 
-    this.notifyDeath(zombie, playerId);
+    // Notify death (power-up drop only if not skipped)
+    this.notifyDeath(zombie, playerId, skipPowerUpDrop);
 
     // Schedule removal
     setTimeout(() => {

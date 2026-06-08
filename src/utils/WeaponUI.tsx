@@ -9,18 +9,42 @@ import { getWeaponManager } from './weapons';
 export const WeaponUI: React.FC = () => {
   const [weaponInfo, setWeaponInfo] = React.useState({
     name: 'School Pistol',
-    damage: 100,
-    ammo: Infinity,
+    damage: 35,
+    currentMagazine: 8,
+    reserveAmmo: 64,
+    isReloading: false,
   });
 
   React.useEffect(() => {
     const weaponManager = getWeaponManager();
     const config = weaponManager.getConfig();
+    const state = weaponManager.getWeaponState();
     setWeaponInfo({
       name: config.name,
       damage: config.damage,
-      ammo: config.ammo === -1 ? Infinity : config.ammo,
+      currentMagazine: state.currentMagazine,
+      reserveAmmo: state.reserveAmmo,
+      isReloading: state.isReloading,
     });
+  }, []);
+
+  // Update ammo display on fire/reload events
+  React.useEffect(() => {
+    const updateInterval = setInterval(() => {
+      const weaponManager = getWeaponManager();
+      const config = weaponManager.getConfig();
+      const state = weaponManager.getWeaponState();
+
+      setWeaponInfo({
+        name: config.name,
+        damage: config.damage,
+        currentMagazine: state.currentMagazine,
+        reserveAmmo: state.reserveAmmo,
+        isReloading: state.isReloading,
+      });
+    }, 100);
+
+    return () => clearInterval(updateInterval);
   }, []);
 
   return (
@@ -44,7 +68,12 @@ export const WeaponUI: React.FC = () => {
         {weaponInfo.name}
       </div>
       <div style={{ marginBottom: '4px' }}>DMG: {weaponInfo.damage}</div>
-      <div>{weaponInfo.ammo === Infinity ? '∞' : weaponInfo.ammo} Ammo</div>
+      <div style={{ marginBottom: '4px' }}>
+        Ammo: {weaponInfo.currentMagazine} / {weaponInfo.reserveAmmo}
+      </div>
+      {weaponInfo.isReloading && (
+        <div style={{ color: '#ffaa00' }}>Reloading...</div>
+      )}
     </div>
   );
 };
