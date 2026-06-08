@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { playSound } from './audio';
 
 /**
  * School of the Dead - Round System
@@ -216,6 +217,9 @@ export class RoundManager {
       zombiesRemaining: this.roundData.zombiesRemaining,
       totalZombiesSpawned: this.roundData.totalZombiesSpawned,
     });
+
+    // Play round start sound
+    playSound('round_start');
 
     logger.rounds.debug('About to notifyRoundStart with round:', this.roundData.currentRound);
     // Notify callbacks FIRST so they can spawn zombies and call registerZombieSpawn()

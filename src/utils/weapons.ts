@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getPowerUpManager } from './powerups';
+import { playSound } from './audio';
 
 // ============================================================================
 // Configuration
@@ -231,6 +232,9 @@ export class WeaponManager {
 
     // Start reload
     this.weapon.isReloading = true;
+
+    // Play reload sound
+    playSound('reload');
 
     if (window.DEBUG_VERBOSE) {
       console.log(`[WEAPON] Reloading... (${this.weapon.config.reloadTime}s)`);

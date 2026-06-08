@@ -20,6 +20,7 @@ import { WeaponUI } from './utils/WeaponUI';
 import { PowerUpHUD } from './components/PowerUpHUD';
 import { RoundBanner } from './components/RoundBanner';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
+import { playSound } from './utils/audio';
 import {
   Room,
   INITIAL_ROOMS,
@@ -709,6 +710,9 @@ export default function App() {
       if (window.DEBUG_VERBOSE) {
         console.log('Player damaged:', damage, 'by zombie:', zombie.id);
       }
+      
+      // Play hurt sound
+      playSound('player_hurt');
       
       // Don't process damage if already dead
       if (isDeadRef.current) return;
@@ -1470,6 +1474,9 @@ export default function App() {
       // Raycast from camera center
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
+      
+      // Play pistol shot sound
+      playSound('pistol_shot');
       
       // Use weapon manager to fire
       logger.input.info('Calling weaponManager.fire()');

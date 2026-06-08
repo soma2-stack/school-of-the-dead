@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { getWeaponManager } from './weapons';
 import { getZombieManager } from './zombies';
 import { getPointsManager } from './points';
+import { playSound } from './audio';
 
 // ============================================================================
 // Configuration
@@ -484,6 +485,9 @@ export class PowerUpManager {
     if (pickup.collected) return;
 
     pickup.collected = true;
+
+    // Play pickup sound
+    playSound('powerup_pickup');
 
     if (window.DEBUG_VERBOSE) {
       console.log(`[POWERUP] ${pickup.type} collected: ${pickup.id}`);

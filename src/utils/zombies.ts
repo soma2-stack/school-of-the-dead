@@ -8,6 +8,7 @@ import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
 import { logger } from './logger';
 import { INITIAL_ROOMS, ROOM_GAPS, type Room } from '../game/mapConfig';
+import { playSound } from './audio';
 
 // ============================================================================
 // Configuration
@@ -1637,6 +1638,9 @@ export class ZombieManager {
     zombie.health -= damage;
     zombie.lastDamageTime = Date.now();
 
+    // Play hit sound
+    playSound('zombie_hit');
+
     // Visual feedback: flash and particles on hit
     this.flashZombieHit(zombie);
     this.spawnHitParticles(zombie.position);
@@ -1656,6 +1660,9 @@ export class ZombieManager {
     if (!zombie || zombie.state === 'dead') return false;
 
     zombie.state = 'dead';
+
+    // Play death sound
+    playSound('zombie_death');
 
     // Visual feedback: death burst particles
     this.spawnDeathParticles(zombie.position);

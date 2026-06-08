@@ -6,8 +6,9 @@ build/
 # Dependencies
 node_modules/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
 
 # Environment
 .env
@@ -24,25 +25,16 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Temporary files
-*.tmp
-*.swp
-*.swo
+# Compiled files
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+*.out
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Testing
-.mypy_cache/
-.pytest_cache/
-
-# Compressed files
+# Compression
 *.zip
 *.gz
 *.tar
@@ -61,8 +53,14 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Cache
+.mypy_cache/
+.pytest_cache/
+.cache/
 ```
