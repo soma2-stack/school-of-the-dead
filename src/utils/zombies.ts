@@ -1617,6 +1617,10 @@ export class ZombieManager {
   }
 
   private damagePlayer(zombie: Zombie): void {
+    // Only deal damage if round is active
+    const roundManager = getRoundManager();
+    if (roundManager.getState() !== 'active') return;
+
     const now = Date.now();
     // Prevent damage spam - limit to once per second per zombie
     if (now - zombie.lastDamageTime < 1000) return;
