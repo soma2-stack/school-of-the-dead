@@ -216,6 +216,9 @@ export default function App() {
 
   // Guard to prevent double-starting Round 1 (React StrictMode / hot reload)
   const hasAutoStartedRoundRef = useRef(false);
+  
+  // Timeout ref for delayed round start
+  const autoStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debug lighting hook
   const { ambientLightRef, originalAmbientIntensityRef, toggleDebugLighting } = useDebugLighting({
@@ -754,14 +757,20 @@ export default function App() {
     powerUpManagerRef.current = getPowerUpManager(scene);
     logger.game.info('PowerUpManager initialized:', powerUpManagerRef.current !== null);
 
-    // Auto-start Round 1 once all managers are initialized
+    // Auto-start Round 1 once all managers are initialized (with 5 second delay)
     if (!hasAutoStartedRoundRef.current) {
       hasAutoStartedRoundRef.current = true;
-      const roundManager = getRoundManager();
-      if (roundManager.getState() === "idle") {
-        logger.rounds.info('Auto-starting Round 1');
-        roundManager.startRound();
-      }
+
+      autoStartTimeoutRef.current = setTimeout(() => {
+        const roundManager = getRoundManager();
+
+        if (roundManager.getState() === "idle") {
+          logger.rounds.info('Auto-starting Round 1');
+          roundManager.startRound();
+        }
+
+        autoStartTimeoutRef.current = null;
+      }, 5000);
     }
 
     // Create door renderer to spawn visible meshes for all doors
@@ -2105,6 +2114,12 @@ export default function App() {
     window.addEventListener('keydown', handleInteractionKey);
 
     return () => {
+      // Clear auto-start timeout if pending
+      if (autoStartTimeoutRef.current) {
+        clearTimeout(autoStartTimeoutRef.current);
+        autoStartTimeoutRef.current = null;
+      }
+
       cancelAnimationFrame(animId);
       resizeObs.disconnect();
       canvas.removeEventListener('click', handleClick);
