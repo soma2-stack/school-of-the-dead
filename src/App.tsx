@@ -17,6 +17,7 @@ import { getPowerUpManager, PowerUpManager } from './utils/powerups';
 import { Crosshair } from './utils/Crosshair';
 import { logger } from './utils/logger';
 import { WeaponUI } from './utils/WeaponUI';
+import { PowerUpHUD } from './components/PowerUpHUD';
 import DebugOverlay, { DebugData } from './components/DebugOverlay';
 import {
   Room,
@@ -2152,6 +2153,9 @@ export default function App() {
 
       {/* Weapon UI */}
       {isPointerLocked && !isDead && <WeaponUI />}
+
+      {/* Power-Up HUD */}
+      <PowerUpHUD />
 
       <div ref={mountRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
         <canvas ref={canvasRef} className="block w-full h-full" style={{ pointerEvents: 'auto' }} />

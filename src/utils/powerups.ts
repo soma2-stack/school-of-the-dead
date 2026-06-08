@@ -587,6 +587,19 @@ export class PowerUpManager {
     return this.instaKillActive;
   }
 
+  getInstaKillRemainingSeconds(): number {
+    if (!this.instaKillActive) {
+      return 0;
+    }
+    const now = Date.now();
+    const remaining = this.instaKillEndTime - now;
+    if (remaining <= 0) {
+      this.instaKillActive = false;
+      return 0;
+    }
+    return Math.ceil(remaining / 1000);
+  }
+
   // ==========================================================================
   // Nuke Effect
   // ==========================================================================
@@ -634,6 +647,37 @@ export class PowerUpManager {
     this.scene = null;
     this.instaKillActive = false;
     this.instaKillEndTime = 0;
+  }
+
+  // ==========================================================================
+  // Get Active Power-Ups for HUD
+  // ==========================================================================
+
+  getActivePowerUps(): Array<{ type: string; label: string; remainingSeconds: number }> {
+    const activePowerUps: Array<{ type: string; label: string; remainingSeconds: number }> = [];
+
+    // Check Insta-Kill
+    const instaKillRemaining = this.getInstaKillRemainingSeconds();
+    if (instaKillRemaining > 0) {
+      activePowerUps.push({
+        type: 'insta_kill',
+        label: 'INSTA KILL',
+        remainingSeconds: instaKillRemaining,
+      });
+    }
+
+    // Check Double Points
+    const pointsManager = getPointsManager();
+    const doublePointsRemaining = pointsManager.getMultiplierRemainingSeconds();
+    if (doublePointsRemaining > 0) {
+      activePowerUps.push({
+        type: 'double_points',
+        label: 'DOUBLE POINTS',
+        remainingSeconds: doublePointsRemaining,
+      });
+    }
+
+    return activePowerUps;
   }
 }
 

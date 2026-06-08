@@ -13,7 +13,7 @@ node_modules/
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
 .vscode/
@@ -25,14 +25,13 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Compiled files
-*.class
+# Compiled
 *.o
 *.obj
-*.exe
-*.dll
 *.so
 *.a
+*.dll
+*.exe
 *.out
 
 # Compression
@@ -54,17 +53,53 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Testing
-.mypy_cache/
-.pytest_cache/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 
 # System
 .DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+coverage/
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+
+# Java/Maven
+target/
+.gradle/
+*.class
+
+# Go
+*.mod
+*.sum
+
+# Rust
+target/
+
+# Julia
+julia-*/
+
+# Zig
+zig-*/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Icon?
 Thumbs.db
 ```

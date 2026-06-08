@@ -125,6 +125,19 @@ export class PlayerPointsManager {
     return this.pointMultiplier;
   }
 
+  public getMultiplierRemainingSeconds(): number {
+    if (this.pointMultiplier === 1) {
+      return 0;
+    }
+    const now = Date.now();
+    const remaining = this.multiplierEndTime - now;
+    if (remaining <= 0) {
+      this.pointMultiplier = 1;
+      return 0;
+    }
+    return Math.ceil(remaining / 1000);
+  }
+
   // --------------------------------------------------------------------------
   // Configuration
   // --------------------------------------------------------------------------
