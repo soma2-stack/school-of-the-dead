@@ -609,6 +609,35 @@ export class ZombieManager {
           zombie.doorwayTarget = doorwayTarget.clone();
           zombie.targetRoomId = playerRoom.id;
           
+          // Track distance to target for stuck detection
+          const distToTarget = zombie.position.distanceTo(doorwayTarget);
+          const prevDistToTarget = (zombie as any)._lastDistToTarget ?? distToTarget;
+          const notGettingCloser = distToTarget >= prevDistToTarget - 0.01;
+          (zombie as any)._lastDistToTarget = distToTarget;
+          
+          // Track time not getting closer for forced phase switch
+          if (notGettingCloser && currentPhase === 'entry') {
+            const stuckTime = ((zombie as any)._doorwayStuckTime || 0) + deltaTime;
+            (zombie as any)._doorwayStuckTime = stuckTime;
+            
+            // If stuck for 1.5 seconds and exit target is valid, force switch to exit phase
+            if (stuckTime > 1.5) {
+              const exitTarget = this.findDoorwayTarget(zombieRoom, playerRoom, 'exit', mapObjects);
+              if (exitTarget) {
+                zombie.doorwayPhase = 'exit';
+                targetPosition = exitTarget;
+                zombie.doorwayTarget = exitTarget.clone();
+                (zombie as any)._doorwayStuckTime = 0;
+                logger.zombies.info('[ZOMBIE DOORWAY] Force switched to exit phase due to stuck', {
+                  zombieId: zombie.id,
+                  stuckTime
+                });
+              }
+            }
+          } else {
+            (zombie as any)._doorwayStuckTime = 0;
+          }
+          
           // Check if zombie is close to entry target, switch to exit phase
           // Use larger threshold (2.5) so zombies commit through doorway before switching
           if (currentPhase === 'entry' && zombie.doorwayTarget) {
@@ -687,44 +716,44 @@ export class ZombieManager {
         }
 
         // 2. Calculate zombie-to-zombie separation (XZ plane ONLY)
-        // When targeting a doorway, reduce separation to prevent sliding along walls
+        // When targeting a doorway, disable separation completely to prevent sliding along walls
         separation.set(0, 0, 0);
         let neighborCount = 0;
         
-        // Only apply full separation when not targeting a doorway
+        // Only apply separation when NOT targeting a doorway
         const isTargetingDoorway = targetType === 'doorway';
         
-        this.zombies.forEach((other, otherId) => {
-          if (otherId === id || other.state !== 'alive') return;
-          
-          // 2D distance only (XZ plane)
-          const dx = zombie.position.x - other.position.x;
-          const dz = zombie.position.z - other.position.z;
-          const distXZ = Math.sqrt(dx * dx + dz * dz);
-          
-          if (distXZ < ZOMBIE_MIN_SEPARATION && distXZ > 0.01) {
-            // Push away on XZ only
-            const pushX = dx / distXZ;
-            const pushZ = dz / distXZ;
-            const pushStrength = (ZOMBIE_MIN_SEPARATION - distXZ) / ZOMBIE_MIN_SEPARATION;
+        if (!isTargetingDoorway) {
+          this.zombies.forEach((other, otherId) => {
+            if (otherId === id || other.state !== 'alive') return;
             
-            // Reduce separation when targeting doorway to prevent sliding
-            const sepMultiplier = isTargetingDoorway ? 0.15 : 1.0;
-            separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH * sepMultiplier;
-            separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH * sepMultiplier;
-            neighborCount++;
-          }
-        });
+            // 2D distance only (XZ plane)
+            const dx = zombie.position.x - other.position.x;
+            const dz = zombie.position.z - other.position.z;
+            const distXZ = Math.sqrt(dx * dx + dz * dz);
+            
+            if (distXZ < ZOMBIE_MIN_SEPARATION && distXZ > 0.01) {
+              // Push away on XZ only
+              const pushX = dx / distXZ;
+              const pushZ = dz / distXZ;
+              const pushStrength = (ZOMBIE_MIN_SEPARATION - distXZ) / ZOMBIE_MIN_SEPARATION;
+              
+              separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
+              separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
+              neighborCount++;
+            }
+          });
 
-        if (neighborCount > 0) {
-          // Clamp separation to prevent explosion
-          const sepLength = Math.sqrt(separation.x * separation.x + separation.z * separation.z);
-          if (sepLength > ZOMBIE_MAX_SEPARATION_PER_FRAME) {
-            separation.x = (separation.x / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
-            separation.z = (separation.z / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
-          }
-          if (window.DEBUG_VERBOSE) {
-            logger.zombies.debug(`[ZOMBIE SEPARATION] Zombie ${zombie.id}: ${neighborCount} neighbors, separation applied`);
+          if (neighborCount > 0) {
+            // Clamp separation to prevent explosion
+            const sepLength = Math.sqrt(separation.x * separation.x + separation.z * separation.z);
+            if (sepLength > ZOMBIE_MAX_SEPARATION_PER_FRAME) {
+              separation.x = (separation.x / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
+              separation.z = (separation.z / sepLength) * ZOMBIE_MAX_SEPARATION_PER_FRAME;
+            }
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.debug(`[ZOMBIE SEPARATION] Zombie ${zombie.id}: ${neighborCount} neighbors, separation applied`);
+            }
           }
         }
         separation.y = 0; // CRITICAL: No vertical component
@@ -736,78 +765,98 @@ export class ZombieManager {
           chaseMove.z + separation.z
         );
 
-        // 3. Apply wall collision with swept collision using substeps
-        // This prevents clipping through walls when movement distance is large
+        // 3. Apply wall collision
+        // For doorway targets: use direct combined XZ movement, stop if blocked (no sliding)
+        // For normal chase: use separate X/Z sliding
         if (mapObjects.length > 0) {
-          const moveLength = Math.sqrt(totalMove.x * totalMove.x + totalMove.z * totalMove.z);
-          const numSteps = Math.min(
-            Math.ceil(moveLength / ZOMBIE_MAX_STEP_SIZE),
-            ZOMBIE_MAX_SUBSTEPS
-          );
-          
-          if (numSteps > 1) {
-            // Substep the movement to prevent clipping
-            const stepMove = totalMove.clone().divideScalar(numSteps);
+          if (isTargetingDoorway) {
+            // DOORWAY TUNNEL MODE: Direct combined XZ movement, stop if blocked
+            const nextPos = zombie.position.clone();
+            nextPos.x += totalMove.x;
+            nextPos.z += totalMove.z;
+            nextPos.y = oldY;
+
+            // Use ignoreOpenDoors=true so open doors don't block zombies
+            if (!this.collidesWithWalls2D(nextPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true)) {
+              zombie.position.x = nextPos.x;
+              zombie.position.z = nextPos.z;
+            } else {
+              // Blocked: stop instead of sliding sideways
+              zombie.position.x = oldPos.x;
+              zombie.position.z = oldPos.z;
+            }
+          } else {
+            // NORMAL CHASE MODE: Separate X/Z sliding with substeps
+            const moveLength = Math.sqrt(totalMove.x * totalMove.x + totalMove.z * totalMove.z);
+            const numSteps = Math.min(
+              Math.ceil(moveLength / ZOMBIE_MAX_STEP_SIZE),
+              ZOMBIE_MAX_SUBSTEPS
+            );
             
-            for (let step = 0; step < numSteps; step++) {
-              // Try X movement for this substep
+            if (numSteps > 1) {
+              // Substep the movement to prevent clipping
+              const stepMove = totalMove.clone().divideScalar(numSteps);
+              
+              for (let step = 0; step < numSteps; step++) {
+                // Try X movement for this substep
+                attemptX.copy(zombie.position);
+                attemptX.x += stepMove.x;
+                attemptX.y = oldY; // Lock Y
+                  
+                if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+                  zombie.position.x = attemptX.x;
+                }
+
+                // Try Z movement for this substep
+                attemptZ.copy(zombie.position);
+                attemptZ.z += stepMove.z;
+                attemptZ.y = oldY; // Lock Y
+                  
+                if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+                  zombie.position.z = attemptZ.z;
+                }
+              }
+            } else {
+              // Single step movement (original behavior for small moves)
+              // Try X movement first
               attemptX.copy(zombie.position);
-              attemptX.x += stepMove.x;
+              attemptX.x += totalMove.x;
               attemptX.y = oldY; // Lock Y
-                
+              
               if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
                 zombie.position.x = attemptX.x;
               }
 
-              // Try Z movement for this substep
+              // Try Z movement from current position (after X was potentially applied)
               attemptZ.copy(zombie.position);
-              attemptZ.z += stepMove.z;
+              attemptZ.z += totalMove.z;
               attemptZ.y = oldY; // Lock Y
-                
+              
               if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
                 zombie.position.z = attemptZ.z;
               }
             }
-          } else {
-            // Single step movement (original behavior for small moves)
-            // Try X movement first
-            attemptX.copy(zombie.position);
-            attemptX.x += totalMove.x;
-            attemptX.y = oldY; // Lock Y
-            
-            if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-              zombie.position.x = attemptX.x;
+
+            // Final collision check: if final position still collides, revert to old position
+            // This handles corner cases where separate X/Z movement allows slipping around corners
+            const finalPos = new THREE.Vector3(zombie.position.x, oldY, zombie.position.z);
+            if (this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
+              zombie.position.x = oldPos.x;
+              zombie.position.z = oldPos.z;
             }
 
-            // Try Z movement from current position (after X was potentially applied)
-            attemptZ.copy(zombie.position);
-            attemptZ.z += totalMove.z;
-            attemptZ.y = oldY; // Lock Y
-            
-            if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-              zombie.position.z = attemptZ.z;
+            // Clip debug warning (only when clipping actually happens)
+            const clippedThroughWall = this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects) && 
+                                       (Math.abs(zombie.position.x - oldPos.x) > 0.01 || Math.abs(zombie.position.z - oldPos.z) > 0.01);
+            if (clippedThroughWall) {
+              console.warn('[ZOMBIE CLIP DEBUG]', {
+                zombieId: zombie.id,
+                oldPosition: oldPos.clone(),
+                attemptedPosition: finalPos.clone(),
+                finalPosition: zombie.position.clone(),
+                wallColliderType: 'wall/door/prop'
+              });
             }
-          }
-
-          // Final collision check: if final position still collides, revert to old position
-          // This handles corner cases where separate X/Z movement allows slipping around corners
-          const finalPos = new THREE.Vector3(zombie.position.x, oldY, zombie.position.z);
-          if (this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-            zombie.position.x = oldPos.x;
-            zombie.position.z = oldPos.z;
-          }
-
-          // Clip debug warning (only when clipping actually happens)
-          const clippedThroughWall = this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects) && 
-                                     (Math.abs(zombie.position.x - oldPos.x) > 0.01 || Math.abs(zombie.position.z - oldPos.z) > 0.01);
-          if (clippedThroughWall) {
-            console.warn('[ZOMBIE CLIP DEBUG]', {
-              zombieId: zombie.id,
-              oldPosition: oldPos.clone(),
-              attemptedPosition: finalPos.clone(),
-              finalPosition: zombie.position.clone(),
-              wallColliderType: 'wall/door/prop'
-            });
           }
         } else {
           // No map objects, apply movement directly
