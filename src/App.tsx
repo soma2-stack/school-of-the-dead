@@ -277,7 +277,7 @@ export default function App() {
     
     // 4. Reset points to 500
     const pointsManager = getPointsManager();
-    pointsManager.setPlayerPoints('player1', 500);
+    pointsManager.registerPlayer('player1');
     pointsManager.resetPointMultiplier();
     
     // 5. Reset weapon (cancel reload, refill ammo)
