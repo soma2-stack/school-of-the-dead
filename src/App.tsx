@@ -2281,44 +2281,55 @@ export default function App() {
             <div className="text-xl text-gray-400 font-mono mb-6">Final Points: {getPointsManager().getPoints('player1')}</div>
             <button
               onClick={() => {
-                // Reset health
+                // 1. Clear countdown/timers first
+                if (autoStartTimeoutRef.current) {
+                  clearTimeout(autoStartTimeoutRef.current);
+                  autoStartTimeoutRef.current = null;
+                }
+                if (roundBannerTimerRef.current) {
+                  clearInterval(roundBannerTimerRef.current);
+                  roundBannerTimerRef.current = null;
+                }
+                
+                // 2. Clear all zombies immediately
+                const zombieManager = getZombieManager();
+                zombieManager.clearAllZombies();
+                
+                // 3. Reset power-ups (pickups and effects)
+                const powerUpManager = getPowerUpManager();
+                powerUpManager.destroy();
+                
+                // 4. Reset points to 500
+                const pointsManager = getPointsManager();
+                pointsManager.setPlayerPoints('player1', 500);
+                
+                // 5. Reset weapon (refill ammo)
+                const weaponManager = getWeaponManager();
+                weaponManager.refillAmmo();
+                
+                // 6. Reset health/death state
                 setCurrentHealth(100);
                 currentHealthRef.current = 100;
                 setIsDead(false);
                 isDeadRef.current = false;
+                setShowDamageFlash(false);
                 
-                // Reset points to 500
-                const pointsManager = getPointsManager();
-                pointsManager.setPlayerPoints('player1', 500);
-                
-                // Refill weapon ammo
-                const weaponManager = getWeaponManager();
-                weaponManager.refillAmmo();
-                
-                // Clear all zombies
-                const zombieManager = getZombieManager();
-                zombieManager.clearAllZombies();
-                
-                // Clear power-up pickups and reset effects
-                const powerUpManager = getPowerUpManager();
-                powerUpManager.destroy();
-                
-                // Reset round manager to round 1 idle
+                // 7. Reset round manager to idle
                 const roundManager = getRoundManager();
                 roundManager.reset();
                 
-                // Clear old banner/HUD state
+                // 8. Reset UI state
+                setRoundState({
+                  round: 1,
+                  zombiesAlive: 0,
+                  spawnStatus: 'idle'
+                });
                 setRoundBannerMessage('ROUND 1 STARTING IN');
                 setRoundBannerCountdown(5);
                 setRoundBannerColor('#ff0000');
                 
-                // Start Round 1 with 5-second countdown
-                if (autoStartTimeoutRef.current) {
-                  clearTimeout(autoStartTimeoutRef.current);
-                }
-                if (roundBannerTimerRef.current) {
-                  clearInterval(roundBannerTimerRef.current);
-                }
+                // 9. Reset auto-start flag and start fresh 5-second countdown
+                hasAutoStartedRoundRef.current = false;
                 
                 autoStartTimeoutRef.current = setTimeout(() => {
                   if (roundManager.getState() === 'idle') {

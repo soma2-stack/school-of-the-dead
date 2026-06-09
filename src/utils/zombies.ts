@@ -154,6 +154,7 @@ export class ZombieManager {
   private zombies: Map<string, Zombie>;
   private spawnPoints: ZombieSpawnPoint[];
   private scene: THREE.Scene | null;
+  private spawnTimeoutIds: ReturnType<typeof setTimeout>[] = [];
   
   // Event callbacks
   private onSpawnCallbacks: ZombieEventCallback[] = [];
@@ -498,10 +499,11 @@ export class ZombieManager {
     
     for (let i = 0; i < count; i++) {
       // Stagger spawns slightly
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         const zombie = this.spawnZombie();
         if (zombie) spawned.push(zombie);
       }, i * 200);
+      this.spawnTimeoutIds.push(timeoutId);
     }
 
     return spawned;
@@ -1746,8 +1748,16 @@ export class ZombieManager {
   }
 
   clearAllZombies(): void {
+    // Cancel all pending spawn timeouts
+    this.spawnTimeoutIds.forEach(timeoutId => clearTimeout(timeoutId));
+    this.spawnTimeoutIds = [];
+    
+    // Remove all zombie meshes and collision helpers
     const zombieIds = Array.from(this.zombies.keys());
     zombieIds.forEach(id => this.removeZombie(id));
+    
+    // Clear particles
+    this.clearParticles();
   }
 
   // ==========================================================================
