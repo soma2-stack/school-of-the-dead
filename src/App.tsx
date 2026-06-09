@@ -1437,7 +1437,7 @@ export default function App() {
     setStairDebugData(stairDebugDataArray);
 
     // Create wall collider debug visualization helpers (red wireframes)
-    const wallColliderHelpers: THREE.Mesh[] = [];
+    const wallColliderHelpers: THREE.Object3D[] = [];
     if (showWallColliders) {
       wallColliderMeshes.forEach(wallMesh => {
         const box = new THREE.Box3().setFromObject(wallMesh);
