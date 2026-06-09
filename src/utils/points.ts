@@ -549,6 +549,14 @@ export class PlayerPointsManager {
       netGain: player.totalEarned - player.totalSpent,
     };
   }
+
+  /**
+   * Reset the point multiplier (for Double Points power-up)
+   */
+  resetPointMultiplier(): void {
+    this.pointMultiplier = 1;
+    this.multiplierEndTime = 0;
+  }
 }
 
 // ============================================================================

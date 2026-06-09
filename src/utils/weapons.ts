@@ -267,6 +267,31 @@ export class WeaponManager {
   }
 
   // ==========================================================================
+  // Reset Weapon (for restart)
+  // ==========================================================================
+
+  resetWeapon(): void {
+    // Cancel any active reload timeout safely
+    if (this.weapon.reloadTimeoutId) {
+      clearTimeout(this.weapon.reloadTimeoutId);
+      this.weapon.reloadTimeoutId = null;
+    }
+
+    // Cancel reload state
+    this.weapon.isReloading = false;
+
+    // Fill current magazine to max
+    this.weapon.currentMagazine = this.weapon.config.magazineSize;
+    
+    // Refill reserve ammo to max
+    this.weapon.reserveAmmo = this.weapon.config.maxReserveAmmo;
+
+    if (window.DEBUG_VERBOSE) {
+      console.log(`[WEAPON] Weapon reset! Magazine: ${this.weapon.currentMagazine}/${this.weapon.reserveAmmo}`);
+    }
+  }
+
+  // ==========================================================================
   // Refill Ammo (for testing/debug)
   // ==========================================================================
 

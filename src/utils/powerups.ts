@@ -653,6 +653,15 @@ export class PowerUpManager {
     this.instaKillEndTime = 0;
   }
 
+  reset(): void {
+    for (const [id, pickup] of this.pickups.entries()) {
+      this.removePickup(id);
+    }
+    this.pickups.clear();
+    this.instaKillActive = false;
+    this.instaKillEndTime = 0;
+  }
+
   // ==========================================================================
   // Get Active Power-Ups for HUD
   // ==========================================================================
