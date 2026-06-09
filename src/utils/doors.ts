@@ -570,6 +570,16 @@ export class DoorManager {
   }
 
   /**
+   * Reset all doors for game restart - fully restore to initial state
+   */
+  resetAllDoors(): void {
+    this.doors.forEach(door => {
+      door.isOpen = false;
+    });
+    this.currentInteractedDoor = null;
+  }
+
+  /**
    * Cleanup
    */
   destroy(): void {

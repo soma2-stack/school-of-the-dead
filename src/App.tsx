@@ -295,7 +295,42 @@ export default function App() {
     const roundManager = getRoundManager();
     roundManager.reset();
     
-    // 8. Reset UI state
+    // 8. Reset doors (DoorManager)
+    const doorManager = getDoorManager();
+    doorManager.resetAllDoors();
+    
+    // 9. Reset doors (runtime meshes/colliders)
+    doorsRef.current.forEach(door => {
+      door.unlocked = false;
+      door.isOpen = false;
+      door.isPurchased = false;
+
+      if (door.mesh) {
+        door.mesh.visible = true;
+      }
+
+      if (door.collider) {
+        door.collider.visible = true;
+        door.collider.userData.isOpen = false;
+        door.collider.userData.blocksZombies = true;
+        door.collider.userData.isCollidable = true;
+      }
+    });
+    
+    // 10. Reset player position to spawn
+    playerPos.current.set(0, PLAYER_EYE_HEIGHT, -30);
+    velocityY.current = 0;
+    isGrounded.current = true;
+    
+    if (cameraRef.current) {
+      cameraRef.current.position.copy(playerPos.current);
+    }
+    
+    // Optional: reset view direction to default
+    yaw.current = Math.PI;
+    pitch.current = 0;
+    
+    // 11. Reset UI state
     setRoundState({
       round: 1,
       zombiesAlive: 0,
@@ -305,7 +340,7 @@ export default function App() {
     setRoundBannerCountdown(5);
     setRoundBannerColor('#ff0000');
     
-    // 9. Reset auto-start flag and start fresh 5-second countdown
+    // 12. Reset auto-start flag and start fresh 5-second countdown
     hasAutoStartedRoundRef.current = false;
     
     autoStartTimeoutRef.current = setTimeout(() => {
