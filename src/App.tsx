@@ -256,6 +256,81 @@ export default function App() {
     roundState,
   });
 
+  const handleRestartRun = () => {
+    // 1. Clear countdown/timers first
+    if (autoStartTimeoutRef.current) {
+      clearTimeout(autoStartTimeoutRef.current);
+      autoStartTimeoutRef.current = null;
+    }
+    if (roundBannerTimerRef.current) {
+      clearInterval(roundBannerTimerRef.current);
+      roundBannerTimerRef.current = null;
+    }
+    
+    // 2. Clear all zombies immediately
+    const zombieManager = getZombieManager();
+    zombieManager.clearAllZombies();
+    
+    // 3. Reset power-ups (pickups and effects)
+    const powerUpManager = getPowerUpManager();
+    powerUpManager.reset();
+    
+    // 4. Reset points to 500
+    const pointsManager = getPointsManager();
+    pointsManager.registerPlayer('player1');
+    pointsManager.resetPointMultiplier();
+    
+    // 5. Reset weapon (cancel reload, refill ammo)
+    const weaponManager = getWeaponManager();
+    weaponManager.resetWeapon();
+    
+    // 6. Reset health/death state
+    setCurrentHealth(100);
+    currentHealthRef.current = 100;
+    setIsDead(false);
+    isDeadRef.current = false;
+    setShowDamageFlash(false);
+    
+    // 7. Reset round manager to idle
+    const roundManager = getRoundManager();
+    roundManager.reset();
+    
+    // 8. Reset UI state
+    setRoundState({
+      round: 1,
+      zombiesAlive: 0,
+      spawnStatus: 'idle'
+    });
+    setRoundBannerMessage('ROUND 1 STARTING IN');
+    setRoundBannerCountdown(5);
+    setRoundBannerColor('#ff0000');
+    
+    // 9. Reset auto-start flag and start fresh 5-second countdown
+    hasAutoStartedRoundRef.current = false;
+    
+    autoStartTimeoutRef.current = setTimeout(() => {
+      if (roundManager.getState() === 'idle') {
+        logger.rounds.info('Auto-starting Round 1 after restart');
+        roundManager.startRound();
+      }
+      autoStartTimeoutRef.current = null;
+    }, 5000);
+    
+    roundBannerTimerRef.current = setInterval(() => {
+      setRoundBannerCountdown(prev => {
+        const next = (prev ?? 5) - 1;
+        if (next <= 0) {
+          if (roundBannerTimerRef.current) {
+            clearInterval(roundBannerTimerRef.current);
+            roundBannerTimerRef.current = null;
+          }
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const mount = mountRef.current;
@@ -729,6 +804,7 @@ export default function App() {
         if (newHealth <= 0) {
           isDeadRef.current = true;
           setIsDead(true);
+          playSound('game_over');
         }
         
         return newHealth;
@@ -1361,7 +1437,7 @@ export default function App() {
     setStairDebugData(stairDebugDataArray);
 
     // Create wall collider debug visualization helpers (red wireframes)
-    const wallColliderHelpers: THREE.Mesh[] = [];
+    const wallColliderHelpers: THREE.Object3D[] = [];
     if (showWallColliders) {
       wallColliderMeshes.forEach(wallMesh => {
         const box = new THREE.Box3().setFromObject(wallMesh);
@@ -1475,10 +1551,7 @@ export default function App() {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(0, 0), cameraRef.current);
       
-      // Play pistol shot sound
-      playSound('pistol_shot');
-      
-      // Use weapon manager to fire
+      // Use weapon manager to fire (weapon manager plays the pistol shot sound internally)
       logger.input.info('Calling weaponManager.fire()');
       const result = weaponManager.fire(raycaster, zombieManager, 'player1');
       
@@ -2278,8 +2351,15 @@ export default function App() {
       {isDead && (
         <div className="absolute inset-0 flex items-center justify-center z-[999999] bg-black/80">
           <div className="text-center">
-            <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">YOU DIED</div>
-            <div className="text-xl text-gray-400 font-mono">Refresh to restart</div>
+            <div className="text-6xl font-bold text-red-600 mb-4 font-mono tracking-widest">GAME OVER</div>
+            <div className="text-xl text-gray-400 font-mono mb-2">Round Reached: {roundState.round}</div>
+            <div className="text-xl text-gray-400 font-mono mb-6">Final Points: {getPointsManager().getPoints('player1')}</div>
+            <button
+              onClick={handleRestartRun}
+              className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-bold font-mono text-lg rounded cursor-pointer transition-colors"
+            >
+              RESTART
+            </button>
           </div>
         </div>
       )}
