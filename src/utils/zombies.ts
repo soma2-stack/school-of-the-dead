@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
 import { logger } from './logger';
-import { INITIAL_ROOMS, ROOM_GAPS, type Room } from '../game/mapConfig';
+import { INITIAL_ROOMS, ROOM_GAPS, type Room, getStaircaseElevation } from '../game/mapConfig';
 import { playSound } from './audio';
 
 // ============================================================================
@@ -637,7 +637,7 @@ export class ZombieManager {
     // Update collision helper visibility based on debug toggle
     if (zombie.collisionHelper) {
       zombie.collisionHelper.position.copy(zombie.position);
-      zombie.collisionHelper.position.y += zombie.config.height / 2;
+      zombie.collisionHelper.position.y = zombie.position.y + zombie.config.height / 2;
       zombie.collisionHelper.visible = SHOW_WALL_COLLIDERS;
     }
 
@@ -728,6 +728,39 @@ export class ZombieManager {
       
       zombie.currentRoomId = zombieRoom?.id;
       
+      // Check if zombie is on a staircase/ramp
+      const zombieOnStair = zombieRoom?.isStaircase ?? false;
+      const playerOnStair = playerRoom?.isStaircase ?? false;
+      
+      // Track effective stair state (updated after movement for teleport guard)
+      let effectiveZombieOnStair = zombieOnStair;
+      
+      // Track stair-stuck time for recovery (zombie at bottom of stairs, player on different floor)
+      if (!zombieOnStair && playerOnStair && zombieRoom && playerRoom) {
+        // Zombie is not on stairs but player is - check if zombie should be climbing
+        const zombieFloorY = zombieRoom.floorY ?? 0;
+        const playerExpectedY = getStaircaseElevation(playerRoom, playerPosition.x, playerPosition.z);
+        const floorDifference = Math.abs(playerExpectedY - zombieFloorY);
+        
+        // If there's significant elevation difference and zombie is near stairwell entrance
+        if (floorDifference > 2.0) {
+          // Check if zombie is close to the stairwell room boundary
+          const dxToStair = Math.abs(zombie.position.x - playerRoom.cx);
+          const dzToStair = Math.abs(zombie.position.z - playerRoom.cz);
+          const nearStairEntrance = dxToStair < playerRoom.w / 2 + 3 && dzToStair < playerRoom.d / 2 + 3;
+          
+          if (nearStairEntrance) {
+            (zombie as any)._stairStuckTime = ((zombie as any)._stairStuckTime || 0) + deltaTime;
+          } else {
+            (zombie as any)._stairStuckTime = 0;
+          }
+        } else {
+          (zombie as any)._stairStuckTime = 0;
+        }
+      } else {
+        (zombie as any)._stairStuckTime = 0;
+      }
+      
       // Determine target position based on room relationship with two-stage doorway traversal
       let targetPosition: THREE.Vector3;
       let targetType: 'player' | 'doorway' = 'player';
@@ -817,7 +850,24 @@ export class ZombieManager {
       // Doorway zombies should either move forward or stop/bunch, not nudge around
       const isTargetingDoorway = targetType === 'doorway';
 
-      if (!isMoving && zombie.state === 'alive' && !isTargetingDoorway) {
+      // Check for stair-stuck scenario (zombie at bottom of stairs while player is upstairs)
+      const stairStuckTime = (zombie as any)._stairStuckTime || 0;
+      const isStairStuck = stairStuckTime > 3.0; // 3 second threshold
+      
+      if (isStairStuck && !zombieOnStair && playerOnStair) {
+        // Zombie has been stuck near stair entrance for too long - apply gradual step-up
+        // This helps zombies climb stairs when they're blocked by the elevation change
+        const stairStepAmount = Math.min(0.15 * deltaTime, 2.0); // Gradual climb, max 2 units total
+        const targetStairY = getStaircaseElevation(playerRoom!, playerPosition.x, playerPosition.z);
+        
+        // Only allow stepping up toward the player's elevation
+        if (zombie.position.y < targetStairY - 0.5) {
+          zombie.position.y += stairStepAmount;
+          logger.zombies.debug(`[ZOMBIE STAIR CLIMB] Zombie ${zombie.id} stepping up: y=${zombie.position.y.toFixed(2)}, target=${targetStairY.toFixed(2)}`);
+        }
+      }
+
+      if (!isMoving && zombie.state === 'alive' && !isTargetingDoorway && !isStairStuck) {
         zombie.stuckTimer += deltaTime;
         if (zombie.stuckTimer > ZOMBIE_STUCK_THRESHOLD) {
           logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
@@ -1089,7 +1139,25 @@ export class ZombieManager {
         }
 
         // 4. Lock Y to ground height - CRITICAL: Never allow wall collision to change Y
-        const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        // STAIR CLIMBING FIX: When on stairs or player is on stairs, use staircase elevation
+        
+        // Recompute room and stair state at NEW position after movement
+        const updatedZombieRoom = this.getRoomAtPos(zombie.position.x, zombie.position.z, zombie.position.y);
+        const updatedZombieOnStair = updatedZombieRoom?.isStaircase ?? false;
+        
+        // Update effective stair state for teleport guard
+        effectiveZombieOnStair = updatedZombieOnStair;
+        
+        let groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        
+        // Check if zombie is currently on a stair/ramp and adjust Y accordingly
+        if (updatedZombieOnStair && updatedZombieRoom) {
+          const stairY = getStaircaseElevation(updatedZombieRoom, zombie.position.x, zombie.position.z);
+          // Only apply stair elevation if it's higher than base ground (prevents sinking)
+          if (stairY > groundY - 0.1) {
+            groundY = stairY;
+          }
+        }
         
         // Debug log for Y position (debug mode only)
         if (window.DEBUG_VERBOSE) {
@@ -1097,16 +1165,19 @@ export class ZombieManager {
             id: zombie.id,
             oldY: oldY.toFixed(3),
             computedGroundY: groundY.toFixed(3),
-            newPositionY: zombie.position.y.toFixed(3)
+            newPositionY: zombie.position.y.toFixed(3),
+            zombieOnStair: updatedZombieOnStair,
+            playerOnStair
           });
         }
         
         zombie.position.y = groundY;
 
-        // Safety check: reject any vertical climbing
-        if (Math.abs(zombie.position.y - oldY) > 0.2) {
+        // Safety check: reject any vertical climbing (but allow stair climbing)
+        const maxYChange = updatedZombieOnStair ? 0.5 : 0.2; // Allow larger steps on stairs
+        if (Math.abs(zombie.position.y - oldY) > maxYChange) {
           logger.zombies.warn(`[ZOMBIE COLLISION] rejected vertical climb for zombie ${zombie.id}: oldY=${oldY.toFixed(2)}, newY=${zombie.position.y.toFixed(2)}`);
-          zombie.position.y = groundY;
+          zombie.position.y = oldY;
         }
 
         // Note: Mesh sync moved to END of zombie update to handle all behavior modes
@@ -1115,15 +1186,30 @@ export class ZombieManager {
       // TELEPORT GUARD: Detect and block any unauthorized position changes
       // Zombies should only move by normal speed-based movement, not teleport
       const movedDistance = zombie.position.distanceTo(oldPos);
-      const maxAllowedMove = zombie.config.speed * deltaTime + ZOMBIE_TELEPORT_GUARD_MARGIN;
+      const maxAllowedMove = zombie.config.speed * deltaTime + ZOMBIE_TELEPORT_GUARD_MARGIN + 0.2; // Add extra margin for stair climbing
+      
+      // Use updated stair state for teleport guard (zombie may have just stepped onto stairs)
+      // effectiveZombieOnStair was already set after recomputing room position
+      
+      // For zombies on stairs or climbing stairs, allow more vertical movement
+      const totalMovement3D = Math.sqrt(
+        Math.pow(zombie.position.x - oldPos.x, 2) +
+        Math.pow(zombie.position.y - oldPos.y, 2) +
+        Math.pow(zombie.position.z - oldPos.z, 2)
+      );
+      const maxAllowed3D = effectiveZombieOnStair || isStairStuck ? 
+        Math.sqrt(Math.pow(maxAllowedMove, 2) + Math.pow(0.5, 2)) : // Extra Y allowance for stairs
+        maxAllowedMove + 0.15;
 
-      if (movedDistance > maxAllowedMove) {
+      if (totalMovement3D > maxAllowed3D) {
         logger.zombies.error('[ZOMBIE TELEPORT BLOCKED]', {
           zombieId: zombie.id,
           oldPos: oldPos.clone(),
           attemptedPos: zombie.position.clone(),
-          movedDistance: movedDistance.toFixed(3),
-          maxAllowedMove: maxAllowedMove.toFixed(3)
+          movedDistance: totalMovement3D.toFixed(3),
+          maxAllowedMove: maxAllowed3D.toFixed(3),
+          effectiveZombieOnStair,
+          isStairStuck
         });
         // Revert to old position - this was an illegal teleport
         zombie.position.copy(oldPos);
@@ -1145,9 +1231,8 @@ export class ZombieManager {
       // This ensures visual mesh always matches logical position regardless of behavior mode
       // (chase, attack, stuck recovery, etc.)
       if (zombie.mesh) {
-        const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
         zombie.mesh.position.copy(zombie.position);
-        zombie.mesh.position.y = groundY + zombie.config.height / 2;
+        zombie.mesh.position.y = zombie.position.y + zombie.config.height / 2;
         zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
         
         // Desync check (only warn in debug mode)
