@@ -1044,7 +1044,6 @@ export default function App() {
     // Mapping from raycast doorway IDs to DoorManager IDs
     // This ensures the prompt system only shows purchasable doors that DoorManager recognizes
     const RAYCAST_TO_DOORMANAGER_ID: Record<string, string> = {
-      'starter_N_0': 'starter_classroom_door',
       'science_lab_S_0': 'hallway_science_lab_door',
       'library_S_0': 'hallway_library_door',
       'cafeteria_E_0': 'hallway_cafeteria_door',

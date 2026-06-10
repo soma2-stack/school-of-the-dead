@@ -88,18 +88,9 @@ export interface DoorEventData {
 // ============================================================================
 
 export const DEFAULT_DOORS: BuyableDoorConfig[] = [
-  {
-    id: 'starter_classroom_door',
-    name: 'Starter Classroom Door',
-    cost: 750,
-    // Starter Classroom: cx=17.5, cz=-40, w=75, d=60
-    // N wall at z = -40 + 30 = -10, gap center at x=0 (world coords)
-    position: { x: 0, y: 1.5, z: -10 },
-    width: 6,
-    height: 3,
-    connectedRoomId: 'hallway',
-    isOpen: false,
-  },
+  // NOTE: Starter classroom doorway is intentionally NOT a buyable door.
+  // It is an open passage that zombies and players can freely pass through.
+  // Only add doors here that should be locked/buyable at round start.
   {
     id: 'hallway_science_lab_door',
     name: 'Science Lab Door',

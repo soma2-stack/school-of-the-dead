@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { getPointsManager } from './points';
 import { getRoundManager } from './rounds';
 import { logger } from './logger';
-import { INITIAL_ROOMS, ROOM_GAPS, type Room } from '../game/mapConfig';
+import { INITIAL_ROOMS, ROOM_GAPS, type Room, getStaircaseElevation } from '../game/mapConfig';
 import { playSound } from './audio';
 
 // ============================================================================
@@ -39,7 +39,9 @@ export const ZOMBIE_STUCK_RECOVERY_MAX_DISTANCE = 0.25; // Maximum nudge distanc
 export const ZOMBIE_TELEPORT_GUARD_MARGIN = 0.3; // Extra margin for teleport detection
 
 // Doorway pathing configuration
-export const ZOMBIE_DOORWAY_OFFSET = 1.5; // Offset from wall for doorway entry/exit targets
+export const ZOMBIE_DOORWAY_OFFSET = 2.0; // Offset from wall for doorway entry/exit targets (increased from 1.5)
+export const ZOMBIE_DOORWAY_OUTSIDE_OFFSET = 2.0; // Offset outside the room for pass-through targets (increased from 1.0)
+export const ZOMBIE_DOORWAY_ARRIVAL_DIST = 1.5; // Distance at which doorway is considered "reached"
 
 // Debug configuration
 export let SHOW_WALL_COLLIDERS = false;
@@ -637,7 +639,7 @@ export class ZombieManager {
     // Update collision helper visibility based on debug toggle
     if (zombie.collisionHelper) {
       zombie.collisionHelper.position.copy(zombie.position);
-      zombie.collisionHelper.position.y += zombie.config.height / 2;
+      zombie.collisionHelper.position.y = zombie.position.y + zombie.config.height / 2;
       zombie.collisionHelper.visible = SHOW_WALL_COLLIDERS;
     }
 
@@ -728,42 +730,187 @@ export class ZombieManager {
       
       zombie.currentRoomId = zombieRoom?.id;
       
+      // Check if zombie is on a staircase/ramp
+      const zombieOnStair = zombieRoom?.isStaircase ?? false;
+      const playerOnStair = playerRoom?.isStaircase ?? false;
+      
+      // Track effective stair state (updated after movement for teleport guard)
+      let effectiveZombieOnStair = zombieOnStair;
+      
+      // Calculate floor difference for upstairs detection
+      const zombieFloorY = zombieRoom?.floorY ?? 0;
+      const playerFloorY = playerRoom?.floorY ?? playerPosition.y;
+      const playerIsAboveZombie = playerFloorY > zombieFloorY + 2 || playerPosition.y > zombie.position.y + 2;
+      
+      // Track stair-stuck time for recovery (zombie at bottom of stairs, player on different floor)
+      if (!zombieOnStair && playerOnStair && zombieRoom && playerRoom) {
+        // Zombie is not on stairs but player is - check if zombie should be climbing
+        const zombieFloorY = zombieRoom.floorY ?? 0;
+        const playerExpectedY = getStaircaseElevation(playerRoom, playerPosition.x, playerPosition.z);
+        const floorDifference = Math.abs(playerExpectedY - zombieFloorY);
+        
+        // If there's significant elevation difference and zombie is near stairwell entrance
+        if (floorDifference > 2.0) {
+          // Check if zombie is close to the stairwell room boundary
+          const dxToStair = Math.abs(zombie.position.x - playerRoom.cx);
+          const dzToStair = Math.abs(zombie.position.z - playerRoom.cz);
+          const nearStairEntrance = dxToStair < playerRoom.w / 2 + 3 && dzToStair < playerRoom.d / 2 + 3;
+          
+          if (nearStairEntrance) {
+            (zombie as any)._stairStuckTime = ((zombie as any)._stairStuckTime || 0) + deltaTime;
+          } else {
+            (zombie as any)._stairStuckTime = 0;
+          }
+        } else {
+          (zombie as any)._stairStuckTime = 0;
+        }
+      } else {
+        (zombie as any)._stairStuckTime = 0;
+      }
+      
       // Determine target position based on room relationship with two-stage doorway traversal
       let targetPosition: THREE.Vector3;
       let targetType: 'player' | 'doorway' = 'player';
       let doorwayTarget: THREE.Vector3 | null = null;
-      
-      if (zombieRoom && playerRoom && zombieRoom.id === playerRoom.id) {
-        // Same room: chase player directly
-        targetPosition = playerPosition;
-        targetType = 'player';
-        // Clear doorway target when entering same room as player
-        zombie.doorwayTarget = undefined;
-      } else if (zombieRoom && playerRoom) {
-        // Different rooms: find doorway target toward player (single point, no phases)
+
+      // Special handling for stairs: if player is above zombie and zombie is not in a staircase room,
+      // find the nearest stairwell and target its entrance/doorway
+      const stairRooms = INITIAL_ROOMS.filter(room => room.isStaircase);
+
+      if (playerIsAboveZombie && zombieRoom && !zombieRoom.isStaircase && stairRooms.length > 0) {
+        // Find the best stair room (closest to player's room center or player position)
+        let bestStairRoom = null;
+        let bestDistance = Infinity;
+
+        const refX = playerRoom ? playerRoom.cx : playerPosition.x;
+        const refZ = playerRoom ? playerRoom.cz : playerPosition.z;
+
+        for (const stairRoom of stairRooms) {
+          const dx = stairRoom.cx - refX;
+          const dz = stairRoom.cz - refZ;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < bestDistance) {
+            bestDistance = dist;
+            bestStairRoom = stairRoom;
+          }
+        }
+
+        if (bestStairRoom) {
+          doorwayTarget = this.findDoorwayTarget(zombieRoom, bestStairRoom, mapObjects, zombie.position);
+
+          if (doorwayTarget) {
+            targetPosition = doorwayTarget;
+            targetType = 'doorway';
+            zombie.doorwayTarget = doorwayTarget.clone();
+            zombie.targetRoomId = bestStairRoom.id;
+
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.info('[STAIR PATH] targeting stairwell entrance for upstairs player', {
+                zombieId: zombie.id,
+                zombieRoomId: zombieRoom.id,
+                playerRoomId: playerRoom?.id,
+                playerIsAboveZombie,
+                bestStairRoomId: bestStairRoom.id,
+                doorwayTarget
+              });
+            }
+          } else {
+            // Fallback: target the center of the stair room on zombie's floor instead of chasing through floors
+            targetPosition = new THREE.Vector3(bestStairRoom.cx, zombieFloorY, bestStairRoom.cz);
+            targetType = 'doorway';
+            doorwayTarget = targetPosition.clone();
+            zombie.doorwayTarget = targetPosition.clone();
+            zombie.targetRoomId = bestStairRoom.id;
+            
+            if (window.DEBUG_VERBOSE) {
+              logger.zombies.info('[STAIR PATH] doorway target failed, using stair room center fallback', {
+                zombieId: zombie.id,
+                zombieRoomId: zombieRoom.id,
+                bestStairRoomId: bestStairRoom.id,
+                playerRoomId: playerRoom?.id,
+                fallbackTarget: targetPosition.clone()
+              });
+            }
+          }
+        } else {
+          targetPosition = playerPosition;
+          targetType = 'player';
+        }
+      }
+      // Special handling for staircases: if player is in a staircase room and zombie is not,
+      // target the stairwell entrance/doorway instead of chasing directly through floors
+      else if (playerRoom?.isStaircase && !zombieRoom?.isStaircase && zombieRoom && playerRoom) {
         doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, mapObjects, zombie.position);
-        
+
         if (doorwayTarget) {
           targetPosition = doorwayTarget;
           targetType = 'doorway';
           zombie.doorwayTarget = doorwayTarget.clone();
           zombie.targetRoomId = playerRoom.id;
-          
-          // Track distance to target for stuck detection
-          const distToTarget = zombie.position.distanceTo(doorwayTarget);
-          (zombie as any)._lastDistToTarget = distToTarget;
+
+          if (window.DEBUG_VERBOSE) {
+            logger.zombies.info('[STAIR PATH] targeting stairwell entrance', {
+              zombieId: zombie.id,
+              zombieRoomId: zombieRoom.id,
+              playerRoomId: playerRoom.id,
+              doorwayTarget
+            });
+          }
         } else {
-          // No valid path found - use player position but zombie will be blocked by walls
-          targetPosition = playerPosition;
-          targetType = 'player';
-          zombie.targetRoomId = undefined;
-          zombie.doorwayTarget = undefined;
+          // Fallback: target the center of the stair room on zombie's floor instead of chasing through floors
+          const zombieFloorY = zombieRoom.floorY ?? 0;
+          targetPosition = new THREE.Vector3(playerRoom.cx, zombieFloorY, playerRoom.cz);
+          targetType = 'doorway';
+          doorwayTarget = targetPosition.clone();
+          zombie.doorwayTarget = targetPosition.clone();
+          zombie.targetRoomId = playerRoom.id;
+          
+          if (window.DEBUG_VERBOSE) {
+            logger.zombies.info('[STAIR PATH] stairwell doorway target failed, using stair room center fallback', {
+              zombieId: zombie.id,
+              zombieRoomId: zombieRoom.id,
+              playerRoomId: playerRoom.id,
+              fallbackTarget: targetPosition.clone()
+            });
+          }
         }
-      } else {
-        // Unknown room situation - fall back to player position
+      }
+      // Same room: chase player directly
+      else if (zombieRoom && playerRoom && zombieRoom.id === playerRoom.id) {
         targetPosition = playerPosition;
         targetType = 'player';
         zombie.doorwayTarget = undefined;
+      }
+      // Different rooms: find doorway target toward player
+      else if (zombieRoom && playerRoom) {
+        doorwayTarget = this.findDoorwayTarget(zombieRoom, playerRoom, mapObjects, zombie.position);
+
+        if (doorwayTarget) {
+          targetPosition = doorwayTarget;
+          targetType = 'doorway';
+          zombie.doorwayTarget = doorwayTarget.clone();
+          zombie.targetRoomId = playerRoom.id;
+        } else {
+          // Fallback: target the center of the player's room on zombie's floor instead of chasing through walls
+          const zombieFloorY = zombieRoom.floorY ?? 0;
+          targetPosition = new THREE.Vector3(playerRoom.cx, zombieFloorY, playerRoom.cz);
+          targetType = 'doorway';
+          doorwayTarget = targetPosition.clone();
+          zombie.doorwayTarget = targetPosition.clone();
+          zombie.targetRoomId = playerRoom.id;
+          
+          if (window.DEBUG_VERBOSE) {
+            logger.zombies.info('[ZOMBIE PATH] doorway target failed, using player room center fallback', {
+              zombieId: zombie.id,
+              zombieRoomId: zombieRoom.id,
+              playerRoomId: playerRoom.id,
+              fallbackTarget: targetPosition.clone()
+            });
+          }
+        }
+      } else {
+        targetPosition = playerPosition;
+        targetType = 'player';
       }
       
       // Log target changes only (not every frame)
@@ -808,8 +955,34 @@ export class ZombieManager {
       }
       (zombie as any)._prevDoorwayTarget = doorwayTarget ? doorwayTarget.clone() : null;
 
+      // DOORWAY ARRIVAL FORGIVENESS: If targeting a doorway and close enough, consider it reached
+      // CRITICAL: This must run BEFORE calculating isTargetingDoorway so the flag reflects the updated targetType
+      if (targetType === 'doorway' && doorwayTarget) {
+        const distToDoorwayXZ = Math.sqrt(
+          Math.pow(zombie.position.x - doorwayTarget.x, 2) +
+          Math.pow(zombie.position.z - doorwayTarget.z, 2)
+        );
+
+        if (distToDoorwayXZ < ZOMBIE_DOORWAY_ARRIVAL_DIST) {
+          zombie.doorwayTarget = undefined;
+          zombie.targetRoomId = undefined;
+          doorwayTarget = null;
+          targetType = 'player';
+          targetPosition = playerPosition;
+          
+          if (window.DEBUG_VERBOSE) {
+            logger.zombies.info('[ZOMBIE DOORWAY] arrived at doorway, switching to player chase', {
+              zombieId: zombie.id,
+              zombieRoomId: zombieRoom?.id,
+              playerRoomId: playerRoom?.id,
+              distToDoorway: distToDoorwayXZ
+            });
+          }
+        }
+      }
+
       // --- STUCK DETECTION ---
-      // Must run AFTER targetType is calculated
+      // Must run AFTER targetType is calculated (and after doorway arrival check)
       const distanceMoved = zombie.position.distanceTo(zombie.lastPosition);
       const isMoving = distanceMoved > 0.05;
       
@@ -817,7 +990,12 @@ export class ZombieManager {
       // Doorway zombies should either move forward or stop/bunch, not nudge around
       const isTargetingDoorway = targetType === 'doorway';
 
-      if (!isMoving && zombie.state === 'alive' && !isTargetingDoorway) {
+      // Check for stair-stuck scenario - DISABLED to prevent fake stair climbing.
+      // Zombies were floating upward even when not on stairs, walking through/under stairs
+      // instead of using proper stair climbing via updatedZombieOnStair detection after movement.
+      const isStairStuck = false;
+
+      if (!isMoving && zombie.state === 'alive' && !isTargetingDoorway && !isStairStuck) {
         zombie.stuckTimer += deltaTime;
         if (zombie.stuckTimer > ZOMBIE_STUCK_THRESHOLD) {
           logger.zombies.warn(`[ZOMBIE STUCK] Zombie ${zombie.id} detected stuck. Triggering recovery.`);
@@ -886,6 +1064,7 @@ export class ZombieManager {
         }
       } else {
         // Chase mode: move toward target (player or doorway)
+        // NOTE: Doorway arrival check already ran earlier, so targetType is up-to-date here
         
         // 1. Calculate desired chase movement (XZ plane ONLY)
         chaseMove.subVectors(targetPosition, zombie.position);
@@ -945,24 +1124,73 @@ export class ZombieManager {
         );
 
         // 3. Apply wall collision
-        // For doorway targets: use direct combined XZ movement, stop if blocked (no sliding)
+        // For doorway targets: use direct combined XZ movement with fallback attempts if blocked
         // For normal chase: use separate X/Z sliding
         if (mapObjects.length > 0) {
           if (isTargetingDoorway) {
-            // DOORWAY TUNNEL MODE: Direct combined XZ movement, stop if blocked
-            const nextPos = zombie.position.clone();
-            nextPos.x += totalMove.x;
-            nextPos.z += totalMove.z;
-            nextPos.y = oldY;
+            // DOORWAY TUNNEL MODE: Direct combined XZ movement with fallback attempts
+            const combined = zombie.position.clone();
+            combined.x += totalMove.x;
+            combined.z += totalMove.z;
+            combined.y = oldY;
 
-            // Use ignoreOpenDoors=true so open doors don't block zombies
-            if (!this.collidesWithWalls2D(nextPos, ZOMBIE_COLLISION_RADIUS, mapObjects, true)) {
-              zombie.position.x = nextPos.x;
-              zombie.position.z = nextPos.z;
-            } else {
-              // Blocked: stop instead of sliding sideways
+            // Helper function to try a candidate position
+            const tryDoorwayMove = (candidate: THREE.Vector3): boolean => {
+              if (!this.collidesWithWalls2D(candidate, ZOMBIE_COLLISION_RADIUS, mapObjects, true)) {
+                zombie.position.x = candidate.x;
+                zombie.position.z = candidate.z;
+                return true;
+              }
+              return false;
+            };
+
+            let moved = tryDoorwayMove(combined);
+
+            // Fallback 1: Try X-only movement
+            if (!moved) {
+              const xOnly = zombie.position.clone();
+              xOnly.x += totalMove.x;
+              xOnly.y = oldY;
+              moved = tryDoorwayMove(xOnly);
+            }
+
+            // Fallback 2: Try Z-only movement
+            if (!moved) {
+              const zOnly = zombie.position.clone();
+              zOnly.z += totalMove.z;
+              zOnly.y = oldY;
+              moved = tryDoorwayMove(zOnly);
+            }
+
+            // Fallback 3: Try perpendicular nudges (left/right)
+            if (!moved && doorwayTarget) {
+              const dir = new THREE.Vector3(
+                doorwayTarget.x - zombie.position.x,
+                0,
+                doorwayTarget.z - zombie.position.z
+              ).normalize();
+
+              const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+
+              const left = zombie.position.clone().addScaledVector(perp, 0.25);
+              left.y = oldY;
+              moved = tryDoorwayMove(left);
+
+              if (!moved) {
+                const right = zombie.position.clone().addScaledVector(perp, -0.25);
+                right.y = oldY;
+                moved = tryDoorwayMove(right);
+              }
+            }
+
+            // If all attempts fail, log and stay in place
+            if (!moved) {
               // Add debug logging to identify what's blocking the doorway
               if (window.DEBUG_VERBOSE) {
+                const nextPos = zombie.position.clone();
+                nextPos.x += totalMove.x;
+                nextPos.z += totalMove.z;
+                
                 const blockingObjects: Array<{
                   name: string;
                   colliderType: string;
@@ -1006,8 +1234,7 @@ export class ZombieManager {
                 });
               }
               
-              zombie.position.x = oldPos.x;
-              zombie.position.z = oldPos.z;
+              // Stay in place - do not revert since we never moved
             }
           } else {
             // NORMAL CHASE MODE: Separate X/Z sliding with substeps
@@ -1089,7 +1316,25 @@ export class ZombieManager {
         }
 
         // 4. Lock Y to ground height - CRITICAL: Never allow wall collision to change Y
-        const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        // STAIR CLIMBING FIX: When on stairs or player is on stairs, use staircase elevation
+        
+        // Recompute room and stair state at NEW position after movement
+        const updatedZombieRoom = this.getRoomAtPos(zombie.position.x, zombie.position.z, zombie.position.y);
+        const updatedZombieOnStair = updatedZombieRoom?.isStaircase ?? false;
+        
+        // Update effective stair state for teleport guard
+        effectiveZombieOnStair = updatedZombieOnStair;
+        
+        let groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
+        
+        // Check if zombie is currently on a stair/ramp and adjust Y accordingly
+        if (updatedZombieOnStair && updatedZombieRoom) {
+          const stairY = getStaircaseElevation(updatedZombieRoom, zombie.position.x, zombie.position.z);
+          // Only apply stair elevation if it's higher than base ground (prevents sinking)
+          if (stairY > groundY - 0.1) {
+            groundY = stairY;
+          }
+        }
         
         // Debug log for Y position (debug mode only)
         if (window.DEBUG_VERBOSE) {
@@ -1097,16 +1342,19 @@ export class ZombieManager {
             id: zombie.id,
             oldY: oldY.toFixed(3),
             computedGroundY: groundY.toFixed(3),
-            newPositionY: zombie.position.y.toFixed(3)
+            newPositionY: zombie.position.y.toFixed(3),
+            zombieOnStair: updatedZombieOnStair,
+            playerOnStair
           });
         }
         
         zombie.position.y = groundY;
 
-        // Safety check: reject any vertical climbing
-        if (Math.abs(zombie.position.y - oldY) > 0.2) {
+        // Safety check: reject any vertical climbing (but allow stair climbing)
+        const maxYChange = updatedZombieOnStair ? 0.5 : 0.2; // Allow larger steps on stairs
+        if (Math.abs(zombie.position.y - oldY) > maxYChange) {
           logger.zombies.warn(`[ZOMBIE COLLISION] rejected vertical climb for zombie ${zombie.id}: oldY=${oldY.toFixed(2)}, newY=${zombie.position.y.toFixed(2)}`);
-          zombie.position.y = groundY;
+          zombie.position.y = oldY;
         }
 
         // Note: Mesh sync moved to END of zombie update to handle all behavior modes
@@ -1115,15 +1363,30 @@ export class ZombieManager {
       // TELEPORT GUARD: Detect and block any unauthorized position changes
       // Zombies should only move by normal speed-based movement, not teleport
       const movedDistance = zombie.position.distanceTo(oldPos);
-      const maxAllowedMove = zombie.config.speed * deltaTime + ZOMBIE_TELEPORT_GUARD_MARGIN;
+      const maxAllowedMove = zombie.config.speed * deltaTime + ZOMBIE_TELEPORT_GUARD_MARGIN + 0.2; // Add extra margin for stair climbing
+      
+      // Use updated stair state for teleport guard (zombie may have just stepped onto stairs)
+      // effectiveZombieOnStair was already set after recomputing room position
+      
+      // For zombies on stairs or climbing stairs, allow more vertical movement
+      const totalMovement3D = Math.sqrt(
+        Math.pow(zombie.position.x - oldPos.x, 2) +
+        Math.pow(zombie.position.y - oldPos.y, 2) +
+        Math.pow(zombie.position.z - oldPos.z, 2)
+      );
+      const maxAllowed3D = effectiveZombieOnStair || isStairStuck ? 
+        Math.sqrt(Math.pow(maxAllowedMove, 2) + Math.pow(0.5, 2)) : // Extra Y allowance for stairs
+        maxAllowedMove + 0.15;
 
-      if (movedDistance > maxAllowedMove) {
+      if (totalMovement3D > maxAllowed3D) {
         logger.zombies.error('[ZOMBIE TELEPORT BLOCKED]', {
           zombieId: zombie.id,
           oldPos: oldPos.clone(),
           attemptedPos: zombie.position.clone(),
-          movedDistance: movedDistance.toFixed(3),
-          maxAllowedMove: maxAllowedMove.toFixed(3)
+          movedDistance: totalMovement3D.toFixed(3),
+          maxAllowedMove: maxAllowed3D.toFixed(3),
+          effectiveZombieOnStair,
+          isStairStuck
         });
         // Revert to old position - this was an illegal teleport
         zombie.position.copy(oldPos);
@@ -1145,9 +1408,8 @@ export class ZombieManager {
       // This ensures visual mesh always matches logical position regardless of behavior mode
       // (chase, attack, stuck recovery, etc.)
       if (zombie.mesh) {
-        const groundY = this.getGroundYAtPosition(zombie.position.x, zombie.position.z, mapObjects);
         zombie.mesh.position.copy(zombie.position);
-        zombie.mesh.position.y = groundY + zombie.config.height / 2;
+        zombie.mesh.position.y = zombie.position.y + zombie.config.height / 2;
         zombie.mesh.lookAt(playerPosition.x, zombie.mesh.position.y, playerPosition.z);
         
         // Desync check (only warn in debug mode)
@@ -1420,12 +1682,10 @@ export class ZombieManager {
     }
 
     // Calculate doorway center position using world coordinates
-    // Two-step approach: first target inside-room point, then pass-through point
+    // Match the same convention as App.tsx door placement
     const halfW = zombieRoom.w / 2;
     const halfD = zombieRoom.d / 2;
     const floorY = zombieRoom.floorY ?? 0;
-    const insideOffset = 1.5;  // Offset inside the zombie's room
-    const outsideOffset = 1.0; // Offset outside, past the doorway
     
     let targetX = zombieRoom.cx;
     let targetZ = zombieRoom.cz;
@@ -1439,12 +1699,12 @@ export class ZombieManager {
         doorCenterZ = zombieRoom.cz + halfD;
         
         // Check if zombie is close to the inside target
-        const insideTargetZ = doorCenterZ - insideOffset;
+        const insideTargetZ = doorCenterZ - ZOMBIE_DOORWAY_OFFSET;
         let usePassThrough = false;
         
         if (zombiePos) {
           const distToInside = Math.abs(zombiePos.z - insideTargetZ);
-          if (distToInside < 1.5) {
+          if (distToInside < ZOMBIE_DOORWAY_ARRIVAL_DIST) {
             usePassThrough = true;
           }
         }
@@ -1452,7 +1712,7 @@ export class ZombieManager {
         if (usePassThrough) {
           // Pass-through target: slightly outside the room (north of the wall)
           targetX = doorCenterX;
-          targetZ = doorCenterZ + outsideOffset;
+          targetZ = doorCenterZ + ZOMBIE_DOORWAY_OUTSIDE_OFFSET;
         } else {
           // Inside target: slightly inside the room (south of the wall)
           targetX = doorCenterX;
@@ -1466,12 +1726,12 @@ export class ZombieManager {
         doorCenterZ = zombieRoom.cz - halfD;
         
         // Check if zombie is close to the inside target
-        const insideTargetZ = doorCenterZ + insideOffset;
+        const insideTargetZ = doorCenterZ + ZOMBIE_DOORWAY_OFFSET;
         let usePassThrough = false;
         
         if (zombiePos) {
           const distToInside = Math.abs(zombiePos.z - insideTargetZ);
-          if (distToInside < 1.5) {
+          if (distToInside < ZOMBIE_DOORWAY_ARRIVAL_DIST) {
             usePassThrough = true;
           }
         }
@@ -1479,7 +1739,7 @@ export class ZombieManager {
         if (usePassThrough) {
           // Pass-through target: slightly outside the room (south of the wall)
           targetX = doorCenterX;
-          targetZ = doorCenterZ - outsideOffset;
+          targetZ = doorCenterZ - ZOMBIE_DOORWAY_OUTSIDE_OFFSET;
         } else {
           // Inside target: slightly inside the room (north of the wall)
           targetX = doorCenterX;
@@ -1493,19 +1753,19 @@ export class ZombieManager {
         doorCenterZ = zombieRoom.cz + bestGap.center;
         
         // Check if zombie is close to the inside target
-        const insideTargetX = doorCenterX - insideOffset;
+        const insideTargetX = doorCenterX - ZOMBIE_DOORWAY_OFFSET;
         let usePassThrough = false;
         
         if (zombiePos) {
           const distToInside = Math.abs(zombiePos.x - insideTargetX);
-          if (distToInside < 1.5) {
+          if (distToInside < ZOMBIE_DOORWAY_ARRIVAL_DIST) {
             usePassThrough = true;
           }
         }
         
         if (usePassThrough) {
           // Pass-through target: slightly outside the room (east of the wall)
-          targetX = doorCenterX + outsideOffset;
+          targetX = doorCenterX + ZOMBIE_DOORWAY_OUTSIDE_OFFSET;
           targetZ = doorCenterZ;
         } else {
           // Inside target: slightly inside the room (west of the wall)
@@ -1520,19 +1780,19 @@ export class ZombieManager {
         doorCenterZ = zombieRoom.cz + bestGap.center;
         
         // Check if zombie is close to the inside target
-        const insideTargetX = doorCenterX + insideOffset;
+        const insideTargetX = doorCenterX + ZOMBIE_DOORWAY_OFFSET;
         let usePassThrough = false;
         
         if (zombiePos) {
           const distToInside = Math.abs(zombiePos.x - insideTargetX);
-          if (distToInside < 1.5) {
+          if (distToInside < ZOMBIE_DOORWAY_ARRIVAL_DIST) {
             usePassThrough = true;
           }
         }
         
         if (usePassThrough) {
           // Pass-through target: slightly outside the room (west of the wall)
-          targetX = doorCenterX - outsideOffset;
+          targetX = doorCenterX - ZOMBIE_DOORWAY_OUTSIDE_OFFSET;
           targetZ = doorCenterZ;
         } else {
           // Inside target: slightly inside the room (east of the wall)
@@ -1613,9 +1873,15 @@ export class ZombieManager {
   private checkPlayerCollision(zombie: Zombie, playerPosition: THREE.Vector3): boolean {
     const dx = zombie.position.x - playerPosition.x;
     const dz = zombie.position.z - playerPosition.z;
-    const distance = Math.sqrt(dx * dx + dz * dz);
-    
-    return distance < (zombie.config.radius + 1.0); // Player radius approx 1.0
+    const distXZ = Math.sqrt(dx * dx + dz * dz);
+
+    const verticalDiff = Math.abs(zombie.position.y - playerPosition.y);
+
+    // Zombie can only attack if both X/Z distance AND vertical difference are close enough
+    return (
+      distXZ < (zombie.config.radius + 1.0) &&
+      verticalDiff < 2.2
+    );
   }
 
   private damagePlayer(zombie: Zombie): void {

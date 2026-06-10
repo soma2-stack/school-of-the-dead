@@ -173,10 +173,10 @@ export const ROOM_GAPS: Record<string, RoomGap[]> = {
 // ============================================================================
 // Door Configuration (Generated from ROOM_GAPS)
 // Each gap becomes a purchasable door
+// NOTE: Starter classroom doorway is intentionally excluded - it's an open passage
 // ============================================================================
 
 export const DOORS_CONFIG: DoorConfig[] = [
-  { roomId: 'starter', side: 'N', gapIndex: 0, cost: 750 },
   { roomId: 'hallway', side: 'S', gapIndex: 0, cost: 750 },
   { roomId: 'hallway', side: 'N', gapIndex: 0, cost: 750 },
   { roomId: 'hallway', side: 'N', gapIndex: 1, cost: 750 },
