@@ -1036,6 +1036,9 @@ export default function App() {
       console.log('[DEBUG LIGHTING] Brightness set to:', brightness);
     };
 
+    // Collect all collidable map objects for zombie AI
+    const collidableObjects: THREE.Object3D[] = [];
+
     // ---- DOOR SYSTEM ----
     const doors: RuntimeDoor[] = [];
     doorsRef.current = doors;
@@ -1142,6 +1145,7 @@ export default function App() {
       const collider = new THREE.Mesh(colliderGeom, colliderMat);
       collider.position.copy(doorMesh.position);
       collider.rotation.copy(doorMesh.rotation);
+      collider.name = `door_collider_${door.id}`;
       scene.add(collider);
       collider.userData.colliderType = "door";
       collider.userData.isOpen = door.isOpen; // Sync open state to collider
@@ -1149,6 +1153,7 @@ export default function App() {
       collider.userData.isCollidable = true;
       door.collider = collider;
       doorColliderMap.set(collider, door);
+      collidableObjects.push(collider);
     });
 
     // ---- GEOMETRY BUILDER ----
@@ -1157,9 +1162,6 @@ export default function App() {
     const ft = MAP_CONFIG.floorThickness;
     const doorH = MAP_CONFIG.doorHeight;
 
-    // Collect all collidable map objects for zombie AI
-    const collidableObjects: THREE.Object3D[] = [];
-    
     // Track wall collider meshes for debug visualization
     const wallColliderMeshes: THREE.Mesh[] = [];
     
@@ -1219,6 +1221,7 @@ export default function App() {
                   // No holes, create full strip
                   const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, stripDepth), floorMat);
                   floor.position.set(r.cx, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                  floor.name = `floor_${r.id}_strip_z${currentZ.toFixed(1)}`;
                   floor.receiveShadow = true;
                   floor.userData.isCollidable = true;
                   floor.userData.colliderType = "floor";
@@ -1234,6 +1237,7 @@ export default function App() {
                       const segWidth = hole.xMin - currentX;
                       const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                       floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                      floor.name = `floor_${r.id}_segment_x${(currentX + segWidth / 2).toFixed(1)}_z${(currentZ + stripDepth / 2).toFixed(1)}`;
                       floor.receiveShadow = true;
                       floor.userData.isCollidable = true;
                       floor.userData.colliderType = "floor";
@@ -1248,6 +1252,7 @@ export default function App() {
                     const segWidth = floorXMax - currentX;
                     const floor = new THREE.Mesh(new THREE.BoxGeometry(segWidth, ft, stripDepth), floorMat);
                     floor.position.set(currentX + segWidth / 2, r.floorY - ft / 2, currentZ + stripDepth / 2);
+                    floor.name = `floor_${r.id}_final_segment_x${(currentX + segWidth / 2).toFixed(1)}_z${(currentZ + stripDepth / 2).toFixed(1)}`;
                     floor.receiveShadow = true;
                     floor.userData.isCollidable = true;
                     floor.userData.colliderType = "floor";
@@ -1268,6 +1273,7 @@ export default function App() {
             // No trapdoors, create simple full floor
             const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
             floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+            floor.name = `floor_${r.id}_full`;
             floor.receiveShadow = true;
             floor.userData.isCollidable = true;
             floor.userData.colliderType = "floor";
@@ -1278,6 +1284,7 @@ export default function App() {
           // Standard floor without carvings
           const floor = new THREE.Mesh(new THREE.BoxGeometry(r.w, ft, r.d), floorMat);
           floor.position.set(r.cx, r.floorY - ft / 2, r.cz);
+          floor.name = `floor_${r.id}_standard`;
           floor.receiveShadow = true;
           floor.userData.isCollidable = true;
           floor.userData.colliderType = "floor";
@@ -1290,6 +1297,7 @@ export default function App() {
       if (!r.disabledCeiling) {
         const ceil = new THREE.Mesh(new THREE.BoxGeometry(r.w, ct, r.d), ceilMat);
         ceil.position.set(r.cx, r.floorY + r.h + ct / 2, r.cz);
+        ceil.name = `ceiling_${r.id}`;
         ceil.userData.isCollidable = true;
         ceil.userData.colliderType = "ceiling";
         collidableObjects.push(ceil);
@@ -1308,7 +1316,7 @@ export default function App() {
         if (r.disabledWalls?.includes(side)) return;
         const sideGaps = gaps.filter(g => g.side === side);
 
-        const buildSegment = (startU: number, endU: number) => {
+        const buildSegment = (startU: number, endU: number, segmentName: string) => {
           const segLen = endU - startU;
           if (segLen <= 0.01) return;
           const segCenter = (startU + endU) / 2 - len / 2;
@@ -1318,6 +1326,7 @@ export default function App() {
           if (rotY === 0) below.position.set(px + segCenter, r.floorY + belowH / 2, pz);
           else below.position.set(px, r.floorY + belowH / 2, pz + segCenter);
           below.castShadow = true; below.receiveShadow = true;
+          below.name = `wall_${r.id}_${side}_${segmentName}`;
           below.userData.isCollidable = true;
           below.userData.colliderType = "wall";
           collidableObjects.push(below);
@@ -1329,6 +1338,7 @@ export default function App() {
             above.rotation.y = rotY;
             if (rotY === 0) above.position.set(px + segCenter, r.floorY + doorH + aboveH / 2, pz);
             else above.position.set(px, r.floorY + doorH + aboveH / 2, pz + segCenter);
+            above.name = `wall_${r.id}_${side}_${segmentName}_above`;
             above.userData.isCollidable = true;
             above.userData.colliderType = "wall";
             collidableObjects.push(above);
@@ -1338,17 +1348,17 @@ export default function App() {
         };
 
         if (sideGaps.length === 0) {
-          buildSegment(0, len);
+          buildSegment(0, len, `${side}_full`);
         } else {
           const sorted = [...sideGaps].sort((a, b) => (a.center - a.width / 2) - (b.center - b.width / 2));
           let cursor = 0;
-          sorted.forEach(g => {
+          sorted.forEach((g, idx) => {
             const gStart = Math.max(0, (g.center - g.width / 2) + len / 2);
             const gEnd = Math.min(len, (g.center + g.width / 2) + len / 2);
-            buildSegment(cursor, gStart);
+            buildSegment(cursor, gStart, `${side}_left_of_gap_${idx}`);
             cursor = gEnd;
           });
-          buildSegment(cursor, len);
+          buildSegment(cursor, len, `${side}_right_of_last_gap`);
         }
       });
 
@@ -1396,6 +1406,7 @@ export default function App() {
           new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
         );
         collisionRamp.position.set(r.cx, r.floorY + climb / 2 + yOffset, r.cz);
+        collisionRamp.name = `ramp_collision_${r.id}`;
         
         if (dir === 'W_E' || dir === 'E_W') {
           collisionRamp.rotation.z = angle;
@@ -1504,11 +1515,46 @@ export default function App() {
         new THREE.MeshLambertMaterial({ color: parseInt(prop.color.replace('#', ''), 16) })
       );
       mesh.position.set(prop.cx, (ownerRoom?.floorY ?? 0) + prop.h / 2, prop.cz);
+      mesh.name = `prop_${prop.id}`;
       mesh.userData.isCollidable = true;
       mesh.userData.colliderType = "prop";
       collidableObjects.push(mesh);
       scene.add(mesh);
     });
+
+    // ============================================================================
+    // DEBUG: Log colliders near starter doorway area
+    // World doorway center is approximately: x = 0, z = -10
+    // Check region: x -8 to 8, z -14 to -6
+    // Open doorway should have no blocking collider inside: x -5 to 5, z -11 to -9
+    // ============================================================================
+    if ((window as any).DEBUG_VERBOSE) {
+      console.log('=== STARTER DOORWAY COLLIDER DEBUG ===');
+      console.log('Checking region: x -8 to 8, z -14 to -6');
+      collidableObjects.forEach(obj => {
+        const pos = obj.getWorldPosition(new THREE.Vector3());
+        if (pos.x >= -8 && pos.x <= 8 && pos.z >= -14 && pos.z <= -6) {
+          const box = new THREE.Box3().setFromObject(obj);
+          console.log('--- Collider near starter doorway ---');
+          console.log('name:', obj.name);
+          console.log('uuid:', obj.uuid);
+          console.log('colliderType:', obj.userData.colliderType);
+          console.log('isCollidable:', obj.userData.isCollidable);
+          console.log('isOpen:', obj.userData.isOpen);
+          console.log('blocksZombies:', obj.userData.blocksZombies);
+          console.log('position:', pos);
+          console.log('bounding box min:', box.min);
+          console.log('bounding box max:', box.max);
+          console.log('size:', new THREE.Vector3().subVectors(box.max, box.min));
+          
+          // Check if overlapping open doorway center
+          if (pos.x >= -5 && pos.x <= 5 && pos.z >= -11 && pos.z <= -9) {
+            console.warn('*** BLOCKING OPEN DOORWAY CENTER ***');
+          }
+        }
+      });
+      console.log('=== END STARTER DOORWAY DEBUG ===');
+    }
 
     // ---- RESIZE ----
     const handleResize = () => {
