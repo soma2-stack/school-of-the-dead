@@ -1458,12 +1458,17 @@ export class ZombieManager {
     // This allows zombies to pass through the open starter classroom doorway
     // without getting stuck, even if there are residual collider issues.
     const isStarterDoorwayZone =
-      position.x > -6 &&
-      position.x < 6 &&
-      position.z > -13 &&
-      position.z < -7;
+      position.x > -9 &&
+      position.x < 9 &&
+      position.z > -16 &&
+      position.z < -4;
     
     if (isStarterDoorwayZone) {
+      if (window.DEBUG_VERBOSE) {
+        console.log("[STARTER DOORWAY NO-BLOCK ACTIVE]", {
+          position: position.clone()
+        });
+      }
       return false;
     }
     
