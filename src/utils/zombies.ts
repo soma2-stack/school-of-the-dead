@@ -39,8 +39,8 @@ export const ZOMBIE_STUCK_RECOVERY_MAX_DISTANCE = 0.25; // Maximum nudge distanc
 export const ZOMBIE_TELEPORT_GUARD_MARGIN = 0.3; // Extra margin for teleport detection
 
 // Doorway pathing configuration
-export const ZOMBIE_DOORWAY_OFFSET = 2.0; // Offset from wall for doorway entry/exit targets (increased from 1.5)
-export const ZOMBIE_DOORWAY_OUTSIDE_OFFSET = 2.0; // Offset outside the room for pass-through targets (increased from 1.0)
+export const ZOMBIE_DOORWAY_OFFSET = 0.8; // Offset from wall for doorway entry/exit targets (reduced for tight hallways)
+export const ZOMBIE_DOORWAY_OUTSIDE_OFFSET = 1.2; // Offset outside the room for pass-through targets (reduced for tight hallways)
 export const ZOMBIE_DOORWAY_ARRIVAL_DIST = 1.5; // Distance at which doorway is considered "reached"
 
 // Debug configuration
@@ -1076,13 +1076,14 @@ export class ZombieManager {
         }
 
         // 2. Calculate zombie-to-zombie separation (XZ plane ONLY)
-        // When targeting a doorway, disable separation completely to prevent sliding along walls
+        // When targeting a doorway, REDUCE (not disable) separation to prevent pileups at door frames.
+        // Fully disabling caused all zombies to stack on the exact same target point and freeze.
         separation.set(0, 0, 0);
         let neighborCount = 0;
         
-        // Only apply separation when NOT targeting a doorway (isTargetingDoorway defined in stuck detection)
-        if (!isTargetingDoorway) {
-          this.zombies.forEach((other, otherId) => {
+        // Scale separation down to 30% when targeting a doorway - allows zombies to queue without piling
+        const separationScale = isTargetingDoorway ? 0.3 : 1.0;
+        this.zombies.forEach((other, otherId) => {
             if (otherId === id || other.state !== 'alive') return;
             
             // 2D distance only (XZ plane)
@@ -1096,13 +1097,13 @@ export class ZombieManager {
               const pushZ = dz / distXZ;
               const pushStrength = (ZOMBIE_MIN_SEPARATION - distXZ) / ZOMBIE_MIN_SEPARATION;
               
-              separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
-              separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH;
+              separation.x += pushX * pushStrength * ZOMBIE_SEPARATION_STRENGTH * separationScale;
+              separation.z += pushZ * pushStrength * ZOMBIE_SEPARATION_STRENGTH * separationScale;
               neighborCount++;
             }
           });
 
-          if (neighborCount > 0) {
+        if (neighborCount > 0) {
             // Clamp separation to prevent explosion
             const sepLength = Math.sqrt(separation.x * separation.x + separation.z * separation.z);
             if (sepLength > ZOMBIE_MAX_SEPARATION_PER_FRAME) {
@@ -1113,7 +1114,6 @@ export class ZombieManager {
               logger.zombies.debug(`[ZOMBIE SEPARATION] Zombie ${zombie.id}: ${neighborCount} neighbors, separation applied`);
             }
           }
-        }
         separation.y = 0; // CRITICAL: No vertical component
 
         // Combine chase and separation (both XZ only)
