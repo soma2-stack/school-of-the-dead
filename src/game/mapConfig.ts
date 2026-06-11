@@ -100,9 +100,9 @@ export const INITIAL_ROOMS: Room[] = [
 // ============================================================================
 
 export const ROOM_GAPS: Record<string, RoomGap[]> = {
-  starter: [{ side: 'N', center: -17.5, width: 6.0 }],
+  starter: [{ side: 'N', center: -17.5, width: 10.0 }],
   hallway: [
-    { side: 'S', center: -20, width: 6.0 },
+    { side: 'S', center: -20, width: 10.0 },
     { side: 'N', center: -15, width: 6.0 },
     { side: 'N', center: 20, width: 6.0 },
     { side: 'E', center: 0, width: 6.0 },
@@ -177,7 +177,6 @@ export const ROOM_GAPS: Record<string, RoomGap[]> = {
 // ============================================================================
 
 export const DOORS_CONFIG: DoorConfig[] = [
-  { roomId: 'hallway', side: 'S', gapIndex: 0, cost: 750 },
   { roomId: 'hallway', side: 'N', gapIndex: 0, cost: 750 },
   { roomId: 'hallway', side: 'N', gapIndex: 1, cost: 750 },
   { roomId: 'hallway', side: 'E', gapIndex: 0, cost: 750 },
