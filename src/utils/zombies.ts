@@ -1237,75 +1237,113 @@ export class ZombieManager {
               // Stay in place - do not revert since we never moved
             }
           } else {
-            // NORMAL CHASE MODE: Separate X/Z sliding with substeps
-            const moveLength = Math.sqrt(totalMove.x * totalMove.x + totalMove.z * totalMove.z);
-            const numSteps = Math.min(
-              Math.ceil(moveLength / ZOMBIE_MAX_STEP_SIZE),
-              ZOMBIE_MAX_SUBSTEPS
-            );
-            
-            if (numSteps > 1) {
-              // Substep the movement to prevent clipping
-              const stepMove = totalMove.clone().divideScalar(numSteps);
-              
-              for (let step = 0; step < numSteps; step++) {
-                // Try X movement for this substep
-                attemptX.copy(zombie.position);
-                attemptX.x += stepMove.x;
-                attemptX.y = oldY; // Lock Y
-                  
-                if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-                  zombie.position.x = attemptX.x;
-                }
+            // NORMAL CHASE MODE: Same fallback attempts as doorway mode for robust movement
+            const combined = zombie.position.clone();
+            combined.x += totalMove.x;
+            combined.z += totalMove.z;
+            combined.y = oldY;
 
-                // Try Z movement for this substep
-                attemptZ.copy(zombie.position);
-                attemptZ.z += stepMove.z;
-                attemptZ.y = oldY; // Lock Y
-                  
-                if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-                  zombie.position.z = attemptZ.z;
-                }
+            // Helper function to try a candidate position
+            const tryChaseMove = (candidate: THREE.Vector3): boolean => {
+              if (!this.collidesWithWalls2D(candidate, ZOMBIE_COLLISION_RADIUS, mapObjects, true)) {
+                zombie.position.x = candidate.x;
+                zombie.position.z = candidate.z;
+                return true;
               }
-            } else {
-              // Single step movement (original behavior for small moves)
-              // Try X movement first
-              attemptX.copy(zombie.position);
-              attemptX.x += totalMove.x;
-              attemptX.y = oldY; // Lock Y
-              
-              if (!this.collidesWithWalls2D(attemptX, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-                zombie.position.x = attemptX.x;
-              }
+              return false;
+            };
 
-              // Try Z movement from current position (after X was potentially applied)
-              attemptZ.copy(zombie.position);
-              attemptZ.z += totalMove.z;
-              attemptZ.y = oldY; // Lock Y
-              
-              if (!this.collidesWithWalls2D(attemptZ, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-                zombie.position.z = attemptZ.z;
+            let moved = tryChaseMove(combined);
+
+            // Fallback 1: Try X-only movement
+            if (!moved) {
+              const xOnly = zombie.position.clone();
+              xOnly.x += totalMove.x;
+              xOnly.y = oldY;
+              moved = tryChaseMove(xOnly);
+            }
+
+            // Fallback 2: Try Z-only movement
+            if (!moved) {
+              const zOnly = zombie.position.clone();
+              zOnly.z += totalMove.z;
+              zOnly.y = oldY;
+              moved = tryChaseMove(zOnly);
+            }
+
+            // Fallback 3: Try perpendicular nudges (left/right)
+            if (!moved && distanceToPlayer > 0.1) {
+              const dir = new THREE.Vector3(
+                playerPosition.x - zombie.position.x,
+                0,
+                playerPosition.z - zombie.position.z
+              ).normalize();
+
+              const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+
+              const left = zombie.position.clone().addScaledVector(perp, 0.25);
+              left.y = oldY;
+              moved = tryChaseMove(left);
+
+              if (!moved) {
+                const right = zombie.position.clone().addScaledVector(perp, -0.25);
+                right.y = oldY;
+                moved = tryChaseMove(right);
               }
             }
 
-            // Final collision check: if final position still collides, revert to old position
-            // This handles corner cases where separate X/Z movement allows slipping around corners
-            const finalPos = new THREE.Vector3(zombie.position.x, oldY, zombie.position.z);
-            if (this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects)) {
-              zombie.position.x = oldPos.x;
-              zombie.position.z = oldPos.z;
-            }
-
-            // Clip debug warning (only when clipping actually happens)
-            const clippedThroughWall = this.collidesWithWalls2D(finalPos, ZOMBIE_COLLISION_RADIUS, mapObjects) && 
-                                       (Math.abs(zombie.position.x - oldPos.x) > 0.01 || Math.abs(zombie.position.z - oldPos.z) > 0.01);
-            if (clippedThroughWall) {
-              console.warn('[ZOMBIE CLIP DEBUG]', {
+            // If all attempts fail, log stuck info
+            if (!moved && window.DEBUG_VERBOSE) {
+              const nextPos = zombie.position.clone();
+              nextPos.x += totalMove.x;
+              nextPos.z += totalMove.z;
+              
+              const blockingObjects: Array<{
+                name: string;
+                colliderType: string;
+                isOpen?: boolean;
+                blocksZombies?: boolean;
+                isCollidable?: boolean;
+                position: THREE.Vector3;
+                boxMin: THREE.Vector3;
+                boxMax: THREE.Vector3;
+              }> = [];
+              
+              for (const obj of mapObjects) {
+                const box = new THREE.Box3().setFromObject(obj);
+                const expandedBox = new THREE.Box3(
+                  new THREE.Vector3(box.min.x - ZOMBIE_COLLISION_RADIUS, box.min.y, box.min.z - ZOMBIE_COLLISION_RADIUS),
+                  new THREE.Vector3(box.max.x + ZOMBIE_COLLISION_RADIUS, box.max.y, box.max.z + ZOMBIE_COLLISION_RADIUS)
+                );
+                
+                if (nextPos.x >= expandedBox.min.x && nextPos.x <= expandedBox.max.x &&
+                    nextPos.z >= expandedBox.min.z && nextPos.z <= expandedBox.max.z) {
+                  const wallHeight = box.max.y - box.min.y;
+                  if (wallHeight > ZOMBIE_MAX_CLIMB_HEIGHT) {
+                    blockingObjects.push({
+                      name: obj.name || 'unnamed',
+                      colliderType: obj.userData.colliderType || 'unknown',
+                      isOpen: obj.userData.isOpen,
+                      blocksZombies: obj.userData.blocksZombies,
+                      isCollidable: obj.userData.isCollidable,
+                      position: obj.position.clone(),
+                      boxMin: box.min.clone(),
+                      boxMax: box.max.clone()
+                    });
+                  }
+                }
+              }
+              
+              console.warn('[SAME-ROOM ZOMBIE STUCK]', {
                 zombieId: zombie.id,
-                oldPosition: oldPos.clone(),
-                attemptedPosition: finalPos.clone(),
-                finalPosition: zombie.position.clone(),
-                wallColliderType: 'wall/door/prop'
+                zombiePos: zombie.position.clone(),
+                playerPos: playerPosition.clone(),
+                targetPos: targetPosition.clone(),
+                distanceToPlayer,
+                totalMove: totalMove.clone(),
+                blockingObjects,
+                zombieRoomId: zombieRoom?.id,
+                playerRoomId: playerRoom?.id
               });
             }
           }
